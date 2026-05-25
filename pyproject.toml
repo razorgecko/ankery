@@ -1,0 +1,14 @@
+[project]
+name = "anki-deckbuilder"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-httpx>=0.36.2",
+]

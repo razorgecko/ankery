@@ -1,0 +1,33 @@
+from typing import Protocol, runtime_checkable
+
+
+class SinkError(Exception):
+    """A sink failed to write a note.
+
+    Covers transport failures (Anki not running, network error) and
+    application-level failures the target reports in-band (AnkiConnect returns
+    errors in the JSON body, not via HTTP status). The manager lets this
+    propagate: unlike a provider miss, a sink failure means the card was not
+    created and there is no fallback.
+    """
+
+
+@runtime_checkable
+class AnkiSink(Protocol):
+    """A destination that turns mapped note fields into a card.
+
+    The seam between the manager and Anki. The only implementation now is
+    AnkiConnect, but an offline .apkg writer (genanki) would slot in behind the
+    same method later.
+    """
+
+    def add_note(
+        self,
+        *,
+        deck: str,
+        note_type: str,
+        fields: dict[str, str],
+        tags: list[str] | None = None,
+    ) -> int:
+        """Create a note and return its Anki note id."""
+        ...

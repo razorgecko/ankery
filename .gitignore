@@ -1,0 +1,37 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv: the lockfile uv.lock is committed; only the venv (above) is ignored.
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage / type-checker caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Safety net: the app reads ANKIDECK_LLM_API_KEY from the environment only, but
+# if you keep a local .env to populate it (e.g. `set -a; source .env`), never
+# let that secrets file reach the remote.
+.env
+
+# Editor / OS cruft
+.idea/
+.vscode/
+*.swp
+.DS_Store
