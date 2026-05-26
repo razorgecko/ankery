@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
-from anki_deckbuilder.sinks.base import SinkError
+from ankery.sinks.ankiconnect import AnkiConnectSink
+from ankery.sinks.base import SinkError
 
 URL = "http://localhost:8765"
 

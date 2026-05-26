@@ -20,8 +20,8 @@ import re
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from anki_deckbuilder.models import WordInfo
-from anki_deckbuilder.providers.base import ProviderError
+from ankery.models import WordInfo
+from ankery.providers.base import ProviderError
 
 _BASE = "https://www.verbformen.com"
 _HEADERS = {

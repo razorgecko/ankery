@@ -4,18 +4,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
-from anki_deckbuilder.manager import DeckBuilder
-from anki_deckbuilder.providers.base import WordProvider
-from anki_deckbuilder.providers.llm import LLMProvider
-from anki_deckbuilder.providers.verbformen import VerbformenProvider
-from anki_deckbuilder.recipes import FieldMap, build_recipes, default_field_map
-from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
+from ankery.manager import DeckBuilder
+from ankery.providers.base import WordProvider
+from ankery.providers.llm import LLMProvider
+from ankery.providers.verbformen import VerbformenProvider
+from ankery.recipes import FieldMap, build_recipes, default_field_map
+from ankery.sinks.ankiconnect import AnkiConnectSink
 
-ENV_PREFIX = "ANKIDECK_"
+ENV_PREFIX = "ANKERY_"
 
 
 def _config_dir() -> Path:
-    """The anki_deckbuilder config directory, honoring the XDG base-dir spec.
+    """The ankery config directory, honoring the XDG base-dir spec.
 
     Read at call time (not as an import-time constant) so an env change — or a
     test pointing XDG_CONFIG_HOME at a tmp dir — takes effect. Per the spec, an
@@ -23,7 +23,7 @@ def _config_dir() -> Path:
     """
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".config"
-    return base / "anki_deckbuilder"
+    return base / "ankery"
 
 # The keys config.toml refuses and auth.toml requires — the split that keeps
 # config.toml safe to share/commit while the secret sits in a sibling file.
@@ -119,8 +119,8 @@ class Config:
     ) -> "Config":
         """Build a Config from environment variables, falling back to `base`.
 
-        Variables are read from the ANKIDECK_ namespace, e.g.
-        ANKIDECK_LLM_MODEL, ANKIDECK_DECK, ANKIDECK_TAGS (comma-separated).
+        Variables are read from the ANKERY_ namespace, e.g.
+        ANKERY_LLM_MODEL, ANKERY_DECK, ANKERY_TAGS (comma-separated).
         `base` supplies the fallback values (the bare defaults when omitted); it
         is how `load` layers env on top of the config file.
         """
@@ -195,7 +195,7 @@ def _load_config_file(path: Path) -> dict:
         if unknown & SECRET_KEYS:
             raise ConfigError(
                 f"{path}: llm_api_key may not be set in config.toml; put it in "
-                "auth.toml (or the ANKIDECK_LLM_API_KEY environment variable) instead."
+                "auth.toml (or the ANKERY_LLM_API_KEY environment variable) instead."
             )
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 

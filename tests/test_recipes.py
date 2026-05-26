@@ -1,5 +1,5 @@
-from anki_deckbuilder.models import WordInfo
-from anki_deckbuilder.recipes import (
+from ankery.models import WordInfo
+from ankery.recipes import (
     build_recipes,
     map_noun_fields,
     map_verb_fields,

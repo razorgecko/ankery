@@ -1,6 +1,6 @@
 from typing import Protocol, runtime_checkable
 
-from anki_deckbuilder.models import WordInfo
+from ankery.models import WordInfo
 
 
 class ProviderError(Exception):

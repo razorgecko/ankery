@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from bs4 import BeautifulSoup
 
-from anki_deckbuilder.providers.base import ProviderError
-from anki_deckbuilder.providers.verbformen import (
+from ankery.providers.base import ProviderError
+from ankery.providers.verbformen import (
     VerbformenProvider,
     _accept_language,
     _example,

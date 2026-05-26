@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from anki_deckbuilder.models import WordInfo
+from ankery.models import WordInfo
 
 
 def test_minimal_valid():

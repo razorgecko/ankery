@@ -3,9 +3,9 @@ import json
 import httpx
 from pydantic import ValidationError
 
-from anki_deckbuilder.models import WordInfo
-from anki_deckbuilder.prompts import SYSTEM_PROMPT, build_user_prompt
-from anki_deckbuilder.providers.base import ProviderError
+from ankery.models import WordInfo
+from ankery.prompts import SYSTEM_PROMPT, build_user_prompt
+from ankery.providers.base import ProviderError
 
 
 class LLMProvider:

@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from anki_deckbuilder.providers.base import ProviderError
-from anki_deckbuilder.providers.llm import LLMProvider
+from ankery.providers.base import ProviderError
+from ankery.providers.llm import LLMProvider
 
 BASE_URL = "http://localhost:8080/v1"
 CHAT_URL = f"{BASE_URL}/chat/completions"

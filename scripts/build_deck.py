@@ -59,7 +59,7 @@ verb_model = genanki.Model(
     ],
 )
 
-deck = genanki.Deck(1754859910, "German::anki_deckbuilder")
+deck = genanki.Deck(1754859910, "German::ankery")
 
 deck.add_note(genanki.Note(model=noun_model, fields=[
     "Haus", "das", "die Häuser", "des Hauses", "house, home", "Das Haus ist groß."]))
@@ -69,5 +69,5 @@ deck.add_note(genanki.Note(model=verb_model, fields=[
     "ich sehe / du siehst / er sieht / wir sehen / ihr seht / sie sehen",
     "sah", "hat gesehen", "Ich sehe dich."]))
 
-genanki.Package(deck).write_to_file("anki_deckbuilder_german.apkg")
-print("wrote anki_deckbuilder_german.apkg")
+genanki.Package(deck).write_to_file("ankery_german.apkg")
+print("wrote ankery_german.apkg")

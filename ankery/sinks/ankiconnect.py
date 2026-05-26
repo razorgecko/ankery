@@ -1,6 +1,6 @@
 import httpx
 
-from anki_deckbuilder.sinks.base import SinkError
+from ankery.sinks.base import SinkError
 
 ANKICONNECT_VERSION = 6
 

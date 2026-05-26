@@ -1,9 +1,9 @@
 from collections.abc import Iterable
 
-from anki_deckbuilder.models import WordInfo
-from anki_deckbuilder.providers.base import ProviderError, WordProvider
-from anki_deckbuilder.recipes import FieldMap, NoteRecipe, default_field_map
-from anki_deckbuilder.sinks.base import AnkiSink
+from ankery.models import WordInfo
+from ankery.providers.base import ProviderError, WordProvider
+from ankery.recipes import FieldMap, NoteRecipe, default_field_map
+from ankery.sinks.base import AnkiSink
 
 
 class DeckBuilder:

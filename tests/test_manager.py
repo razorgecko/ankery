@@ -1,9 +1,9 @@
 import pytest
 
-from anki_deckbuilder.manager import DeckBuilder, default_field_map
-from anki_deckbuilder.models import WordInfo
-from anki_deckbuilder.providers.base import ProviderError
-from anki_deckbuilder.recipes import NoteRecipe
+from ankery.manager import DeckBuilder, default_field_map
+from ankery.models import WordInfo
+from ankery.providers.base import ProviderError
+from ankery.recipes import NoteRecipe
 
 
 class FakeProvider:

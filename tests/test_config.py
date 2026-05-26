@@ -2,17 +2,17 @@ import pytest
 
 from pathlib import Path
 
-from anki_deckbuilder.config import Config, ConfigError, _config_dir, build_deck_builder
-from anki_deckbuilder.manager import DeckBuilder, default_field_map
-from anki_deckbuilder.providers.llm import LLMProvider
-from anki_deckbuilder.providers.verbformen import VerbformenProvider
-from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
+from ankery.config import Config, ConfigError, _config_dir, build_deck_builder
+from ankery.manager import DeckBuilder, default_field_map
+from ankery.providers.llm import LLMProvider
+from ankery.providers.verbformen import VerbformenProvider
+from ankery.sinks.ankiconnect import AnkiConnectSink
 
 
 @pytest.fixture(autouse=True)
 def _isolate_default_config_dir(monkeypatch, tmp_path):
     # Keep Config.load() hermetic: tests that don't pass path/auth_path must not
-    # read the developer's real ~/.config/anki_deckbuilder/. Point the XDG base
+    # read the developer's real ~/.config/ankery/. Point the XDG base
     # dir at an empty tmp dir so both config.toml and auth.toml defaults miss.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "_xdg"))
 
@@ -43,13 +43,13 @@ def test_from_env_uses_defaults_when_unset():
 
 def test_from_env_overrides_scalars():
     env = {
-        "ANKIDECK_LLM_URL": "https://api.groq.com/openai/v1",
-        "ANKIDECK_LLM_MODEL": "llama-3.3-70b",
-        "ANKIDECK_LLM_TIMEOUT": "5.5",
-        "ANKIDECK_ANKI_URL": "http://anki.local:8765",
-        "ANKIDECK_DECK": "German::Verbs",
-        "ANKIDECK_NOTE_TYPE": "Cloze",
-        "ANKIDECK_TARGET_LANG": "ru",
+        "ANKERY_LLM_URL": "https://api.groq.com/openai/v1",
+        "ANKERY_LLM_MODEL": "llama-3.3-70b",
+        "ANKERY_LLM_TIMEOUT": "5.5",
+        "ANKERY_ANKI_URL": "http://anki.local:8765",
+        "ANKERY_DECK": "German::Verbs",
+        "ANKERY_NOTE_TYPE": "Cloze",
+        "ANKERY_TARGET_LANG": "ru",
     }
     config = Config.from_env(env)
 
@@ -63,27 +63,27 @@ def test_from_env_overrides_scalars():
 
 
 def test_from_env_parses_bools():
-    assert Config.from_env({"ANKIDECK_ALLOW_DUPLICATE": "true"}).allow_duplicate is True
-    assert Config.from_env({"ANKIDECK_ALLOW_DUPLICATE": "1"}).allow_duplicate is True
-    assert Config.from_env({"ANKIDECK_ALLOW_DUPLICATE": "no"}).allow_duplicate is False
-    assert Config.from_env({"ANKIDECK_LLM_JSON_FORMAT": "off"}).llm_request_json_format is False
+    assert Config.from_env({"ANKERY_ALLOW_DUPLICATE": "true"}).allow_duplicate is True
+    assert Config.from_env({"ANKERY_ALLOW_DUPLICATE": "1"}).allow_duplicate is True
+    assert Config.from_env({"ANKERY_ALLOW_DUPLICATE": "no"}).allow_duplicate is False
+    assert Config.from_env({"ANKERY_LLM_JSON_FORMAT": "off"}).llm_request_json_format is False
 
 
 def test_from_env_parses_comma_separated_providers():
-    config = Config.from_env({"ANKIDECK_PROVIDERS": "llm, verbformen"})
+    config = Config.from_env({"ANKERY_PROVIDERS": "llm, verbformen"})
 
     assert config.providers == ("llm", "verbformen")
 
 
 def test_from_env_parses_comma_separated_tags():
-    config = Config.from_env({"ANKIDECK_TAGS": "auto, de , vocab"})
+    config = Config.from_env({"ANKERY_TAGS": "auto, de , vocab"})
 
     assert config.tags == ("auto", "de", "vocab")
 
 
 def test_from_env_layers_on_top_of_base():
     base = Config(deck="FromFile", llm_model="file-model")
-    config = Config.from_env({"ANKIDECK_DECK": "FromEnv"}, base=base)
+    config = Config.from_env({"ANKERY_DECK": "FromEnv"}, base=base)
 
     assert config.deck == "FromEnv"  # env wins
     assert config.llm_model == "file-model"  # base shows through where env is silent
@@ -91,13 +91,13 @@ def test_from_env_layers_on_top_of_base():
 
 def test_config_dir_honors_xdg(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    assert _config_dir() == tmp_path / "xdg" / "anki_deckbuilder"
+    assert _config_dir() == tmp_path / "xdg" / "ankery"
 
 
 def test_config_dir_falls_back_to_home_config(monkeypatch, tmp_path):
     # Unset, empty, and non-absolute XDG_CONFIG_HOME all fall back to ~/.config.
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-    expected = tmp_path / "home" / ".config" / "anki_deckbuilder"
+    expected = tmp_path / "home" / ".config" / "ankery"
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     assert _config_dir() == expected
     monkeypatch.setenv("XDG_CONFIG_HOME", "")
@@ -138,7 +138,7 @@ def test_load_reads_providers_list(tmp_path):
 
 def test_load_env_overrides_file(tmp_path):
     path = _write(tmp_path, 'deck = "FromFile"\nnote_type = "Cloze"\n')
-    config = Config.load(path=path, environ={"ANKIDECK_DECK": "FromEnv"})
+    config = Config.load(path=path, environ={"ANKERY_DECK": "FromEnv"})
 
     assert config.deck == "FromEnv"  # env beats file
     assert config.note_type == "Cloze"  # file beats default
@@ -184,7 +184,7 @@ def test_load_env_overrides_auth_file(tmp_path):
     config = Config.load(
         path=tmp_path / "absent.toml",
         auth_path=auth,
-        environ={"ANKIDECK_LLM_API_KEY": "sk-from-env"},
+        environ={"ANKERY_LLM_API_KEY": "sk-from-env"},
     )
 
     assert config.llm_api_key == "sk-from-env"  # env beats auth.toml
@@ -220,7 +220,7 @@ def test_load_wraps_malformed_toml(tmp_path):
 
 
 def test_from_env_reads_process_environ_when_unset(monkeypatch):
-    monkeypatch.setenv("ANKIDECK_DECK", "FromProcessEnv")
+    monkeypatch.setenv("ANKERY_DECK", "FromProcessEnv")
     config = Config.from_env()  # environ=None -> falls back to os.environ
 
     assert config.deck == "FromProcessEnv"
@@ -228,7 +228,7 @@ def test_from_env_reads_process_environ_when_unset(monkeypatch):
 
 def test_api_key_read_from_env_only():
     assert Config.from_env({}).llm_api_key is None
-    assert Config.from_env({"ANKIDECK_LLM_API_KEY": "sk-123"}).llm_api_key == "sk-123"
+    assert Config.from_env({"ANKERY_LLM_API_KEY": "sk-123"}).llm_api_key == "sk-123"
 
 
 def test_build_deck_builder_passes_api_key():

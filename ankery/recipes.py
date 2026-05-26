@@ -16,7 +16,7 @@ forms into one line, comma-joining translations).
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from anki_deckbuilder.models import WordInfo
+from ankery.models import WordInfo
 
 FieldMap = Callable[[WordInfo], dict[str, str]]
 
