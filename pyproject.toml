@@ -8,6 +8,13 @@ dependencies = [
     "pydantic>=2.13.4",
 ]
 
+[project.scripts]
+ankery = "ankery.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.11.14,<0.12.0"]
+build-backend = "uv_build"
+
 [dependency-groups]
 dev = [
     "genanki>=0.13.1",
