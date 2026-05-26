@@ -1,18 +1,19 @@
 import pytest
 
-from anki_deckbuilder import config as config_mod
-from anki_deckbuilder.config import Config, ConfigError, build_deck_builder
+from pathlib import Path
+
+from anki_deckbuilder.config import Config, ConfigError, _config_dir, build_deck_builder
 from anki_deckbuilder.manager import DeckBuilder, default_field_map
 from anki_deckbuilder.providers.llm import LLMProvider
 from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
 
 
 @pytest.fixture(autouse=True)
-def _isolate_default_auth(monkeypatch, tmp_path):
-    # Keep Config.load() hermetic: tests that don't pass auth_path must not read
-    # the developer's real ~/.config/anki_deckbuilder/auth.toml. Point the
-    # default at an absent file under tmp instead.
-    monkeypatch.setattr(config_mod, "DEFAULT_AUTH_PATH", tmp_path / "_no_auth.toml")
+def _isolate_default_config_dir(monkeypatch, tmp_path):
+    # Keep Config.load() hermetic: tests that don't pass path/auth_path must not
+    # read the developer's real ~/.config/anki_deckbuilder/. Point the XDG base
+    # dir at an empty tmp dir so both config.toml and auth.toml defaults miss.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "_xdg"))
 
 
 def _write(tmp_path, text: str):
@@ -79,6 +80,23 @@ def test_from_env_layers_on_top_of_base():
 
     assert config.deck == "FromEnv"  # env wins
     assert config.llm_model == "file-model"  # base shows through where env is silent
+
+
+def test_config_dir_honors_xdg(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    assert _config_dir() == tmp_path / "xdg" / "anki_deckbuilder"
+
+
+def test_config_dir_falls_back_to_home_config(monkeypatch, tmp_path):
+    # Unset, empty, and non-absolute XDG_CONFIG_HOME all fall back to ~/.config.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    expected = tmp_path / "home" / ".config" / "anki_deckbuilder"
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    assert _config_dir() == expected
+    monkeypatch.setenv("XDG_CONFIG_HOME", "")
+    assert _config_dir() == expected
+    monkeypatch.setenv("XDG_CONFIG_HOME", "relative/path")
+    assert _config_dir() == expected
 
 
 def test_load_missing_file_uses_defaults(tmp_path):

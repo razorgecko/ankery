@@ -9,8 +9,18 @@ from anki_deckbuilder.recipes import FieldMap, build_recipes, default_field_map
 from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
 
 ENV_PREFIX = "ANKIDECK_"
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "anki_deckbuilder" / "config.toml"
-DEFAULT_AUTH_PATH = DEFAULT_CONFIG_PATH.with_name("auth.toml")
+
+
+def _config_dir() -> Path:
+    """The anki_deckbuilder config directory, honoring the XDG base-dir spec.
+
+    Read at call time (not as an import-time constant) so an env change — or a
+    test pointing XDG_CONFIG_HOME at a tmp dir — takes effect. Per the spec, an
+    unset, empty, or non-absolute XDG_CONFIG_HOME falls back to ~/.config.
+    """
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".config"
+    return base / "anki_deckbuilder"
 
 # The keys config.toml refuses and auth.toml requires — the split that keeps
 # config.toml safe to share/commit while the secret sits in a sibling file.
@@ -74,14 +84,14 @@ class Config:
     ) -> "Config":
         """Resolve config across all layers: defaults < config.toml < auth.toml < env.
 
-        config.toml (at ``DEFAULT_CONFIG_PATH`` unless `path` overrides) holds
+        config.toml (in ``_config_dir()`` unless `path` overrides) holds
         set-once preferences and refuses the api key, so it stays safe to share.
-        auth.toml (at ``DEFAULT_AUTH_PATH`` unless `auth_path` overrides), its
-        sibling, holds only the secret. Both are read with the same tomllib; env
-        vars override both. CLI flags, the final layer, are applied by the caller.
+        auth.toml (its sibling in the same dir unless `auth_path` overrides)
+        holds only the secret. Both are read with the same tomllib; env vars
+        override both. CLI flags, the final layer, are applied by the caller.
         """
-        config_path = DEFAULT_CONFIG_PATH if path is None else path
-        auth_path = DEFAULT_AUTH_PATH if auth_path is None else auth_path
+        config_path = _config_dir() / "config.toml" if path is None else path
+        auth_path = _config_dir() / "auth.toml" if auth_path is None else auth_path
         # The two dicts are disjoint by construction (inverse allow-lists around
         # SECRET_KEYS), so this merge can never clash.
         overrides = {**_load_config_file(config_path), **_load_auth_file(auth_path)}
