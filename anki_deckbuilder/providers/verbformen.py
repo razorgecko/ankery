@@ -33,6 +33,13 @@ _HEADERS = {
 # Footnote superscript digits the site appends to forms (e.g. ⁵ ⁶)
 _SUPERSCRIPTS = str.maketrans("", "", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 _CASES = {"Nominative": "nom", "Genitive": "gen", "Dative": "dat", "Accusative": "acc"}
+# Subject pronouns keying a conjugation table's rows, in citation order. The
+# present-indicative table is the first table whose rows are exactly these.
+_PRONOUNS = ("ich", "du", "er", "wir", "ihr", "sie")
+_PRESENT_KEYS = (
+    "present_1sg", "present_2sg", "present_3sg",
+    "present_1pl", "present_2pl", "present_3pl",
+)
 # Separable prefixes a "zu"-infinitive inserts "zu" after (umzusetzen ->
 # umsetzen). Used only as a 404 fallback, so a real lemma that merely looks like
 # prefix+zu is tried literally first and never rewritten out from under itself.
@@ -150,7 +157,7 @@ def _parse_verb(
         definitions=_definition(steckbrief),
         examples=examples,
         example_translations=example_translations,
-        inflections=_stammformen(soup),
+        inflections=_conjugation(soup),
         source=source,
         source_language="de",
         target_language=target_language,
@@ -348,19 +355,84 @@ def _separable(soup: BeautifulSoup) -> bool | None:
     return None
 
 
-def _stammformen(soup: BeautifulSoup) -> dict[str, str]:
-    """Principal parts from the id='stammformen' paragraph.
+def _conjugation(soup: BeautifulSoup) -> dict[str, str]:
+    """Verb forms keyed by the canonical inflection vocabulary (see prompts.py).
 
-    For einkaufen the text is "kauft ein · kaufte ein · hat eingekauft",
-    mapping to present_3sg / preterite_3sg / perfect. The trailing audio link
-    holds only an <img>, so it contributes no text.
+    Fills the same keys the recipes and the LLM provider speak — the full present
+    paradigm (`present_1sg` .. `present_3pl`) plus `preterite`, `perfect` and
+    `auxiliary` — so a verbformen note carries the same fields an LLM note would.
+    The present paradigm comes from the indicative present table (six rows);
+    `preterite`/`perfect` from the principal-parts line; `auxiliary` from the
+    attribute line shared with `_separable`.
     """
+    result: dict[str, str] = {}
+
+    for key, form in zip(_PRESENT_KEYS, _present_paradigm(soup)):
+        if form:
+            result[key] = form
+
+    # Principal parts: "kauft ein · kaufte ein · hat eingekauft" -> the
+    # preterite (1st/3rd sg, identical in German) and the perfect. The present
+    # 3sg it also carries is already covered by the table above. The trailing
+    # audio link holds only an <img>, so it contributes no text.
     p = soup.find(id="stammformen")
+    if p is not None:
+        parts = [s.strip() for s in _normalize(p.get_text()).split("·") if s.strip()]
+        if len(parts) >= 2:
+            result["preterite"] = parts[1]
+        if len(parts) >= 3:
+            result["perfect"] = parts[2]
+
+    aux = _auxiliary(soup)
+    if aux:
+        result["auxiliary"] = aux
+
+    return result
+
+
+def _present_paradigm(soup: BeautifulSoup) -> list[str]:
+    """The six present-indicative forms, in `_PRONOUNS` order.
+
+    The indicative present is the first conjugation table whose rows are exactly
+    the six subject pronouns (the translation table above it is language-keyed,
+    so it is skipped; subjunctive/preterite tables come after). Each row's
+    remaining cells are the conjugated stem and, for separable verbs, the split
+    prefix — joined into one form ("kauft" + "ein" -> "kauft ein"). The optional
+    "-e" the site parenthesises ("kauf(e)") is kept as the full written form
+    ("kaufe"). Returns [] when no such table is found.
+    """
+    for table in soup.find_all("table"):
+        forms: dict[str, str] = {}
+        for tr in table.find_all("tr"):
+            tds = tr.find_all("td")
+            if not tds:
+                continue
+            pronoun = _normalize(tds[0].get_text())
+            if pronoun not in _PRONOUNS:
+                forms = {}
+                break
+            text = _normalize(" ".join(td.get_text() for td in tds[1:]))
+            forms[pronoun] = re.sub(r"[()]", "", text).strip()
+        if set(forms) == set(_PRONOUNS):
+            return [forms[p] for p in _PRONOUNS]
+    return []
+
+
+def _auxiliary(soup: BeautifulSoup) -> str | None:
+    # The perfect-tense auxiliary is a token on the attribute line
+    # ("A1 · regular · haben · separable"), the paragraph before the conjugation
+    # block — the same line `_separable` reads.
+    div = soup.find(id="vStckInf")
+    if div is None:
+        return None
+    p = div.find_previous_sibling("p")
     if p is None:
-        return {}
-    parts = [s.strip() for s in _normalize(p.get_text()).split("·") if s.strip()]
-    keys = ["present_3sg", "preterite_3sg", "perfect"]
-    return dict(zip(keys, parts))
+        return None
+    tokens = {t.strip().lower() for t in p.get_text().split("·")}
+    for aux in ("haben", "sein"):
+        if aux in tokens:
+            return aux
+    return None
 
 
 def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:

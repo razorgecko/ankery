@@ -106,7 +106,9 @@ def test_verb_fetch_returns_wordinfo(httpx_mock):
     )
 
 
-def test_verb_stammformen_parsed(httpx_mock):
+def test_verb_conjugation_parsed(httpx_mock):
+    # The full present paradigm (six forms) plus the principal parts and the
+    # auxiliary, all under the canonical inflection keys the recipes read.
     httpx_mock.add_response(url=VERB_URL, text=_fixture("verbformen_verb_einkaufen.html"))
 
     info = VerbformenProvider().fetch(
@@ -114,9 +116,15 @@ def test_verb_stammformen_parsed(httpx_mock):
     )
 
     assert info.inflections == {
+        "present_1sg": "kaufe ein",
+        "present_2sg": "kaufst ein",
         "present_3sg": "kauft ein",
-        "preterite_3sg": "kaufte ein",
+        "present_1pl": "kaufen ein",
+        "present_2pl": "kauft ein",
+        "present_3pl": "kaufen ein",
+        "preterite": "kaufte ein",
         "perfect": "hat eingekauft",
+        "auxiliary": "haben",
     }
 
 
