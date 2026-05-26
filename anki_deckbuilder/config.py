@@ -10,6 +10,11 @@ from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
 
 ENV_PREFIX = "ANKIDECK_"
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "anki_deckbuilder" / "config.toml"
+DEFAULT_AUTH_PATH = DEFAULT_CONFIG_PATH.with_name("auth.toml")
+
+# The keys config.toml refuses and auth.toml requires — the split that keeps
+# config.toml safe to share/commit while the secret sits in a sibling file.
+SECRET_KEYS = {"llm_api_key"}
 
 
 class ConfigError(Exception):
@@ -64,17 +69,23 @@ class Config:
         cls,
         *,
         path: Path | None = None,
+        auth_path: Path | None = None,
         environ: dict[str, str] | None = None,
     ) -> "Config":
-        """Resolve config across all layers: defaults < file < env.
+        """Resolve config across all layers: defaults < config.toml < auth.toml < env.
 
-        The file (TOML, at ``DEFAULT_CONFIG_PATH`` unless `path` overrides) holds
-        set-once preferences; env vars override it for one-off runs. CLI flags,
-        the final layer, are applied by the caller on top of this result.
+        config.toml (at ``DEFAULT_CONFIG_PATH`` unless `path` overrides) holds
+        set-once preferences and refuses the api key, so it stays safe to share.
+        auth.toml (at ``DEFAULT_AUTH_PATH`` unless `auth_path` overrides), its
+        sibling, holds only the secret. Both are read with the same tomllib; env
+        vars override both. CLI flags, the final layer, are applied by the caller.
         """
-        file_path = DEFAULT_CONFIG_PATH if path is None else path
-        base = replace(cls(), **_load_file(file_path))
-        return cls.from_env(environ, base=base)
+        config_path = DEFAULT_CONFIG_PATH if path is None else path
+        auth_path = DEFAULT_AUTH_PATH if auth_path is None else auth_path
+        # The two dicts are disjoint by construction (inverse allow-lists around
+        # SECRET_KEYS), so this merge can never clash.
+        overrides = {**_load_config_file(config_path), **_load_auth_file(auth_path)}
+        return cls.from_env(environ, base=replace(cls(), **overrides))
 
     @classmethod
     def from_env(
@@ -134,29 +145,32 @@ class Config:
         )
 
 
-def _load_file(path: Path) -> dict:
-    """Read a TOML config file into a dict of Config field overrides.
-
-    A missing file is not an error — it just means "use defaults". Keys must
-    match Config field names; unknown keys are rejected so typos surface loudly
-    rather than being silently ignored. `llm_api_key` is refused on purpose: a
-    secret belongs in the environment, never on disk in this file.
-    """
+def _read_toml(path: Path) -> dict:
+    """Read a TOML file to a raw dict; a missing file means no overrides."""
     if not path.exists():
         return {}
     try:
         with path.open("rb") as fh:
-            raw = tomllib.load(fh)
+            return tomllib.load(fh)
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ConfigError(f"Could not read config file {path}: {exc}") from exc
 
-    allowed = {f.name for f in fields(Config)} - {"llm_api_key"}
+
+def _load_config_file(path: Path) -> dict:
+    """Read config.toml into a dict of Config field overrides, minus the secret.
+
+    Keys must match Config field names; unknown keys are rejected so typos
+    surface loudly rather than being silently ignored. The api key is refused
+    here on purpose so config.toml stays safe to share — it belongs in auth.toml.
+    """
+    raw = _read_toml(path)
+    allowed = {f.name for f in fields(Config)} - SECRET_KEYS
     unknown = set(raw) - allowed
     if unknown:
-        if "llm_api_key" in unknown:
+        if unknown & SECRET_KEYS:
             raise ConfigError(
-                f"{path}: llm_api_key may not be set in the config file; "
-                "use the ANKIDECK_LLM_API_KEY environment variable instead."
+                f"{path}: llm_api_key may not be set in config.toml; put it in "
+                "auth.toml (or the ANKIDECK_LLM_API_KEY environment variable) instead."
             )
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 
@@ -166,6 +180,24 @@ def _load_file(path: Path) -> dict:
     for key in ("llm_timeout", "anki_timeout"):
         if key in raw:
             raw[key] = float(raw[key])
+    return raw
+
+
+def _load_auth_file(path: Path) -> dict:
+    """Read auth.toml — the secret-only sibling of config.toml.
+
+    The inverse of `_load_config_file`'s allow-list: only SECRET_KEYS are
+    accepted. Any ordinary config key is rejected with a pointer back to
+    config.toml, so the two files keep their split (shareable preferences vs.
+    the secret) instead of drifting into two places that set the same things.
+    """
+    raw = _read_toml(path)
+    unknown = set(raw) - SECRET_KEYS
+    if unknown:
+        raise ConfigError(
+            f"{path}: only {', '.join(sorted(SECRET_KEYS))} belongs in auth.toml; "
+            f"move {', '.join(sorted(unknown))} to config.toml."
+        )
     return raw
 
 

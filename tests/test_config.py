@@ -1,13 +1,28 @@
 import pytest
 
+from anki_deckbuilder import config as config_mod
 from anki_deckbuilder.config import Config, ConfigError, build_deck_builder
 from anki_deckbuilder.manager import DeckBuilder, default_field_map
 from anki_deckbuilder.providers.llm import LLMProvider
 from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
 
 
+@pytest.fixture(autouse=True)
+def _isolate_default_auth(monkeypatch, tmp_path):
+    # Keep Config.load() hermetic: tests that don't pass auth_path must not read
+    # the developer's real ~/.config/anki_deckbuilder/auth.toml. Point the
+    # default at an absent file under tmp instead.
+    monkeypatch.setattr(config_mod, "DEFAULT_AUTH_PATH", tmp_path / "_no_auth.toml")
+
+
 def _write(tmp_path, text: str):
     path = tmp_path / "config.toml"
+    path.write_text(text)
+    return path
+
+
+def _write_auth(tmp_path, text: str):
+    path = tmp_path / "auth.toml"
     path.write_text(text)
     return path
 
@@ -103,17 +118,60 @@ def test_load_rejects_unknown_keys(tmp_path):
         Config.load(path=path, environ={})
 
 
-def test_load_refuses_api_key_in_file(tmp_path):
+def test_load_refuses_api_key_in_config_file(tmp_path):
     path = _write(tmp_path, 'llm_api_key = "secret"\n')
-    with pytest.raises(ConfigError, match="ANKIDECK_LLM_API_KEY"):
+    with pytest.raises(ConfigError, match="auth.toml"):
         Config.load(path=path, environ={})
 
 
 def test_load_refuses_api_key_even_alongside_valid_keys(tmp_path):
     # The api_key message must win over the generic unknown-keys message.
     path = _write(tmp_path, 'deck = "German"\nllm_api_key = "secret"\n')
-    with pytest.raises(ConfigError, match="ANKIDECK_LLM_API_KEY"):
+    with pytest.raises(ConfigError, match="auth.toml"):
         Config.load(path=path, environ={})
+
+
+def test_load_reads_api_key_from_auth_file(tmp_path):
+    auth = _write_auth(tmp_path, 'llm_api_key = "sk-from-auth"\n')
+    config = Config.load(path=tmp_path / "absent.toml", auth_path=auth, environ={})
+
+    assert config.llm_api_key == "sk-from-auth"
+
+
+def test_load_config_and_auth_together(tmp_path):
+    path = _write(tmp_path, 'deck = "German::Vocab"\n')
+    auth = _write_auth(tmp_path, 'llm_api_key = "sk-123"\n')
+    config = Config.load(path=path, auth_path=auth, environ={})
+
+    assert config.deck == "German::Vocab"  # from config.toml
+    assert config.llm_api_key == "sk-123"  # from auth.toml
+
+
+def test_load_env_overrides_auth_file(tmp_path):
+    auth = _write_auth(tmp_path, 'llm_api_key = "sk-from-auth"\n')
+    config = Config.load(
+        path=tmp_path / "absent.toml",
+        auth_path=auth,
+        environ={"ANKIDECK_LLM_API_KEY": "sk-from-env"},
+    )
+
+    assert config.llm_api_key == "sk-from-env"  # env beats auth.toml
+
+
+def test_load_missing_auth_file_leaves_key_unset(tmp_path):
+    config = Config.load(
+        path=tmp_path / "absent.toml",
+        auth_path=tmp_path / "absent-auth.toml",
+        environ={},
+    )
+
+    assert config.llm_api_key is None
+
+
+def test_load_auth_file_rejects_non_secret_keys(tmp_path):
+    auth = _write_auth(tmp_path, 'deck = "German"\n')
+    with pytest.raises(ConfigError, match="move deck to config.toml"):
+        Config.load(path=tmp_path / "absent.toml", auth_path=auth, environ={})
 
 
 def test_load_reads_bool_from_file(tmp_path):
