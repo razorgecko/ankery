@@ -24,6 +24,7 @@ htmlcov/
 .tox/
 .mypy_cache/
 .ruff_cache/
+config.toml
 
 # Safety net: the app reads ANKIDECK_LLM_API_KEY from the environment only, but
 # if you keep a local .env to populate it (e.g. `set -a; source .env`), never
@@ -35,3 +36,6 @@ htmlcov/
 .vscode/
 *.swp
 .DS_Store
+
+# Claude files
+CLAUDE.md
