@@ -27,9 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        action="append",
-        metavar="NAME",
-        help="provider to use, in fallback order (repeatable; overrides "
+        metavar="NAMES",
+        help="comma-separated providers in fallback order (overrides "
         "ANKIDECK_PROVIDERS). Known: llm, verbformen.",
     )
     parser.add_argument("--deck", help="destination deck (overrides ANKIDECK_DECK)")
@@ -48,7 +47,7 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     # Env is the base; explicit flags win over it.
     overrides: dict[str, object] = {}
     if args.provider:
-        overrides["providers"] = tuple(args.provider)
+        overrides["providers"] = tuple(p.strip() for p in args.provider.split(","))
     if args.deck is not None:
         overrides["deck"] = args.deck
     if args.source_lang is not None:

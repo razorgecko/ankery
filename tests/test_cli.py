@@ -123,7 +123,7 @@ def test_provider_flag_overrides_chain(patched):
     captured, set_results = patched
     set_results({"Buch": 1})
 
-    cli.main(["--provider", "verbformen", "--provider", "llm", "Buch"])
+    cli.main(["--provider", "verbformen,llm", "Buch"])
 
     assert captured["config"].providers == ("verbformen", "llm")
 
