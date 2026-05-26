@@ -363,7 +363,7 @@ def _separable(soup: BeautifulSoup) -> bool | None:
 def _conjugation(soup: BeautifulSoup) -> dict[str, str]:
     """Verb forms keyed by the canonical inflection vocabulary (see prompts.py).
 
-    Fills the same keys the recipes and the LLM provider speak — the full present
+    Fills the same keys the note definitions and the LLM provider speak — the full present
     paradigm (`present_1sg` .. `present_3pl`) plus `preterite`, `perfect` and
     `auxiliary` — so a verbformen note carries the same fields an LLM note would.
     The present paradigm comes from the indicative present table (six rows);
@@ -448,8 +448,8 @@ def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
     get_text() joins; slash-separated variants keep only the primary form.
 
     Keys are `{case}_{number}` with the case spelled out (`genitive_sg`,
-    `nominative_pl`) — the canonical inflection vocabulary the recipes and the
-    LLM provider speak (prompts.py), and the same `_sg`/`_pl` suffixes the verb
+    `nominative_pl`) — the canonical inflection vocabulary the note definitions
+    and the LLM provider speak (prompts.py), and the same `_sg`/`_pl` suffixes the verb
     keys use. The form is stored bare: the site renders it in an article cell
     (<td>des</td>) and a form cell (<td>Hauses</td>), and only the form cell is
     read, so the contract's "no leading article" rule (see WordInfo.inflections)

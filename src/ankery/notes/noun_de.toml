@@ -1,0 +1,24 @@
+name = "Noun (DE)"
+id = 1986815750
+applies_to = "noun"
+
+# Field order is the order of these keys. Word leads because Anki keys duplicate
+# detection on the first field; leading with Article would flag every same-gender
+# noun as a duplicate.
+[map]
+Word        = "{{ word }}"
+Article     = "{{ gender }}"
+Plural      = "{{ inflections.nominative_pl }}"
+GenitiveSg  = "{{ inflections.genitive_sg }}"
+Translation = "{{ translations | join(', ') }}"
+Example     = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
+
+[[cards]]
+name = "N1 Recognition"
+qfmt = "{{Article}} {{Word}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Translation}}<br><br>Pl. {{Plural}} &nbsp; Gen. {{GenitiveSg}}<br><br>{{Example}}"
+
+[[cards]]
+name = "N2 Production"
+qfmt = "{{Translation}} (noun)"
+afmt = "{{FrontSide}}<hr id=answer>{{Article}} {{Word}}, Pl. {{Plural}}, Gen. {{GenitiveSg}}"

@@ -8,7 +8,7 @@ from ankery.manager import DeckBuilder
 from ankery.providers.base import WordProvider
 from ankery.providers.llm import LLMProvider
 from ankery.providers.verbformen import VerbformenProvider
-from ankery.recipes import FieldMap, build_recipes, default_field_map
+from ankery.notedef import FieldMap, default_field_map, load_note_definitions
 from ankery.sinks.ankiconnect import AnkiConnectSink
 
 ENV_PREFIX = "ANKERY_"
@@ -73,14 +73,11 @@ class Config:
     allow_duplicate: bool = False
 
     # Note destination. `note_type` is the catch-all model for words that match
-    # no part-of-speech route (adjectives, adverbs, function words). Nouns and
-    # verbs route to their own models by part of speech; set either of these to
-    # "" to send that part of speech to the catch-all instead. Names match the
-    # models built by scripts/build_deck.py.
+    # no note definition (adjectives, adverbs, function words). Part-of-speech
+    # routing to specific models (e.g. "Noun (DE)", "Verb (DE)") is owned by the
+    # note definitions in notes/*.toml (their `applies_to`), not by config.
     deck: str = "Default"
     note_type: str = "Basic"
-    noun_note_type: str = "Noun (DE)"
-    verb_note_type: str = "Verb (DE)"
     tags: tuple[str, ...] = ()
 
     # Default language pair for lookups (a German -> English vocab builder).
@@ -162,8 +159,6 @@ class Config:
             allow_duplicate=_bool("ALLOW_DUPLICATE", base.allow_duplicate),
             deck=_str("DECK", base.deck),
             note_type=_str("NOTE_TYPE", base.note_type),
-            noun_note_type=_str("NOUN_NOTE_TYPE", base.noun_note_type),
-            verb_note_type=_str("VERB_NOTE_TYPE", base.verb_note_type),
             tags=_csv("TAGS", base.tags),
             source_language=_str("SOURCE_LANG", base.source_language),
             target_language=_str("TARGET_LANG", base.target_language),
@@ -279,9 +274,6 @@ def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) ->
         deck=config.deck,
         note_type=config.note_type,
         map_fields=map_fields or default_field_map,
-        recipes=build_recipes(
-            noun_note_type=config.noun_note_type,
-            verb_note_type=config.verb_note_type,
-        ),
+        note_definitions=load_note_definitions(),
         tags=list(config.tags),
     )

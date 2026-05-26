@@ -1,8 +1,8 @@
 from collections.abc import Iterable
 
 from ankery.models import WordInfo
+from ankery.notedef import FieldMap, NoteDefinition, default_field_map
 from ankery.providers.base import ProviderError, WordProvider
-from ankery.recipes import FieldMap, NoteRecipe, default_field_map
 from ankery.sinks.base import AnkiSink
 
 
@@ -11,9 +11,10 @@ class DeckBuilder:
 
     Owns the one piece of glue the layers don't: choosing a note type for a
     `WordInfo` and turning it into the flat field dict a note needs. A word is
-    routed by part of speech through `recipes` (first match wins); a word that
-    matches none falls back to `note_type` + `map_fields`. Everything else is
-    delegated — providers produce the info, the sink writes it.
+    routed by part of speech through `note_definitions` (first whose `applies`
+    matches wins, filled by its `render`); a word that matches none falls back to
+    `note_type` + `map_fields` (the procedural "Basic" catch-all). Everything
+    else is delegated — providers produce the info, the sink writes it.
     """
 
     def __init__(
@@ -24,7 +25,7 @@ class DeckBuilder:
         deck: str,
         note_type: str,
         map_fields: FieldMap | None = None,
-        recipes: Iterable[NoteRecipe] | None = None,
+        note_definitions: Iterable[NoteDefinition] | None = None,
         tags: list[str] | None = None,
     ) -> None:
         self.providers = list(providers)
@@ -32,7 +33,7 @@ class DeckBuilder:
         self.deck = deck
         self.note_type = note_type
         self.map_fields = map_fields or default_field_map
-        self.recipes = list(recipes or [])
+        self.note_definitions = list(note_definitions or [])
         self.tags = tags or []
 
     def add_word(
@@ -63,11 +64,12 @@ class DeckBuilder:
         )
 
     def _route(self, info: WordInfo) -> tuple[str, FieldMap]:
-        """Pick the note type and field map for a word: first matching recipe
-        wins, else the catch-all `note_type` + `map_fields`."""
-        for recipe in self.recipes:
-            if recipe.applies_to(info):
-                return recipe.note_type, recipe.map_fields
+        """Pick the note type and field map for a word: first note definition
+        whose `applies` matches wins (filled by its `render`), else the catch-all
+        `note_type` + `map_fields`."""
+        for note_def in self.note_definitions:
+            if note_def.applies(info):
+                return note_def.name, note_def.render
         return self.note_type, self.map_fields
 
     def lookup(

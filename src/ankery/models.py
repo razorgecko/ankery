@@ -45,7 +45,7 @@ class WordInfo(BaseModel):
     # nominative article lives in `gender`). Providers normalize to this at their
     # boundary — verbformen reads only the form cell; the LLM is asked for bare
     # forms by the prompt and the output is stripped defensively
-    # (providers/normalize.py) — so consumers (recipes, Anki templates) need no
+    # (providers/normalize.py) — so consumers (note templates, Anki) need no
     # stripping.
     inflections: dict[str, str] = Field(default_factory=dict)
 

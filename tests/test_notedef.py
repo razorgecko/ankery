@@ -1,9 +1,9 @@
 from ankery.models import WordInfo
-from ankery.recipes import (
-    build_recipes,
-    map_noun_fields,
-    map_verb_fields,
-)
+from ankery.notedef import NoteDefinition, default_field_map, load_note_definitions
+
+
+def _defs() -> dict[str, NoteDefinition]:
+    return {d.name: d for d in load_note_definitions()}
 
 
 def _noun() -> WordInfo:
@@ -39,8 +39,19 @@ def _verb() -> WordInfo:
     )
 
 
-def test_noun_map_fills_the_noun_model_fields():
-    fields = map_noun_fields(_noun())
+def test_bundled_definitions_load_with_names_id_and_field_order():
+    defs = _defs()
+
+    noun = defs["Noun (DE)"]
+    assert noun.model_id == 1986815750
+    assert noun.applies_to == "noun"
+    # Word leads: Anki keys duplicate detection on the first field.
+    assert noun.fields[0] == "Word"
+    assert defs["Verb (DE)"].applies_to == "verb"
+
+
+def test_noun_render_fills_the_noun_model_fields():
+    fields = _defs()["Noun (DE)"].render(_noun())
 
     assert fields == {
         "Article": "das",
@@ -52,10 +63,9 @@ def test_noun_map_fills_the_noun_model_fields():
     }
 
 
-def test_noun_map_copies_forms_verbatim_no_stripping():
-    # Normalization (dropping the article) is the provider's job, not the map's.
-    # The map must copy the form through untouched — so an article-bearing value
-    # would survive, proving the map is not where stripping happens.
+def test_render_copies_forms_verbatim_no_stripping():
+    # Normalization (dropping the article) is the provider's job, not the
+    # template's. An article-bearing value must survive the map untouched.
     info = WordInfo(
         word="Haus",
         source="test",
@@ -63,14 +73,14 @@ def test_noun_map_copies_forms_verbatim_no_stripping():
         gender="das",
         inflections={"nominative_pl": "die Häuser", "genitive_sg": "des Hauses"},
     )
-    fields = map_noun_fields(info)
+    fields = _defs()["Noun (DE)"].render(info)
 
     assert fields["Plural"] == "die Häuser"
     assert fields["GenitiveSg"] == "des Hauses"
 
 
-def test_verb_map_fills_present_forms_as_separate_fields():
-    fields = map_verb_fields(_verb())
+def test_verb_render_fills_present_forms_as_separate_fields():
+    fields = _defs()["Verb (DE)"].render(_verb())
 
     assert fields["Infinitive"] == "sehen"
     assert fields["Aux"] == "haben"
@@ -86,12 +96,12 @@ def test_verb_map_fills_present_forms_as_separate_fields():
     assert fields["Present3pl"] == "sehen"
 
 
-def test_verb_map_uses_empty_string_for_missing_present_forms():
+def test_verb_render_uses_empty_string_for_missing_present_forms():
     info = WordInfo(
         word="x", source="test", part_of_speech="verb",
         inflections={"present_1sg": "bin", "present_3sg": "ist"},
     )
-    fields = map_verb_fields(info)
+    fields = _defs()["Verb (DE)"].render(info)
 
     assert fields["Present1sg"] == "bin"
     assert fields["Present3sg"] == "ist"
@@ -99,30 +109,45 @@ def test_verb_map_uses_empty_string_for_missing_present_forms():
     assert fields["Present3pl"] == ""
 
 
-def test_maps_tolerate_absent_data():
+def test_render_tolerates_absent_data_without_literal_none():
+    # Optional WordInfo fields are None, not absent; they must render "" not
+    # the string "None", and missing inflection keys must render "".
     bare = WordInfo(word="Ding", source="test", part_of_speech="noun")
-    fields = map_noun_fields(bare)
+    fields = _defs()["Noun (DE)"].render(bare)
 
-    assert fields["Word"] == "Ding"
-    assert fields["Article"] == ""
-    assert fields["Plural"] == ""
+    assert fields == {
+        "Word": "Ding",
+        "Article": "",
+        "Plural": "",
+        "GenitiveSg": "",
+        "Translation": "",
+        "Example": "",
+    }
 
 
-def test_build_recipes_routes_noun_and_verb_by_pos():
-    recipes = build_recipes(noun_note_type="Noun (DE)", verb_note_type="Verb (DE)")
+def test_applies_routes_by_part_of_speech():
+    defs = _defs()
 
-    noun_recipe = next(r for r in recipes if r.applies_to(_noun()))
-    verb_recipe = next(r for r in recipes if r.applies_to(_verb()))
-
-    assert noun_recipe.note_type == "Noun (DE)"
-    assert verb_recipe.note_type == "Verb (DE)"
+    assert defs["Noun (DE)"].applies(_noun())
+    assert not defs["Noun (DE)"].applies(_verb())
+    assert defs["Verb (DE)"].applies(_verb())
     # An adjective matches neither, so it falls through to the catch-all.
     adj = WordInfo(word="schön", source="test", part_of_speech="adjective")
-    assert not any(r.applies_to(adj) for r in recipes)
+    assert not any(d.applies(adj) for d in defs.values())
 
 
-def test_build_recipes_skips_disabled_part_of_speech():
-    recipes = build_recipes(noun_note_type="", verb_note_type="Verb (DE)")
+def test_default_field_map_is_the_procedural_catch_all():
+    info = WordInfo(
+        word="Buch",
+        source="test",
+        gender="das",
+        translations=["book"],
+        definitions=["gebundene Seiten"],
+        inflections={"nominative_pl": "Bücher"},
+    )
+    fields = default_field_map(info)
 
-    assert [r.note_type for r in recipes] == ["Verb (DE)"]
-    assert not any(r.applies_to(_noun()) for r in recipes)
+    # Nouns show their article so gender is learned with the word.
+    assert fields["Front"] == "das Buch"
+    assert "book" in fields["Back"]
+    assert "nominative_pl: Bücher" in fields["Back"]

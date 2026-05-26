@@ -1,73 +1,67 @@
 """Throwaway: import a deck so its note types (Noun, Verb) land in Anki.
 
-Run once, import the .apkg, delete the sample cards if you like -- the note
-types stay. Templates follow tmp_card_examples.txt.
+The note types are now defined in ``src/ankery/notes/*.toml``. This script turns
+each definition that carries a model id + card templates into a genanki model,
+fills a sample note through the same ``[map]`` the runtime uses, and writes a
+deck so the types land in Anki on import. Field names live in the .toml only.
 
     uv run python scripts/build_deck.py
 """
 
 import genanki
 
-# Stable random IDs so re-imports update instead of duplicating.
-noun_model = genanki.Model(
-    1986815750,
-    "Noun (DE)",
-    # Word first: Anki keys duplicate detection on the first field, so leading
-    # with Article ("der"/"die"/"das") would flag every same-gender noun as a dup.
-    fields=[{"name": n} for n in ("Word", "Article", "Plural", "GenitiveSg",
-                                  "Translation", "Example")],
-    templates=[
-        {  # N1 Recognition (DE->EN)
-            "name": "N1 Recognition",
-            "qfmt": "{{Article}} {{Word}}",
-            "afmt": "{{FrontSide}}<hr id=answer>{{Translation}}<br><br>"
-                    "Pl. {{Plural}} &nbsp; Gen. {{GenitiveSg}}<br><br>{{Example}}",
-        },
-        {  # N2 Production (EN->DE): grades gender + plural only
-            "name": "N2 Production",
-            "qfmt": "{{Translation}} (noun)",
-            "afmt": "{{FrontSide}}<hr id=answer>"
-                    "{{Article}} {{Word}}, Pl. {{Plural}}, Gen. {{GenitiveSg}}",
-        },
-    ],
-)
+from ankery.models import WordInfo
+from ankery.notedef import NoteDefinition, load_note_definitions
 
-verb_model = genanki.Model(
-    1890202981,
-    "Verb (DE)",
-    fields=[{"name": n} for n in ("Infinitive", "Translation", "Aux",
-                                  "Present", "Preterite", "Perfect", "Example")],
-    templates=[
-        {  # V1 Recognition (DE->EN)
-            "name": "V1 Recognition",
-            "qfmt": "{{Infinitive}}",
-            "afmt": "{{FrontSide}}<hr id=answer>{{Translation}}<br><br>"
-                    "Präsens<br>{{Present}}<br>"
-                    "Prät. {{Preterite}} &nbsp; Perf. {{Perfect}}<br><br>{{Example}}",
+
+def to_model(note_def: NoteDefinition) -> genanki.Model:
+    """Build a genanki model from a note definition's fields + card templates."""
+    kwargs = {"css": note_def.css} if note_def.css else {}
+    return genanki.Model(
+        note_def.model_id,
+        note_def.name,
+        fields=[{"name": name} for name in note_def.fields],
+        templates=[
+            {"name": c.name, "qfmt": c.qfmt, "afmt": c.afmt} for c in note_def.cards
+        ],
+        **kwargs,
+    )
+
+
+# Sample words, one per routed note type. Rendered through the note definition's
+# own map, so the seeded note proves the field map and the model agree.
+SAMPLES = [
+    WordInfo(
+        word="Haus", part_of_speech="noun", gender="das",
+        translations=["house", "home"],
+        inflections={"nominative_pl": "Häuser", "genitive_sg": "Hauses"},
+        examples=["Das Haus ist groß."], source="sample",
+    ),
+    WordInfo(
+        word="sehen", part_of_speech="verb", translations=["to see"],
+        inflections={
+            "auxiliary": "haben",
+            "present_1sg": "sehe", "present_2sg": "siehst", "present_3sg": "sieht",
+            "present_1pl": "sehen", "present_2pl": "seht", "present_3pl": "sehen",
+            "preterite": "sah", "perfect": "hat gesehen",
         },
-        {  # V2 Production (EN->DE)
-            "name": "V2 Production",
-            "qfmt": "{{Translation}} (verb)",
-            "afmt": "{{FrontSide}}<hr id=answer>{{Infinitive}} ({{Aux}})",
-        },
-        {  # V3 Forms recall: the one active recall
-            "name": "V3 Forms recall",
-            "qfmt": "{{Infinitive}} – {{Translation}}<br>conjugate: present (all six)",
-            "afmt": "{{FrontSide}}<hr id=answer>{{Present}}<hr>"
-                    "not graded: Prät. {{Preterite}} / Perf. {{Perfect}} ({{Aux}})",
-        },
-    ],
-)
+        examples=["Ich sehe dich."], source="sample",
+    ),
+]
+
+definitions = [d for d in load_note_definitions() if d.model_id is not None]
+models = {d.name: to_model(d) for d in definitions}
 
 deck = genanki.Deck(1754859910, "German::ankery")
-
-deck.add_note(genanki.Note(model=noun_model, fields=[
-    "Haus", "das", "die Häuser", "des Hauses", "house, home", "Das Haus ist groß."]))
-
-deck.add_note(genanki.Note(model=verb_model, fields=[
-    "sehen", "to see", "haben",
-    "ich sehe / du siehst / er sieht / wir sehen / ihr seht / sie sehen",
-    "sah", "hat gesehen", "Ich sehe dich."]))
+for info in SAMPLES:
+    note_def = next(d for d in definitions if d.applies(info))
+    fields = note_def.render(info)
+    deck.add_note(
+        genanki.Note(
+            model=models[note_def.name],
+            fields=[fields[name] for name in note_def.fields],
+        )
+    )
 
 genanki.Package(deck).write_to_file("ankery_german.apkg")
 print("wrote ankery_german.apkg")

@@ -3,8 +3,8 @@
 The `inflections` dict on `WordInfo` is intentionally untyped, so consistency
 comes from pinning the key vocabulary in the system prompt and instructing the
 LLM to use exactly those keys. Keys are lowercase, underscore-separated
-grammatical labels (`genitive_sg`, `present_3sg`, ...) that the note recipes in
-`recipes.py` read back out.
+grammatical labels (`genitive_sg`, `present_3sg`, ...) that the note
+definitions in `notes/*.toml` read back out.
 
 The prompt is parameterised by the source/target language passed per request
 (`build_user_prompt`); grammatical rules are stated in terms of "the source

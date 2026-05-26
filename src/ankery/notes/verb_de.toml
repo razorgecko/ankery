@@ -1,0 +1,34 @@
+name = "Verb (DE)"
+id = 1890202981
+applies_to = "verb"
+
+# The six present forms are separate fields; the "ich .. / du .." layout lives in
+# the card templates below, not in the map.
+[map]
+Infinitive  = "{{ word }}"
+Translation = "{{ translations | join(', ') }}"
+Aux         = "{{ inflections.auxiliary }}"
+Present1sg  = "{{ inflections.present_1sg }}"
+Present2sg  = "{{ inflections.present_2sg }}"
+Present3sg  = "{{ inflections.present_3sg }}"
+Present1pl  = "{{ inflections.present_1pl }}"
+Present2pl  = "{{ inflections.present_2pl }}"
+Present3pl  = "{{ inflections.present_3pl }}"
+Preterite   = "{{ inflections.preterite }}"
+Perfect     = "{{ inflections.perfect }}"
+Example     = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
+
+[[cards]]
+name = "V1 Recognition"
+qfmt = "{{Infinitive}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Translation}}<br><br>Präsens<br>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<br>Prät. {{Preterite}} &nbsp; Perf. {{Perfect}}<br><br>{{Example}}"
+
+[[cards]]
+name = "V2 Production"
+qfmt = "{{Translation}} (verb)"
+afmt = "{{FrontSide}}<hr id=answer>{{Infinitive}} ({{Aux}})"
+
+[[cards]]
+name = "V3 Forms recall"
+qfmt = "{{Infinitive}} – {{Translation}}<br>conjugate: present (all six)"
+afmt = "{{FrontSide}}<hr id=answer>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<hr>not graded: Prät. {{Preterite}} / Perf. {{Perfect}} ({{Aux}})"
