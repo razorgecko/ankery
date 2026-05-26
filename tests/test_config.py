@@ -5,6 +5,7 @@ from pathlib import Path
 from anki_deckbuilder.config import Config, ConfigError, _config_dir, build_deck_builder
 from anki_deckbuilder.manager import DeckBuilder, default_field_map
 from anki_deckbuilder.providers.llm import LLMProvider
+from anki_deckbuilder.providers.verbformen import VerbformenProvider
 from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
 
 
@@ -68,6 +69,12 @@ def test_from_env_parses_bools():
     assert Config.from_env({"ANKIDECK_LLM_JSON_FORMAT": "off"}).llm_request_json_format is False
 
 
+def test_from_env_parses_comma_separated_providers():
+    config = Config.from_env({"ANKIDECK_PROVIDERS": "llm, verbformen"})
+
+    assert config.providers == ("llm", "verbformen")
+
+
 def test_from_env_parses_comma_separated_tags():
     config = Config.from_env({"ANKIDECK_TAGS": "auto, de , vocab"})
 
@@ -120,6 +127,13 @@ def test_load_reads_file_values(tmp_path):
     assert config.llm_base_url == "http://llm.local/v1"
     assert config.llm_timeout == 12.0  # int in TOML coerced to float
     assert config.tags == ("auto", "de")  # list coerced to tuple
+
+
+def test_load_reads_providers_list(tmp_path):
+    path = _write(tmp_path, 'providers = ["verbformen", "llm"]\n')
+    config = Config.load(path=path, environ={})
+
+    assert config.providers == ("verbformen", "llm")  # list coerced to tuple
 
 
 def test_load_env_overrides_file(tmp_path):
@@ -218,13 +232,14 @@ def test_api_key_read_from_env_only():
 
 
 def test_build_deck_builder_passes_api_key():
-    builder = build_deck_builder(Config(llm_api_key="sk-123"))
+    builder = build_deck_builder(Config(llm_api_key="sk-123", providers=("llm",)))
     [provider] = builder.providers
     assert provider.api_key == "sk-123"
 
 
 def test_build_deck_builder_wires_provider_and_sink():
     config = Config(
+        providers=("llm",),
         llm_base_url="http://llm.local/v1",
         llm_model="my-model",
         anki_url="http://anki.local:8765",
@@ -247,6 +262,40 @@ def test_build_deck_builder_wires_provider_and_sink():
 
     assert isinstance(builder.sink, AnkiConnectSink)
     assert builder.sink.base_url == "http://anki.local:8765"
+
+
+def test_build_deck_builder_builds_chain_in_configured_order():
+    # The default German chain: verbformen first, LLM as fallback.
+    builder = build_deck_builder(Config())
+
+    assert [p.name for p in builder.providers] == ["verbformen", "llm"]
+    assert isinstance(builder.providers[0], VerbformenProvider)
+    assert isinstance(builder.providers[1], LLMProvider)
+
+
+def test_build_deck_builder_honors_provider_order():
+    # Reordering the names reorders the fallback chain.
+    builder = build_deck_builder(Config(providers=("llm", "verbformen")))
+
+    assert [p.name for p in builder.providers] == ["llm", "verbformen"]
+
+
+def test_build_deck_builder_passes_verbformen_timeout():
+    builder = build_deck_builder(
+        Config(providers=("verbformen",), verbformen_timeout=42.0)
+    )
+    [provider] = builder.providers
+    assert provider._client.timeout.read == 42.0
+
+
+def test_build_deck_builder_rejects_unknown_provider():
+    with pytest.raises(ConfigError, match="unknown provider 'nope'"):
+        build_deck_builder(Config(providers=("nope",)))
+
+
+def test_build_deck_builder_rejects_empty_chain():
+    with pytest.raises(ConfigError, match="no providers configured"):
+        build_deck_builder(Config(providers=()))
 
 
 def test_build_deck_builder_accepts_custom_field_map():

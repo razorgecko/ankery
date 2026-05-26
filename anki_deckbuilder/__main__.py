@@ -25,6 +25,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="path to an auth TOML holding the api key (overrides ANKIDECK_AUTH; "
         "default ~/.config/anki_deckbuilder/auth.toml)",
     )
+    parser.add_argument(
+        "--provider",
+        action="append",
+        metavar="NAME",
+        help="provider to use, in fallback order (repeatable; overrides "
+        "ANKIDECK_PROVIDERS). Known: llm, verbformen.",
+    )
     parser.add_argument("--deck", help="destination deck (overrides ANKIDECK_DECK)")
     parser.add_argument("--source-lang", help="language of the words")
     parser.add_argument("--target-lang", help="language to translate into")
@@ -40,6 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
 def _config_from_args(args: argparse.Namespace) -> Config:
     # Env is the base; explicit flags win over it.
     overrides: dict[str, object] = {}
+    if args.provider:
+        overrides["providers"] = tuple(args.provider)
     if args.deck is not None:
         overrides["deck"] = args.deck
     if args.source_lang is not None:

@@ -1,10 +1,13 @@
 import os
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from anki_deckbuilder.manager import DeckBuilder
+from anki_deckbuilder.providers.base import WordProvider
 from anki_deckbuilder.providers.llm import LLMProvider
+from anki_deckbuilder.providers.verbformen import VerbformenProvider
 from anki_deckbuilder.recipes import FieldMap, build_recipes, default_field_map
 from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
 
@@ -41,6 +44,13 @@ class Config:
     is a callable, not a value — pass it to `build_deck_builder` instead.
     """
 
+    # Provider chain, tried in fallback order: the first name with a result for
+    # a word wins. Names index the registry in `build_deck_builder`. The German
+    # default puts verbformen first (authoritative scraped gender/declension/
+    # conjugation) with the LLM behind it to catch what it misses or non-German
+    # words. Set to a single name to use one provider, or reorder to taste.
+    providers: tuple[str, ...] = ("verbformen", "llm")
+
     # LLM provider. base_url is the OpenAI-compatible root; the defaults target
     # a local llama.cpp `llama-server` (port 8080), but any compatible server
     # works. llama-server ignores the model field and serves whatever GGUF is
@@ -53,6 +63,9 @@ class Config:
     # sends no Authorization header, which is correct for local servers. A
     # secret: only ever read from the env, never the config file or a CLI flag.
     llm_api_key: str | None = None
+
+    # verbformen.com scraping provider.
+    verbformen_timeout: float = 15.0
 
     # AnkiConnect sink.
     anki_url: str = "http://localhost:8765"
@@ -130,18 +143,20 @@ class Config:
                 return fallback
             return raw.strip().lower() in {"1", "true", "yes", "on"}
 
-        def _tags(key: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
+        def _csv(key: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
             raw = env.get(ENV_PREFIX + key)
             if raw is None:
                 return fallback
             return tuple(t.strip() for t in raw.split(",") if t.strip())
 
         return cls(
+            providers=_csv("PROVIDERS", base.providers),
             llm_base_url=_str("LLM_URL", base.llm_base_url),
             llm_model=_str("LLM_MODEL", base.llm_model),
             llm_timeout=_float("LLM_TIMEOUT", base.llm_timeout),
             llm_request_json_format=_bool("LLM_JSON_FORMAT", base.llm_request_json_format),
             llm_api_key=_opt_str("LLM_API_KEY", base.llm_api_key),
+            verbformen_timeout=_float("VERBFORMEN_TIMEOUT", base.verbformen_timeout),
             anki_url=_str("ANKI_URL", base.anki_url),
             anki_timeout=_float("ANKI_TIMEOUT", base.anki_timeout),
             allow_duplicate=_bool("ALLOW_DUPLICATE", base.allow_duplicate),
@@ -149,7 +164,7 @@ class Config:
             note_type=_str("NOTE_TYPE", base.note_type),
             noun_note_type=_str("NOUN_NOTE_TYPE", base.noun_note_type),
             verb_note_type=_str("VERB_NOTE_TYPE", base.verb_note_type),
-            tags=_tags("TAGS", base.tags),
+            tags=_csv("TAGS", base.tags),
             source_language=_str("SOURCE_LANG", base.source_language),
             target_language=_str("TARGET_LANG", base.target_language),
         )
@@ -184,10 +199,11 @@ def _load_config_file(path: Path) -> dict:
             )
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 
-    # TOML gives native types; only nudge the two that Config types differently.
-    if isinstance(raw.get("tags"), list):
-        raw["tags"] = tuple(raw["tags"])
-    for key in ("llm_timeout", "anki_timeout"):
+    # TOML gives native types; only nudge the ones Config types differently.
+    for key in ("tags", "providers"):
+        if isinstance(raw.get(key), list):
+            raw[key] = tuple(raw[key])
+    for key in ("llm_timeout", "anki_timeout", "verbformen_timeout"):
         if key in raw:
             raw[key] = float(raw[key])
     return raw
@@ -211,22 +227,54 @@ def _load_auth_file(path: Path) -> dict:
     return raw
 
 
-def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) -> DeckBuilder:
-    """Wire the provider chain and sink from config into a ready DeckBuilder."""
-    provider = LLMProvider(
+# Provider name -> how to build it from config. Each entry is the seam the
+# `providers` chain selects from; adding a provider is registering it here.
+def _build_llm(config: "Config") -> WordProvider:
+    return LLMProvider(
         base_url=config.llm_base_url,
         model=config.llm_model,
         timeout=config.llm_timeout,
         request_json_format=config.llm_request_json_format,
         api_key=config.llm_api_key,
     )
+
+
+def _build_verbformen(config: "Config") -> WordProvider:
+    return VerbformenProvider(timeout=config.verbformen_timeout)
+
+
+PROVIDER_REGISTRY: dict[str, Callable[["Config"], WordProvider]] = {
+    "llm": _build_llm,
+    "verbformen": _build_verbformen,
+}
+
+
+def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) -> DeckBuilder:
+    """Wire the provider chain and sink from config into a ready DeckBuilder.
+
+    `config.providers` names the chain in fallback order; each name is looked up
+    in `PROVIDER_REGISTRY`. An unknown name or an empty chain is a config error.
+    """
+    if not config.providers:
+        raise ConfigError("no providers configured; set `providers` to at least one of: "
+                          f"{', '.join(sorted(PROVIDER_REGISTRY))}.")
+    providers = []
+    for name in config.providers:
+        try:
+            build = PROVIDER_REGISTRY[name]
+        except KeyError:
+            raise ConfigError(
+                f"unknown provider {name!r}; known providers: "
+                f"{', '.join(sorted(PROVIDER_REGISTRY))}."
+            ) from None
+        providers.append(build(config))
     sink = AnkiConnectSink(
         base_url=config.anki_url,
         timeout=config.anki_timeout,
         allow_duplicate=config.allow_duplicate,
     )
     return DeckBuilder(
-        [provider],
+        providers,
         sink,
         deck=config.deck,
         note_type=config.note_type,

@@ -119,6 +119,15 @@ def test_flags_override_config(patched):
     assert config.allow_duplicate is True
 
 
+def test_provider_flag_overrides_chain(patched):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+
+    cli.main(["--provider", "verbformen", "--provider", "llm", "Buch"])
+
+    assert captured["config"].providers == ("verbformen", "llm")
+
+
 def test_languages_passed_through_to_builder(patched):
     captured, set_results = patched
     set_results({"Buch": 1})

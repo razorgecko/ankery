@@ -3,6 +3,7 @@ name = "anki-deckbuilder"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "beautifulsoup4>=4.14.3",
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
 ]
