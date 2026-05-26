@@ -189,10 +189,10 @@ def test_default_field_map_prefixes_noun_with_article():
         gender="das",
         translations=["book"],
         definitions=["gebundene Seiten"],
-        inflections={"plural": "Bücher"},
+        inflections={"nominative_pl": "Bücher"},
     )
     fields = default_field_map(info)
 
     assert fields["Front"] == "das Buch"
     assert "book" in fields["Back"]
-    assert "plural: Bücher" in fields["Back"]
+    assert "nominative_pl: Bücher" in fields["Back"]

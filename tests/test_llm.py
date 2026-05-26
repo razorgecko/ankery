@@ -25,7 +25,7 @@ def test_fetch_returns_wordinfo(httpx_mock):
             "part_of_speech": "noun",
             "gender": "das",
             "definitions": ["gebundene Seiten zum Lesen"],
-            "inflections": {"genitive_sg": "Buches", "plural": "Bücher"},
+            "inflections": {"genitive_sg": "Buches", "nominative_pl": "Bücher"},
         }
     )
     httpx_mock.add_response(url=CHAT_URL, json=_completion(word_json))
@@ -35,7 +35,7 @@ def test_fetch_returns_wordinfo(httpx_mock):
     assert info is not None
     assert info.word == "Buch"
     assert info.gender == "das"
-    assert info.inflections["plural"] == "Bücher"
+    assert info.inflections["nominative_pl"] == "Bücher"
 
 
 def test_fetch_sets_provenance_and_languages(httpx_mock):

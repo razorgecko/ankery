@@ -14,7 +14,7 @@ def _noun() -> WordInfo:
         gender="das",
         translations=["house", "home"],
         examples=["Das Haus ist groß."],
-        inflections={"plural": "Häuser", "genitive_sg": "Hauses"},
+        inflections={"nominative_pl": "Häuser", "genitive_sg": "Hauses"},
     )
 
 
@@ -50,6 +50,22 @@ def test_noun_map_fills_the_noun_model_fields():
         "Translation": "house, home",
         "Example": "Das Haus ist groß.",
     }
+
+
+def test_noun_map_strips_the_article_from_declension_forms():
+    # verbformen gives declension forms with their article ("des Hauses"); the
+    # Noun model carries the article separately, so the field holds the bare form.
+    info = WordInfo(
+        word="Haus",
+        source="test",
+        part_of_speech="noun",
+        gender="das",
+        inflections={"nominative_pl": "die Häuser", "genitive_sg": "des Hauses"},
+    )
+    fields = map_noun_fields(info)
+
+    assert fields["Plural"] == "Häuser"
+    assert fields["GenitiveSg"] == "Hauses"
 
 
 def test_verb_map_assembles_the_present_paradigm_with_pronouns():

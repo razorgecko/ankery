@@ -55,14 +55,14 @@ def test_noun_declension_table_parsed(httpx_mock):
     info = VerbformenProvider().fetch("Haus", source_language="de", target_language="en")
 
     assert info.inflections == {
-        "nom_sg": "das Haus",
-        "gen_sg": "des Hauses",
-        "dat_sg": "dem Haus",
-        "acc_sg": "das Haus",
-        "nom_pl": "die Häuser",
-        "gen_pl": "der Häuser",
-        "dat_pl": "den Häusern",
-        "acc_pl": "die Häuser",
+        "nominative_sg": "das Haus",
+        "genitive_sg": "des Hauses",
+        "dative_sg": "dem Haus",
+        "accusative_sg": "das Haus",
+        "nominative_pl": "die Häuser",
+        "genitive_pl": "der Häuser",
+        "dative_pl": "den Häusern",
+        "accusative_pl": "die Häuser",
     }
 
 

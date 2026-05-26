@@ -32,7 +32,12 @@ _HEADERS = {
 }
 # Footnote superscript digits the site appends to forms (e.g. ⁵ ⁶)
 _SUPERSCRIPTS = str.maketrans("", "", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-_CASES = {"Nominative": "nom", "Genitive": "gen", "Dative": "dat", "Accusative": "acc"}
+_CASES = {
+    "Nominative": "nominative",
+    "Genitive": "genitive",
+    "Dative": "dative",
+    "Accusative": "accusative",
+}
 # Subject pronouns keying a conjugation table's rows, in citation order. The
 # present-indicative table is the first table whose rows are exactly these.
 _PRONOUNS = ("ich", "du", "er", "wir", "ihr", "sie")
@@ -441,6 +446,12 @@ def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
     Each row is <th class="vKs" title="Nominative/…"> + <td>article</td> +
     <td>form</td>. The form cell concatenates several <b>/<i>/<u> nodes, which
     get_text() joins; slash-separated variants keep only the primary form.
+
+    Keys are `{case}_{number}` with the case spelled out (`genitive_sg`,
+    `nominative_pl`) — the canonical inflection vocabulary the recipes and the
+    LLM provider speak (prompts.py), and the same `_sg`/`_pl` suffixes the verb
+    keys use. Values keep the article ("des Hauses"); the recipe strips it when
+    filling the article-less Noun fields.
     """
     decl = [t for t in soup.find_all("table") if t.find("th", class_="vKs")]
 

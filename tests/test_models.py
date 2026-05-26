@@ -36,11 +36,11 @@ def test_german_noun_inflections():
         target_language="en",
         part_of_speech="noun",
         gender="das",
-        inflections={"genitive_sg": "Buches", "plural": "Bücher"},
+        inflections={"genitive_sg": "Buches", "nominative_pl": "Bücher"},
         source="local_llm",
     )
     assert info.gender == "das"
-    assert info.inflections["plural"] == "Bücher"
+    assert info.inflections["nominative_pl"] == "Bücher"
 
 
 def test_german_verb_present_paradigm():

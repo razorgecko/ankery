@@ -35,7 +35,7 @@ The `inflections` object must use EXACTLY the canonical keys below for the \
 word's part of speech (omit a key only if it genuinely does not apply):
 
 NOUN keys:
-  genitive_sg, plural
+  genitive_sg, nominative_pl
 
 VERB keys:
   present_1sg, present_2sg, present_3sg, present_1pl, present_2pl, present_3pl, \

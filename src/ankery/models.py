@@ -37,7 +37,7 @@ class WordInfo(BaseModel):
 
     # Part-of-speech-appropriate inflected forms keyed by a canonical label.
     # The key vocabulary is pinned per language/POS in prompts.py so the LLM
-    # fills consistent keys (e.g. "plural", "present_3sg") rather than ad-hoc
+    # fills consistent keys (e.g. "nominative_pl", "present_3sg") rather than ad-hoc
     # ones. Kept as a flat dict so the type stays language-neutral and the
     # Anki-field mapping stays simple.
     inflections: dict[str, str] = Field(default_factory=dict)

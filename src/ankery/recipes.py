@@ -20,6 +20,12 @@ from ankery.models import WordInfo
 
 FieldMap = Callable[[WordInfo], dict[str, str]]
 
+# Definite articles across all cases, stripped from a declension form so the
+# bare noun stands alone in its field (the Noun model carries the nominative
+# article separately). verbformen gives forms with the article ("des Hauses");
+# the LLM gives them bare, so the strip is a no-op there.
+_ARTICLES = {"der", "die", "das", "des", "dem", "den"}
+
 
 @dataclass(frozen=True)
 class NoteRecipe:
@@ -53,8 +59,8 @@ def map_noun_fields(info: WordInfo) -> dict[str, str]:
     return {
         "Word": info.word,
         "Article": info.gender or "",
-        "Plural": info.inflections.get("plural", ""),
-        "GenitiveSg": info.inflections.get("genitive_sg", ""),
+        "Plural": _bare(info.inflections.get("nominative_pl", "")),
+        "GenitiveSg": _bare(info.inflections.get("genitive_sg", "")),
         "Translation": ", ".join(info.translations),
         "Example": _first_example(info),
     }
@@ -112,6 +118,12 @@ def _present_paradigm(info: WordInfo) -> str:
         if info.inflections.get(key)
     ]
     return " / ".join(parts)
+
+
+def _bare(form: str) -> str:
+    """Drop a leading definite article from a declension form ("des Hauses")."""
+    head, _, rest = form.partition(" ")
+    return rest if head.lower() in _ARTICLES and rest else form
 
 
 def _first_example(info: WordInfo) -> str:
