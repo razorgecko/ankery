@@ -117,9 +117,9 @@ def _present_paradigm(info: WordInfo) -> str:
 def _first_example(info: WordInfo) -> str:
     if not info.examples:
         return ""
-    german = info.examples[0]
+    sentence = info.examples[0]
     gloss = info.example_translations[0] if info.example_translations else ""
-    return f"{german} — {gloss}" if gloss else german
+    return f"{sentence} — {gloss}" if gloss else sentence
 
 
 def _front(info: WordInfo) -> str:
