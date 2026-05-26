@@ -1,6 +1,8 @@
 import argparse
+import os
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 from anki_deckbuilder.config import Config, ConfigError, build_deck_builder
 from anki_deckbuilder.providers.base import ProviderError
@@ -13,6 +15,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Look up words and add them to an Anki deck.",
     )
     parser.add_argument("words", nargs="+", help="one or more words to add")
+    parser.add_argument(
+        "--config",
+        help="path to a config TOML (overrides ANKIDECK_CONFIG; "
+        "default ~/.config/anki_deckbuilder/config.toml)",
+    )
     parser.add_argument("--deck", help="destination deck (overrides ANKIDECK_DECK)")
     parser.add_argument("--source-lang", help="language of the words")
     parser.add_argument("--target-lang", help="language to translate into")
@@ -39,7 +46,12 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     if args.allow_duplicate:
         overrides["allow_duplicate"] = True
 
-    config = Config.load()
+    # Which config file to load: --config flag wins over the ANKIDECK_CONFIG
+    # env var; neither set means Config.load uses its default path.
+    config_path = args.config or os.environ.get("ANKIDECK_CONFIG")
+    path = Path(config_path).expanduser() if config_path else None
+
+    config = Config.load(path=path)
     return replace(config, **overrides) if overrides else config
 
 

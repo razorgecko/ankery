@@ -1,18 +1,19 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 
 from anki_deckbuilder.models import WordInfo
 from anki_deckbuilder.providers.base import ProviderError, WordProvider
+from anki_deckbuilder.recipes import FieldMap, NoteRecipe, default_field_map
 from anki_deckbuilder.sinks.base import AnkiSink
-
-FieldMap = Callable[[WordInfo], dict[str, str]]
 
 
 class DeckBuilder:
     """Orchestrates the provider chain, field mapping, and sink.
 
-    Owns the one piece of glue the layers don't: turning a `WordInfo` into the
-    flat field dict a note needs. Everything else is delegated — providers
-    produce the info, the sink writes it.
+    Owns the one piece of glue the layers don't: choosing a note type for a
+    `WordInfo` and turning it into the flat field dict a note needs. A word is
+    routed by part of speech through `recipes` (first match wins); a word that
+    matches none falls back to `note_type` + `map_fields`. Everything else is
+    delegated — providers produce the info, the sink writes it.
     """
 
     def __init__(
@@ -23,6 +24,7 @@ class DeckBuilder:
         deck: str,
         note_type: str,
         map_fields: FieldMap | None = None,
+        recipes: Iterable[NoteRecipe] | None = None,
         tags: list[str] | None = None,
     ) -> None:
         self.providers = list(providers)
@@ -30,6 +32,7 @@ class DeckBuilder:
         self.deck = deck
         self.note_type = note_type
         self.map_fields = map_fields or default_field_map
+        self.recipes = list(recipes or [])
         self.tags = tags or []
 
     def add_word(
@@ -51,13 +54,21 @@ class DeckBuilder:
         )
         if info is None:
             return None
-        fields = self.map_fields(info)
+        note_type, map_fields = self._route(info)
         return self.sink.add_note(
             deck=self.deck,
-            note_type=self.note_type,
-            fields=fields,
+            note_type=note_type,
+            fields=map_fields(info),
             tags=self.tags,
         )
+
+    def _route(self, info: WordInfo) -> tuple[str, FieldMap]:
+        """Pick the note type and field map for a word: first matching recipe
+        wins, else the catch-all `note_type` + `map_fields`."""
+        for recipe in self.recipes:
+            if recipe.applies_to(info):
+                return recipe.note_type, recipe.map_fields
+        return self.note_type, self.map_fields
 
     def lookup(
         self,
@@ -89,37 +100,3 @@ class DeckBuilder:
         if last_error is not None:
             raise last_error
         return None
-
-
-def default_field_map(info: WordInfo) -> dict[str, str]:
-    """Render a `WordInfo` into Front/Back fields for a Basic-style note.
-
-    Deliberately simple — slice 5 (config) will let callers supply their own
-    mapping for richer note types. Fields are HTML, so lines are joined with
-    <br>.
-    """
-    return {"Front": _front(info), "Back": _back(info)}
-
-
-def _front(info: WordInfo) -> str:
-    # Show nouns with their article so the gender is learned with the word.
-    if info.gender:
-        return f"{info.gender} {info.word}"
-    return info.word
-
-
-def _back(info: WordInfo) -> str:
-    sections: list[str] = []
-    if info.translations:
-        sections.append(", ".join(info.translations))
-    if info.definitions:
-        sections.append("<br>".join(info.definitions))
-    if info.inflections:
-        sections.append(
-            "<br>".join(f"{key}: {value}" for key, value in info.inflections.items())
-        )
-    if info.examples:
-        sections.append("<br>".join(f"<i>{ex}</i>" for ex in info.examples))
-    if info.pronunciation:
-        sections.append(f"[{info.pronunciation}]")
-    return "<hr>".join(sections)

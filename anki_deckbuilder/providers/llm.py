@@ -85,6 +85,11 @@ class LLMProvider:
         try:
             return WordInfo.model_validate(data)
         except ValidationError as exc:
+            # Small local models routinely emit JSON of the wrong shape (a field
+            # as a string instead of a list, a missing required field). This is
+            # the untrusted boundary: bad output must not become a silent
+            # half-filled note, so raise rather than salvage. The CLI reports
+            # this error (word + reason) to the user.
             raise ProviderError(f"LLM output failed WordInfo validation: {exc}") from exc
 
 

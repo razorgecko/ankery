@@ -3,8 +3,9 @@ import tomllib
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
-from anki_deckbuilder.manager import DeckBuilder, FieldMap, default_field_map
+from anki_deckbuilder.manager import DeckBuilder
 from anki_deckbuilder.providers.llm import LLMProvider
+from anki_deckbuilder.recipes import FieldMap, build_recipes, default_field_map
 from anki_deckbuilder.sinks.ankiconnect import AnkiConnectSink
 
 ENV_PREFIX = "ANKIDECK_"
@@ -43,9 +44,15 @@ class Config:
     anki_timeout: float = 10.0
     allow_duplicate: bool = False
 
-    # Note destination.
+    # Note destination. `note_type` is the catch-all model for words that match
+    # no part-of-speech route (adjectives, adverbs, function words). Nouns and
+    # verbs route to their own models by part of speech; set either of these to
+    # "" to send that part of speech to the catch-all instead. Names match the
+    # models built by scripts/build_deck.py.
     deck: str = "Default"
     note_type: str = "Basic"
+    noun_note_type: str = "Noun (DE)"
+    verb_note_type: str = "Verb (DE)"
     tags: tuple[str, ...] = ()
 
     # Default language pair for lookups (a German -> English vocab builder).
@@ -119,6 +126,8 @@ class Config:
             allow_duplicate=_bool("ALLOW_DUPLICATE", base.allow_duplicate),
             deck=_str("DECK", base.deck),
             note_type=_str("NOTE_TYPE", base.note_type),
+            noun_note_type=_str("NOUN_NOTE_TYPE", base.noun_note_type),
+            verb_note_type=_str("VERB_NOTE_TYPE", base.verb_note_type),
             tags=_tags("TAGS", base.tags),
             source_language=_str("SOURCE_LANG", base.source_language),
             target_language=_str("TARGET_LANG", base.target_language),
@@ -180,5 +189,9 @@ def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) ->
         deck=config.deck,
         note_type=config.note_type,
         map_fields=map_fields or default_field_map,
+        recipes=build_recipes(
+            noun_note_type=config.noun_note_type,
+            verb_note_type=config.verb_note_type,
+        ),
         tags=list(config.tags),
     )
