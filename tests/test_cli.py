@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from anki_deckbuilder import __main__ as cli
@@ -138,6 +140,61 @@ def test_config_error_reports_and_exits_two(monkeypatch, capsys):
 
     assert code == 2  # distinct from the 1 used for per-word failures
     assert "config error: unknown config keys: dekc" in capsys.readouterr().err
+
+
+def _capture_load_path(monkeypatch) -> dict:
+    """Patch Config.load to record the path it was called with."""
+    seen: dict = {}
+
+    def fake_load(cls, *, path=None, **kwargs):
+        seen["path"] = path
+        return cls()
+
+    monkeypatch.setattr(Config, "load", classmethod(fake_load))
+    return seen
+
+
+def test_config_flag_sets_load_path(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+
+    cli.main(["--config", "/tmp/custom.toml", "Buch"])
+
+    assert seen["path"] == Path("/tmp/custom.toml")
+
+
+def test_config_env_var_used_when_no_flag(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+    monkeypatch.setenv("ANKIDECK_CONFIG", "/tmp/from-env.toml")
+
+    cli.main(["Buch"])
+
+    assert seen["path"] == Path("/tmp/from-env.toml")
+
+
+def test_config_flag_overrides_env_var(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+    monkeypatch.setenv("ANKIDECK_CONFIG", "/tmp/from-env.toml")
+
+    cli.main(["--config", "/tmp/from-flag.toml", "Buch"])
+
+    assert seen["path"] == Path("/tmp/from-flag.toml")
+
+
+def test_no_config_source_loads_default_path(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+    monkeypatch.delenv("ANKIDECK_CONFIG", raising=False)
+
+    cli.main(["Buch"])
+
+    assert seen["path"] is None  # Config.load falls back to its default path
 
 
 def test_missing_word_argument_is_an_argparse_error(capsys):

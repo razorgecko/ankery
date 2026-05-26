@@ -3,6 +3,7 @@ import pytest
 from anki_deckbuilder.manager import DeckBuilder, default_field_map
 from anki_deckbuilder.models import WordInfo
 from anki_deckbuilder.providers.base import ProviderError
+from anki_deckbuilder.recipes import NoteRecipe
 
 
 class FakeProvider:
@@ -140,6 +141,45 @@ def test_custom_field_map_is_used():
     builder.add_word("Buch", source_language="de", target_language="en")
 
     assert sink.calls[0]["fields"] == {"Word": "Buch"}
+
+
+def test_matching_recipe_picks_its_note_type_and_map():
+    sink = FakeSink()
+    recipe = NoteRecipe(
+        note_type="Verb (DE)",
+        map_fields=lambda info: {"Infinitive": info.word},
+        applies_to=lambda info: info.part_of_speech == "verb",
+    )
+    builder = _builder(
+        [FakeProvider("p", result=WordInfo(word="sehen", source="t", part_of_speech="verb"))],
+        sink,
+        recipes=[recipe],
+    )
+
+    builder.add_word("sehen", source_language="de", target_language="en")
+
+    assert sink.calls[0]["note_type"] == "Verb (DE)"
+    assert sink.calls[0]["fields"] == {"Infinitive": "sehen"}
+
+
+def test_word_matching_no_recipe_falls_back_to_default_note_type():
+    sink = FakeSink()
+    recipe = NoteRecipe(
+        note_type="Verb (DE)",
+        map_fields=lambda info: {"Infinitive": info.word},
+        applies_to=lambda info: info.part_of_speech == "verb",
+    )
+    builder = _builder(
+        [FakeProvider("p", result=WordInfo(word="schön", source="t", part_of_speech="adjective"))],
+        sink,
+        note_type="Basic",
+        recipes=[recipe],
+    )
+
+    builder.add_word("schön", source_language="de", target_language="en")
+
+    assert sink.calls[0]["note_type"] == "Basic"
+    assert "Front" in sink.calls[0]["fields"]
 
 
 def test_default_field_map_prefixes_noun_with_article():

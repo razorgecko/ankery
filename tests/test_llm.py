@@ -149,3 +149,14 @@ def test_invalid_wordinfo_raises_provider_error(httpx_mock):
 
     with pytest.raises(ProviderError):
         _provider().fetch("Buch", source_language="de", target_language="en")
+
+
+def test_malformed_output_raises_with_validation_detail(httpx_mock):
+    # The motivating case: a small model returns `definitions` as a string
+    # instead of a list. The rejection must surface as a ProviderError whose
+    # message carries the validation detail (the CLI reports this to the user).
+    bad = json.dumps({"word": "schnell", "definitions": "rasch, zügig"})
+    httpx_mock.add_response(url=CHAT_URL, json=_completion(bad))
+
+    with pytest.raises(ProviderError, match="definitions"):
+        _provider().fetch("schnell", source_language="de", target_language="en")
