@@ -4,7 +4,14 @@ import pytest
 from bs4 import BeautifulSoup
 
 from anki_deckbuilder.providers.base import ProviderError
-from anki_deckbuilder.providers.verbformen import VerbformenProvider, _separable
+from anki_deckbuilder.providers.verbformen import (
+    VerbformenProvider,
+    _accept_language,
+    _example,
+    _normalize_verb_input,
+    _separable,
+    _steckbrief_panel,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NOUN_URL = "https://www.verbformen.com/declension/nouns/Haus.htm"
@@ -34,7 +41,12 @@ def test_noun_fetch_returns_wordinfo(httpx_mock):
     assert info.gender == "das"
     assert info.pronunciation == "/haʊs/"
     assert info.definitions and "erbautes Gebäude" in info.definitions[0]
-    assert info.examples == ["» Ich geh nach Hause. I'm going home."]
+    assert info.examples == ["Ich geh nach Hause."]
+    assert info.example_translations == ["I'm going home."]
+    assert (
+        info.audio_url
+        == "https://www.verbformen.de/deklination/substantive/grundform/der_Haus.mp3"
+    )
 
 
 def test_noun_declension_table_parsed(httpx_mock):
@@ -86,7 +98,12 @@ def test_verb_fetch_returns_wordinfo(httpx_mock):
     assert info.pronunciation == "/ˈaɪ̯nˌkaʊ̯fən/"
     assert info.translations[0] == "buy"
     assert "do the shopping" in info.translations
-    assert info.examples == ["» Wir kaufen ein. We are shopping."]
+    assert info.examples == ["Wir kaufen ein."]
+    assert info.example_translations == ["We are shopping."]
+    assert (
+        info.audio_url
+        == "https://www.verbformen.de/konjugation/infinitiv/einkaufen.mp3"
+    )
 
 
 def test_verb_stammformen_parsed(httpx_mock):
@@ -172,6 +189,35 @@ def test_unavailable_target_language_yields_no_translations(httpx_mock):
 
 
 # ---------------------------------------------------------------------------
+# Example gloss language — the example sentence's translation is rendered in
+# whatever Accept-Language asks for, so the request must carry the target
+# language to get a target-language gloss (not English).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "target, expected_header",
+    [
+        ("en", "en-US,en;q=0.9"),
+        ("fr", "fr,fr;q=0.9,en;q=0.1"),
+        ("ru", "ru,ru;q=0.9,en;q=0.1"),
+        (None, "en-US,en;q=0.9"),
+    ],
+)
+def test_accept_language_prefers_target_with_english_fallback(target, expected_header):
+    assert _accept_language(target) == expected_header
+
+
+def test_request_carries_target_language_header(httpx_mock):
+    httpx_mock.add_response(url=NOUN_URL, text=_fixture("verbformen_noun_Haus.html"))
+
+    VerbformenProvider().fetch("Haus", source_language="de", target_language="fr")
+
+    request = httpx_mock.get_requests()[0]
+    assert request.headers["Accept-Language"] == "fr,fr;q=0.9,en;q=0.1"
+
+
+# ---------------------------------------------------------------------------
 # Routing and the network contract
 # ---------------------------------------------------------------------------
 
@@ -241,3 +287,55 @@ def test_separable_matches_whole_token(attributes, expected):
         f'<p>{attributes}</p><div id="vStckInf"></div>', "html.parser"
     )
     assert _separable(soup) is expected
+
+
+# ---------------------------------------------------------------------------
+# zu-infinitive normalisation (feature: accept "umzusetzen" for "umsetzen")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [
+        ("umzusetzen", "umsetzen"),       # inserted zu after a separable prefix
+        ("anzufangen", "anfangen"),
+        ("zusammenzusetzen", "zusammensetzen"),
+        ("umsetzen", "umsetzen"),         # already a base infinitive: unchanged
+        ("einkaufen", "einkaufen"),
+        ("zumuten", "zumuten"),           # prefix-like start, not a zu-infinitive
+    ],
+)
+def test_normalize_verb_input(given, expected):
+    assert _normalize_verb_input(given) == expected
+
+
+def test_zu_infinitive_retries_base_form(httpx_mock):
+    # The literal zu-form has no page (404); the provider retries the stripped
+    # base infinitive and parses that, keyed to the base lemma.
+    httpx_mock.add_response(
+        url="https://www.verbformen.com/conjugation/einzukaufen.htm", status_code=404
+    )
+    httpx_mock.add_response(
+        url=VERB_URL, text=_fixture("verbformen_verb_einkaufen.html")
+    )
+
+    info = VerbformenProvider().fetch(
+        "einzukaufen", source_language="de", target_language="en"
+    )
+
+    assert info is not None
+    assert info.word == "einkaufen"
+
+
+def test_non_zu_miss_does_not_retry(httpx_mock):
+    # A 404 on a word that is not a zu-infinitive is a clean miss with no second
+    # request (nothing to normalise to).
+    url = "https://www.verbformen.com/conjugation/quux.htm"
+    httpx_mock.add_response(url=url, status_code=404)
+
+    info = VerbformenProvider().fetch(
+        "quux", source_language="de", target_language="en"
+    )
+
+    assert info is None
+    assert len(httpx_mock.get_requests()) == 1

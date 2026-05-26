@@ -18,7 +18,7 @@ No Cloudflare bypass needed — the site serves 200 to plain httpx.
 import re
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from anki_deckbuilder.models import WordInfo
 from anki_deckbuilder.providers.base import ProviderError
@@ -29,11 +29,18 @@ _HEADERS = {
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "en-US,en;q=0.9",
 }
 # Footnote superscript digits the site appends to forms (e.g. ⁵ ⁶)
 _SUPERSCRIPTS = str.maketrans("", "", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 _CASES = {"Nominative": "nom", "Genitive": "gen", "Dative": "dat", "Accusative": "acc"}
+# Separable prefixes a "zu"-infinitive inserts "zu" after (umzusetzen ->
+# umsetzen). Used only as a 404 fallback, so a real lemma that merely looks like
+# prefix+zu is tried literally first and never rewritten out from under itself.
+_SEPARABLE_PREFIXES = (
+    "ab", "an", "auf", "aus", "bei", "ein", "empor", "entgegen", "fort", "vor",
+    "weg", "zurück", "zusammen", "durch", "über", "unter", "wieder", "gegen",
+    "hinter", "mit", "nach", "nieder", "statt", "um", "zu",
+)
 
 
 class VerbformenProvider:
@@ -53,22 +60,38 @@ class VerbformenProvider:
     ) -> WordInfo | None:
         # German nouns are always capitalised; verbs/adjectives start lowercase.
         if word[0].isupper():
-            html_text = self._get(f"/declension/nouns/{word}.htm")
+            html_text = self._get(f"/declension/nouns/{word}.htm", target_language)
             if html_text is None:
                 return None
             soup = BeautifulSoup(html_text, "html.parser")
             return _parse_noun(word, soup, target_language, self.name)
         else:
-            html_text = self._get(f"/conjugation/{word}.htm")
+            lemma = word
+            html_text = self._get(f"/conjugation/{word}.htm", target_language)
+            if html_text is None:
+                # The literal form missed; if it looks like a "zu"-infinitive
+                # (umzusetzen) retry the base infinitive (umsetzen).
+                normalized = _normalize_verb_input(word)
+                if normalized != word:
+                    html_text = self._get(
+                        f"/conjugation/{normalized}.htm", target_language
+                    )
+                    lemma = normalized
             if html_text is None:
                 return None
             soup = BeautifulSoup(html_text, "html.parser")
-            return _parse_verb(word, soup, target_language, self.name)
+            return _parse_verb(lemma, soup, target_language, self.name)
 
-    def _get(self, path: str) -> str | None:
+    def _get(self, path: str, target_language: str) -> str | None:
         url = f"{_BASE}{path}"
+        # The steckbrief example's gloss is rendered in whatever language the
+        # Accept-Language header requests (the German sentence is unchanged), so
+        # set it per request to get the example in the target language rather
+        # than English. The translation list (dl.vNrn) carries every language
+        # regardless, so this only steers the example/primary-span language.
+        headers = {"Accept-Language": _accept_language(target_language)}
         try:
-            r = self._client.get(url)
+            r = self._client.get(url, headers=headers)
         except httpx.HTTPError as exc:
             raise ProviderError(f"verbformen.com request failed: {exc}") from exc
         if r.status_code == 404:
@@ -90,14 +113,17 @@ def _parse_noun(
 ) -> WordInfo | None:
     krz = soup.find(id="vStckKrz")
     steckbrief = _steckbrief_panel(krz)
+    examples, example_translations = _example(steckbrief)
     info = WordInfo(
         word=word,
         part_of_speech="noun",
         gender=_gender(krz),
         translations=_translations(soup, target_language),
         pronunciation=_pronunciation(steckbrief),
+        audio_url=_audio_url(krz),
         definitions=_definition(steckbrief),
-        examples=_example(steckbrief),
+        examples=examples,
+        example_translations=example_translations,
         inflections=_declension_tables(soup),
         source=source,
         source_language="de",
@@ -113,14 +139,17 @@ def _parse_verb(
 ) -> WordInfo | None:
     krz = soup.find(id="vStckKrz")
     steckbrief = _steckbrief_panel(krz)
+    examples, example_translations = _example(steckbrief)
     info = WordInfo(
         word=word,
         part_of_speech="verb",
         separable=_separable(soup),
         translations=_translations(soup, target_language),
         pronunciation=_pronunciation(steckbrief),
+        audio_url=_audio_url(krz),
         definitions=_definition(steckbrief),
-        examples=_example(steckbrief),
+        examples=examples,
+        example_translations=example_translations,
         inflections=_stammformen(soup),
         source=source,
         source_language="de",
@@ -134,6 +163,19 @@ def _parse_verb(
 # ---------------------------------------------------------------------------
 # HTML helpers
 # ---------------------------------------------------------------------------
+
+
+def _accept_language(target_language: str | None) -> str:
+    """Accept-Language value that selects the gloss language for the example.
+
+    The target tag goes first; English trails as a low-priority fallback so a
+    word with no gloss in the target still yields an English example rather than
+    none. An absent target degrades to plain English.
+    """
+    lang = (target_language or "en").strip()
+    if lang.lower().startswith("en"):
+        return "en-US,en;q=0.9"
+    return f"{lang},{lang};q=0.9,en;q=0.1"
 
 
 def _normalize(text: str) -> str:
@@ -207,16 +249,72 @@ def _definition(steckbrief) -> list[str]:
     return [text] if text else []
 
 
-def _example(steckbrief) -> list[str]:
+def _example(steckbrief) -> tuple[list[str], list[str]]:
+    """Return ([german_sentence], [translation]) for the example, if present.
+
+    The example paragraph starts with » and carries the German sentence and its
+    gloss in one <p>, divided by a flag <img> (its alt names the target
+    language). Splitting on that image keeps the sentence and its translation in
+    separate fields instead of mashing them into one string. Each list holds at
+    most one item and is empty when its half is missing (no example, or a
+    sentence with no gloss).
+    """
     if steckbrief is None:
-        return []
-    # Example sentences start with ». German and translation share the paragraph;
-    # a stray " ." appears because the period and the flag <img> are siblings.
+        return [], []
     for p in steckbrief.find_all("p"):
-        text = _normalize(p.get_text())
-        if text.startswith("»"):
-            return [re.sub(r"\s+\.", ".", text)]
-    return []
+        if not _normalize(p.get_text()).startswith("»"):
+            continue
+        flag = p.find("img")
+        if flag is None:
+            german = _clean_example(_node_text(p.children))
+            return ([german] if german else []), []
+        before, after, seen = [], [], False
+        for child in p.children:
+            if child is flag:
+                seen = True
+                continue
+            (after if seen else before).append(child)
+        german = _clean_example(_node_text(before))
+        translation = _normalize(_node_text(after))
+        return ([german] if german else []), ([translation] if translation else [])
+    return [], []
+
+
+def _node_text(nodes) -> str:
+    """Concatenate the text of a run of mixed Tag/NavigableString siblings."""
+    return "".join(n.get_text() if isinstance(n, Tag) else str(n) for n in nodes)
+
+
+def _clean_example(text: str) -> str:
+    # Drop the leading » marker and rejoin the period the site renders as a
+    # separate sibling of the highlighted word (" ." -> ".").
+    text = re.sub(r"\s+\.", ".", _normalize(text))
+    return text.lstrip("»").strip()
+
+
+def _audio_url(krz) -> str | None:
+    # The lemma's pronunciation audio is the <a> inside the headword span
+    # (span.vGrnd) for both nouns and verbs; its href is an absolute .mp3 URL.
+    if krz is None:
+        return None
+    a = krz.select_one("span.vGrnd a[href]")
+    if a is None:
+        return None
+    href = a["href"]
+    return href if href.endswith(".mp3") else None
+
+
+def _normalize_verb_input(word: str) -> str:
+    """Strip the inserted "zu" from a separable-verb zu-infinitive.
+
+    umzusetzen -> umsetzen, anzufangen -> anfangen. Returns the word unchanged
+    when it is not a recognisable prefix+zu form, so callers can compare and
+    only retry when it actually rewrote something.
+    """
+    for prefix in _SEPARABLE_PREFIXES:
+        if word.startswith(prefix + "zu") and len(word) > len(prefix) + 2:
+            return prefix + word[len(prefix) + 2 :]
+    return word
 
 
 def _gender(krz) -> str | None:

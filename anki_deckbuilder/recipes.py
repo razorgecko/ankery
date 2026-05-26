@@ -115,7 +115,11 @@ def _present_paradigm(info: WordInfo) -> str:
 
 
 def _first_example(info: WordInfo) -> str:
-    return info.examples[0] if info.examples else ""
+    if not info.examples:
+        return ""
+    german = info.examples[0]
+    gloss = info.example_translations[0] if info.example_translations else ""
+    return f"{german} — {gloss}" if gloss else german
 
 
 def _front(info: WordInfo) -> str:
@@ -136,7 +140,11 @@ def _back(info: WordInfo) -> str:
             "<br>".join(f"{key}: {value}" for key, value in info.inflections.items())
         )
     if info.examples:
-        sections.append("<br>".join(f"<i>{ex}</i>" for ex in info.examples))
+        rendered = []
+        for i, ex in enumerate(info.examples):
+            gloss = info.example_translations[i] if i < len(info.example_translations) else ""
+            rendered.append(f"<i>{ex}</i> — {gloss}" if gloss else f"<i>{ex}</i>")
+        sections.append("<br>".join(rendered))
     if info.pronunciation:
         sections.append(f"[{info.pronunciation}]")
     return "<hr>".join(sections)

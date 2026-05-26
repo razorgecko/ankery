@@ -15,6 +15,11 @@ class WordInfo(BaseModel):
     word: str = Field(min_length=1)
     definitions: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
+    # Glosses for `examples`, aligned by position: example_translations[i] is the
+    # translation of examples[i]. Sources that supply only the sentence leave
+    # this empty rather than padding it, so it may be shorter than `examples`;
+    # consumers index it defensively.
+    example_translations: list[str] = Field(default_factory=list)
     translations: list[str] = Field(default_factory=list)
     pronunciation: str | None = None
     part_of_speech: str | None = None
