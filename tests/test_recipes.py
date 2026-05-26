@@ -52,9 +52,10 @@ def test_noun_map_fills_the_noun_model_fields():
     }
 
 
-def test_noun_map_strips_the_article_from_declension_forms():
-    # verbformen gives declension forms with their article ("des Hauses"); the
-    # Noun model carries the article separately, so the field holds the bare form.
+def test_noun_map_copies_forms_verbatim_no_stripping():
+    # Normalization (dropping the article) is the provider's job, not the map's.
+    # The map must copy the form through untouched — so an article-bearing value
+    # would survive, proving the map is not where stripping happens.
     info = WordInfo(
         word="Haus",
         source="test",
@@ -64,28 +65,38 @@ def test_noun_map_strips_the_article_from_declension_forms():
     )
     fields = map_noun_fields(info)
 
-    assert fields["Plural"] == "Häuser"
-    assert fields["GenitiveSg"] == "Hauses"
+    assert fields["Plural"] == "die Häuser"
+    assert fields["GenitiveSg"] == "des Hauses"
 
 
-def test_verb_map_assembles_the_present_paradigm_with_pronouns():
+def test_verb_map_fills_present_forms_as_separate_fields():
     fields = map_verb_fields(_verb())
 
     assert fields["Infinitive"] == "sehen"
     assert fields["Aux"] == "haben"
     assert fields["Preterite"] == "sah"
     assert fields["Perfect"] == "hat gesehen"
-    assert fields["Present"] == (
-        "ich sehe / du siehst / er sieht / wir sehen / ihr seht / sie sehen"
-    )
+    # Each present form is its own field; the pronoun/slash layout lives in the
+    # Anki card template, not the map.
+    assert fields["Present1sg"] == "sehe"
+    assert fields["Present2sg"] == "siehst"
+    assert fields["Present3sg"] == "sieht"
+    assert fields["Present1pl"] == "sehen"
+    assert fields["Present2pl"] == "seht"
+    assert fields["Present3pl"] == "sehen"
 
 
-def test_present_paradigm_skips_missing_forms():
+def test_verb_map_uses_empty_string_for_missing_present_forms():
     info = WordInfo(
         word="x", source="test", part_of_speech="verb",
         inflections={"present_1sg": "bin", "present_3sg": "ist"},
     )
-    assert map_verb_fields(info)["Present"] == "ich bin / er ist"
+    fields = map_verb_fields(info)
+
+    assert fields["Present1sg"] == "bin"
+    assert fields["Present3sg"] == "ist"
+    assert fields["Present2sg"] == ""
+    assert fields["Present3pl"] == ""
 
 
 def test_maps_tolerate_absent_data():

@@ -40,6 +40,13 @@ class WordInfo(BaseModel):
     # fills consistent keys (e.g. "nominative_pl", "present_3sg") rather than ad-hoc
     # ones. Kept as a flat dict so the type stays language-neutral and the
     # Anki-field mapping stays simple.
+    #
+    # Contract: each value is the bare form, with no leading article (the noun's
+    # nominative article lives in `gender`). Providers normalize to this at their
+    # boundary — verbformen reads only the form cell; the LLM is asked for bare
+    # forms by the prompt and the output is stripped defensively
+    # (providers/normalize.py) — so consumers (recipes, Anki templates) need no
+    # stripping.
     inflections: dict[str, str] = Field(default_factory=dict)
 
     audio_url: str | None = None

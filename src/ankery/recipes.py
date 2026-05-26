@@ -8,9 +8,11 @@ for) so they cannot drift apart.
 
 The maps target the exact field names of the models built in
 ``scripts/build_deck.py``. Those names are typed once, here, in the only place
-that can decide which piece of `WordInfo` belongs in which field — the maps do
-the rendering Anki cannot (prefixing the article, joining the six present
-forms into one line, comma-joining translations).
+that can decide which piece of `WordInfo` belongs in which field. Inflected
+forms arrive already article-free (normalized at the provider; see
+WordInfo.inflections), so a field is usually a direct copy of one piece of
+`WordInfo`; the only rendering left is comma-joining translations and pairing an
+example with its gloss.
 """
 
 from collections.abc import Callable
@@ -19,12 +21,6 @@ from dataclasses import dataclass
 from ankery.models import WordInfo
 
 FieldMap = Callable[[WordInfo], dict[str, str]]
-
-# Definite articles across all cases, stripped from a declension form so the
-# bare noun stands alone in its field (the Noun model carries the nominative
-# article separately). verbformen gives forms with the article ("des Hauses");
-# the LLM gives them bare, so the strip is a no-op there.
-_ARTICLES = {"der", "die", "das", "des", "dem", "den"}
 
 
 @dataclass(frozen=True)
@@ -41,16 +37,16 @@ class NoteRecipe:
     applies_to: Callable[[WordInfo], bool]
 
 
-# Pronouns paired with the canonical present-tense inflection keys (prompts.py),
-# in citation order, so the six forms render as one line:
-# "ich sehe / du siehst / er sieht / wir sehen / ihr seht / sie sehen".
-_PRESENT_FORMS = (
-    ("ich", "present_1sg"),
-    ("du", "present_2sg"),
-    ("er", "present_3sg"),
-    ("wir", "present_1pl"),
-    ("ihr", "present_2pl"),
-    ("sie", "present_3pl"),
+# Anki verb-field name paired with its canonical present-tense inflection key
+# (prompts.py). Each form is its own field; the "ich .. / du .." layout lives in
+# the card template (scripts/build_deck.py), not here.
+_PRESENT_FIELDS = (
+    ("Present1sg", "present_1sg"),
+    ("Present2sg", "present_2sg"),
+    ("Present3sg", "present_3sg"),
+    ("Present1pl", "present_1pl"),
+    ("Present2pl", "present_2pl"),
+    ("Present3pl", "present_3pl"),
 )
 
 
@@ -59,24 +55,26 @@ def map_noun_fields(info: WordInfo) -> dict[str, str]:
     return {
         "Word": info.word,
         "Article": info.gender or "",
-        "Plural": _bare(info.inflections.get("nominative_pl", "")),
-        "GenitiveSg": _bare(info.inflections.get("genitive_sg", "")),
+        "Plural": info.inflections.get("nominative_pl", ""),
+        "GenitiveSg": info.inflections.get("genitive_sg", ""),
         "Translation": ", ".join(info.translations),
         "Example": _first_example(info),
     }
 
 
 def map_verb_fields(info: WordInfo) -> dict[str, str]:
-    """Fill the "Verb (DE)" model: Infinitive, Aux, Present, Preterite, ..."""
-    return {
+    """Fill the "Verb (DE)" model: Infinitive, Aux, Present1sg..Present3pl, ..."""
+    fields = {
         "Infinitive": info.word,
         "Translation": ", ".join(info.translations),
         "Aux": info.inflections.get("auxiliary", ""),
-        "Present": _present_paradigm(info),
         "Preterite": info.inflections.get("preterite", ""),
         "Perfect": info.inflections.get("perfect", ""),
         "Example": _first_example(info),
     }
+    for field, key in _PRESENT_FIELDS:
+        fields[field] = info.inflections.get(key, "")
+    return fields
 
 
 def default_field_map(info: WordInfo) -> dict[str, str]:
@@ -109,21 +107,6 @@ def build_recipes(
 
 def _pos_is(pos: str) -> Callable[[WordInfo], bool]:
     return lambda info: (info.part_of_speech or "").strip().lower() == pos
-
-
-def _present_paradigm(info: WordInfo) -> str:
-    parts = [
-        f"{pronoun} {info.inflections[key]}"
-        for pronoun, key in _PRESENT_FORMS
-        if info.inflections.get(key)
-    ]
-    return " / ".join(parts)
-
-
-def _bare(form: str) -> str:
-    """Drop a leading definite article from a declension form ("des Hauses")."""
-    head, _, rest = form.partition(" ")
-    return rest if head.lower() in _ARTICLES and rest else form
 
 
 def _first_example(info: WordInfo) -> str:

@@ -54,15 +54,17 @@ def test_noun_declension_table_parsed(httpx_mock):
 
     info = VerbformenProvider().fetch("Haus", source_language="de", target_language="en")
 
+    # Forms are stored bare per the WordInfo.inflections contract: the article
+    # cell is not read, so no "der"/"des"/"dem"/"den" leads the value.
     assert info.inflections == {
-        "nominative_sg": "das Haus",
-        "genitive_sg": "des Hauses",
-        "dative_sg": "dem Haus",
-        "accusative_sg": "das Haus",
-        "nominative_pl": "die Häuser",
-        "genitive_pl": "der Häuser",
-        "dative_pl": "den Häusern",
-        "accusative_pl": "die Häuser",
+        "nominative_sg": "Haus",
+        "genitive_sg": "Hauses",
+        "dative_sg": "Haus",
+        "accusative_sg": "Haus",
+        "nominative_pl": "Häuser",
+        "genitive_pl": "Häuser",
+        "dative_pl": "Häusern",
+        "accusative_pl": "Häuser",
     }
 
 

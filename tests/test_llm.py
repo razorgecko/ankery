@@ -38,6 +38,25 @@ def test_fetch_returns_wordinfo(httpx_mock):
     assert info.inflections["nominative_pl"] == "Bücher"
 
 
+def test_fetch_strips_leading_articles_from_inflections(httpx_mock):
+    # The prompt asks for bare forms, but a model may still return them with an
+    # article; the provider enforces the WordInfo.inflections bare-form contract
+    # at this untrusted boundary.
+    word_json = json.dumps(
+        {
+            "word": "Haus",
+            "part_of_speech": "noun",
+            "gender": "das",
+            "inflections": {"genitive_sg": "des Hauses", "nominative_pl": "die Häuser"},
+        }
+    )
+    httpx_mock.add_response(url=CHAT_URL, json=_completion(word_json))
+
+    info = _provider().fetch("Haus", source_language="de", target_language="en")
+
+    assert info.inflections == {"genitive_sg": "Hauses", "nominative_pl": "Häuser"}
+
+
 def test_fetch_sets_provenance_and_languages(httpx_mock):
     # The model echoes back bogus provenance/language values; the provider must
     # overwrite them with what it controls.

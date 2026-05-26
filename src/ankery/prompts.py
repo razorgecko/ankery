@@ -32,7 +32,8 @@ if this verb has one. null for non-verbs and for languages without them.
 - Leave any field you are unsure about null or empty rather than guessing.
 
 The `inflections` object must use EXACTLY the canonical keys below for the \
-word's part of speech (omit a key only if it genuinely does not apply):
+word's part of speech (omit a key only if it genuinely does not apply). Give \
+each inflected form bare: the form alone, with no leading article.
 
 NOUN keys:
   genitive_sg, nominative_pl

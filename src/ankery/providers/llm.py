@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from ankery.models import WordInfo
 from ankery.prompts import SYSTEM_PROMPT, build_user_prompt
 from ankery.providers.base import ProviderError
+from ankery.providers.normalize import strip_leading_article
 
 
 class LLMProvider:
@@ -83,7 +84,7 @@ class LLMProvider:
         data["target_language"] = target_language
 
         try:
-            return WordInfo.model_validate(data)
+            info = WordInfo.model_validate(data)
         except ValidationError as exc:
             # Small local models routinely emit JSON of the wrong shape (a field
             # as a string instead of a list, a missing required field). This is
@@ -91,6 +92,16 @@ class LLMProvider:
             # half-filled note, so raise rather than salvage. The CLI reports
             # this error (word + reason) to the user.
             raise ProviderError(f"LLM output failed WordInfo validation: {exc}") from exc
+
+        # Enforce the WordInfo.inflections bare-form contract the prompt also
+        # asks for: a model may still return "des Hauses" instead of "Hauses".
+        # The prompt is the request; this strip is the guarantee, applied only
+        # at this untrusted boundary (verbformen is bare by construction).
+        info.inflections = {
+            key: strip_leading_article(form, source_language)
+            for key, form in info.inflections.items()
+        }
+        return info
 
 
 def _strip_code_fences(text: str) -> str:

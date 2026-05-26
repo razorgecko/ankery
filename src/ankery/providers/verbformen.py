@@ -450,8 +450,11 @@ def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
     Keys are `{case}_{number}` with the case spelled out (`genitive_sg`,
     `nominative_pl`) — the canonical inflection vocabulary the recipes and the
     LLM provider speak (prompts.py), and the same `_sg`/`_pl` suffixes the verb
-    keys use. Values keep the article ("des Hauses"); the recipe strips it when
-    filling the article-less Noun fields.
+    keys use. The form is stored bare: the site renders it in an article cell
+    (<td>des</td>) and a form cell (<td>Hauses</td>), and only the form cell is
+    read, so the contract's "no leading article" rule (see WordInfo.inflections)
+    holds by construction — the article is simply never joined in. The noun's
+    nominative article is captured separately as `gender`.
     """
     decl = [t for t in soup.find_all("table") if t.find("th", class_="vKs")]
 
@@ -467,8 +470,10 @@ def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
             tds = tr.find_all("td")
             if len(tds) < 2:
                 continue
-            article = _normalize(tds[0].get_text())
+            # tds[0] is the article cell ("des"); read only the form cell so the
+            # value is article-free per the WordInfo.inflections contract.
             form = _normalize(tds[1].get_text().split("/")[0])
-            result[f"{case}_{number}"] = f"{article} {form}".strip()
+            if form:
+                result[f"{case}_{number}"] = form
 
     return result
