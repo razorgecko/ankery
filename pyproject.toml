@@ -9,6 +9,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "genanki>=0.13.1",
     "pytest>=9.0.3",
     "pytest-httpx>=0.36.2",
 ]
