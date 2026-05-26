@@ -143,11 +143,12 @@ def test_config_error_reports_and_exits_two(monkeypatch, capsys):
 
 
 def _capture_load_path(monkeypatch) -> dict:
-    """Patch Config.load to record the path it was called with."""
+    """Patch Config.load to record the paths it was called with."""
     seen: dict = {}
 
-    def fake_load(cls, *, path=None, **kwargs):
+    def fake_load(cls, *, path=None, auth_path=None, **kwargs):
         seen["path"] = path
+        seen["auth_path"] = auth_path
         return cls()
 
     monkeypatch.setattr(Config, "load", classmethod(fake_load))
@@ -195,6 +196,49 @@ def test_no_config_source_loads_default_path(patched, monkeypatch):
     cli.main(["Buch"])
 
     assert seen["path"] is None  # Config.load falls back to its default path
+
+
+def test_auth_flag_sets_auth_path(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+
+    cli.main(["--auth", "/tmp/custom-auth.toml", "Buch"])
+
+    assert seen["auth_path"] == Path("/tmp/custom-auth.toml")
+
+
+def test_auth_env_var_used_when_no_flag(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+    monkeypatch.setenv("ANKIDECK_AUTH", "/tmp/auth-from-env.toml")
+
+    cli.main(["Buch"])
+
+    assert seen["auth_path"] == Path("/tmp/auth-from-env.toml")
+
+
+def test_auth_flag_overrides_env_var(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+    monkeypatch.setenv("ANKIDECK_AUTH", "/tmp/auth-from-env.toml")
+
+    cli.main(["--auth", "/tmp/auth-from-flag.toml", "Buch"])
+
+    assert seen["auth_path"] == Path("/tmp/auth-from-flag.toml")
+
+
+def test_no_auth_source_loads_default_path(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+    seen = _capture_load_path(monkeypatch)
+    monkeypatch.delenv("ANKIDECK_AUTH", raising=False)
+
+    cli.main(["Buch"])
+
+    assert seen["auth_path"] is None  # Config.load falls back to its default path
 
 
 def test_missing_word_argument_is_an_argparse_error(capsys):

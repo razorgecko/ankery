@@ -20,6 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="path to a config TOML (overrides ANKIDECK_CONFIG; "
         "default ~/.config/anki_deckbuilder/config.toml)",
     )
+    parser.add_argument(
+        "--auth",
+        help="path to an auth TOML holding the api key (overrides ANKIDECK_AUTH; "
+        "default ~/.config/anki_deckbuilder/auth.toml)",
+    )
     parser.add_argument("--deck", help="destination deck (overrides ANKIDECK_DECK)")
     parser.add_argument("--source-lang", help="language of the words")
     parser.add_argument("--target-lang", help="language to translate into")
@@ -46,12 +51,15 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     if args.allow_duplicate:
         overrides["allow_duplicate"] = True
 
-    # Which config file to load: --config flag wins over the ANKIDECK_CONFIG
-    # env var; neither set means Config.load uses its default path.
+    # Which files to load: the --config/--auth flags win over the
+    # ANKIDECK_CONFIG/ANKIDECK_AUTH env vars; an unset source means Config.load
+    # uses its default path for that file.
     config_path = args.config or os.environ.get("ANKIDECK_CONFIG")
+    auth_path = args.auth or os.environ.get("ANKIDECK_AUTH")
     path = Path(config_path).expanduser() if config_path else None
+    auth = Path(auth_path).expanduser() if auth_path else None
 
-    config = Config.load(path=path)
+    config = Config.load(path=path, auth_path=auth)
     return replace(config, **overrides) if overrides else config
 
 
