@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
     for word in args.words:
         try:
-            note_id = builder.add_word(word)
+            result = builder.add_word(word)
         except ProviderError as exc:
             print(f"{word}: lookup failed: {exc}", file=sys.stderr)
             exit_code = 1
@@ -116,11 +116,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{word}: could not add note: {exc}", file=sys.stderr)
             exit_code = 1
         else:
-            if note_id is None:
+            if result is None:
                 print(f"{word}: not found", file=sys.stderr)
                 exit_code = 1
             else:
-                print(f"{word}: added (note {note_id})")
+                label = word if result.word == word else f"{word} -> {result.word}"
+                print(f"{label}: added (note {result.note_id})")
     return exit_code
 
 

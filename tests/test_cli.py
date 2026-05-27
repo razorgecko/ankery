@@ -4,6 +4,7 @@ import pytest
 
 from ankery import __main__ as cli
 from ankery.config import Config, ConfigError
+from ankery.manager import AddResult
 from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
 
@@ -53,12 +54,22 @@ def patched(monkeypatch):
 
 def test_added_word_prints_note_id_and_exits_zero(patched, capsys):
     captured, set_results = patched
-    set_results({"Buch": 42})
+    set_results({"Buch": AddResult(note_id=42, word="Buch")})
 
     code = cli.main(["Buch"])
 
     assert code == 0
     assert "Buch: added (note 42)" in capsys.readouterr().out
+
+
+def test_resolved_word_shows_redirect(patched, capsys):
+    captured, set_results = patched
+    set_results({"Hause": AddResult(note_id=42, word="Haus")})
+
+    code = cli.main(["Hause"])
+
+    assert code == 0
+    assert "Hause -> Haus: added (note 42)" in capsys.readouterr().out
 
 
 def test_not_found_reports_and_exits_nonzero(patched, capsys):
@@ -93,7 +104,7 @@ def test_sink_error_reports_and_exits_nonzero(patched, capsys):
 
 def test_note_type_verification_failure_exits_before_words(patched, capsys):
     captured, set_results = patched
-    builder = set_results({"Buch": 1})
+    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
     builder.verify_error = SinkError("note type 'Noun (DE)' already exists")
 
     code = cli.main(["Buch"])
@@ -105,7 +116,13 @@ def test_note_type_verification_failure_exits_before_words(patched, capsys):
 
 def test_multiple_words_one_failure_still_processes_all(patched, capsys):
     captured, set_results = patched
-    set_results({"a": 1, "b": None, "c": 2})
+    set_results(
+        {
+            "a": AddResult(note_id=1, word="a"),
+            "b": None,
+            "c": AddResult(note_id=2, word="c"),
+        }
+    )
 
     code = cli.main(["a", "b", "c"])
 
@@ -115,7 +132,7 @@ def test_multiple_words_one_failure_still_processes_all(patched, capsys):
 
 def test_flags_override_config(patched):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
     cli.main(
         [
@@ -138,7 +155,7 @@ def test_flags_override_config(patched):
 
 def test_infra_flags_override_config(patched):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
     cli.main(
         [
@@ -157,7 +174,7 @@ def test_infra_flags_override_config(patched):
 
 def test_provider_flag_overrides_chain(patched):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
     cli.main(["--provider", "verbformen,llm", "Buch"])
 
@@ -166,7 +183,7 @@ def test_provider_flag_overrides_chain(patched):
 
 def test_langs_dir_flag_sets_user_pack_dir(patched):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
     cli.main(["--langs-dir", "/srv/packs", "Buch"])
 
@@ -175,7 +192,7 @@ def test_langs_dir_flag_sets_user_pack_dir(patched):
 
 def test_notes_dir_flag_sets_notes_dir(patched):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
     cli.main(["--notes-dir", "/srv/notes", "Buch"])
 
@@ -225,7 +242,7 @@ def _capture_load_path(monkeypatch) -> dict:
 
 def test_config_flag_sets_load_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
     seen = _capture_load_path(monkeypatch)
 
     cli.main(["--config", "/tmp/custom.toml", "Buch"])
@@ -235,7 +252,7 @@ def test_config_flag_sets_load_path(patched, monkeypatch):
 
 def test_config_flag_passed_through_even_with_env_set(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.setenv("ANKERY_CONFIG", "/tmp/from-env.toml")
 
@@ -246,7 +263,7 @@ def test_config_flag_passed_through_even_with_env_set(patched, monkeypatch):
 
 def test_no_config_source_loads_default_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.delenv("ANKERY_CONFIG", raising=False)
 
@@ -257,7 +274,7 @@ def test_no_config_source_loads_default_path(patched, monkeypatch):
 
 def test_auth_flag_sets_auth_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
     seen = _capture_load_path(monkeypatch)
 
     cli.main(["--auth", "/tmp/custom-auth.toml", "Buch"])
@@ -267,7 +284,7 @@ def test_auth_flag_sets_auth_path(patched, monkeypatch):
 
 def test_auth_flag_passed_through_even_with_env_set(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.setenv("ANKERY_AUTH", "/tmp/auth-from-env.toml")
 
@@ -278,7 +295,7 @@ def test_auth_flag_passed_through_even_with_env_set(patched, monkeypatch):
 
 def test_no_auth_source_loads_default_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": 1})
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.delenv("ANKERY_AUTH", raising=False)
 

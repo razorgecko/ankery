@@ -126,9 +126,9 @@ def test_add_word_maps_fields_and_writes_to_sink():
         [FakeProvider("p", result=_info())], sink, deck="German", note_type="Basic", tags=["auto"]
     )
 
-    note_id = builder.add_word("Buch")
+    result = builder.add_word("Buch")
 
-    assert note_id == 42
+    assert result == (42, "Buch")
     assert len(sink.calls) == 1
     call = sink.calls[0]
     assert call["deck"] == "German"
@@ -141,9 +141,9 @@ def test_add_word_returns_none_and_skips_sink_on_total_miss():
     sink = FakeSink()
     builder = _builder([FakeProvider("p", result=None)], sink)
 
-    note_id = builder.add_word("Buch")
+    result = builder.add_word("Buch")
 
-    assert note_id is None
+    assert result is None
     assert sink.calls == []
 
 

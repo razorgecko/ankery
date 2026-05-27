@@ -1,9 +1,17 @@
 from collections.abc import Callable, Iterable
+from typing import NamedTuple
 
 from ankery.models import WordInfo
 from ankery.notedef import FieldMap, NoteDefinition, default_field_map
 from ankery.providers.base import ProviderError, WordProvider
 from ankery.sinks.base import AnkiSink
+
+
+class AddResult(NamedTuple):
+    """Outcome of adding a word: the note id and the form the provider resolved to."""
+
+    note_id: int
+    word: str
 
 
 class DeckBuilder:
@@ -40,18 +48,23 @@ class DeckBuilder:
             catch_all=self.note_type,
         )
 
-    def add_word(self, word: str) -> int | None:
-        """Look up, build, and write a note; returns note id or None on a clean miss."""
+    def add_word(self, word: str) -> AddResult | None:
+        """Look up, build, and write a note; returns the result or None on a clean miss.
+
+        The result's `word` is the form the provider resolved to, which may differ
+        from the requested `word` (e.g. an inflection redirected to its lemma).
+        """
         info = self.lookup(word)
         if info is None:
             return None
         note_type, map_fields = self._route(info)
-        return self.sink.add_note(
+        note_id = self.sink.add_note(
             deck=self.deck,
             note_type=note_type,
             fields=map_fields(info),
             tags=self.tags,
         )
+        return AddResult(note_id=note_id, word=info.word)
 
     def _route(self, info: WordInfo) -> tuple[str, FieldMap]:
         """First note definition whose `applies` matches wins; else the catch-all."""
