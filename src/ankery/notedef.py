@@ -17,7 +17,7 @@ File shape (see ``langs/de/notes/noun_de.toml``)::
 
     name = "Noun (DE)"        # the Anki note type name
     id = 1986815750           # genanki model id; omit for a built-in note type
-    applies_to = "noun"       # part_of_speech this serves; omit for the catch-all
+    applies_to = "noun"       # the part_of_speech this note serves
 
     [map]                     # field name -> Jinja template over one WordInfo.
     Word = "{{ word }}"       # Key order IS the Anki field order.
@@ -115,16 +115,67 @@ def load_notes_from_dir(directory: Path) -> list[NoteDefinition]:
     Stem order is the routing order (first whose ``applies`` matches wins). A
     missing directory yields no definitions; the pack just routes everything to
     the catch-all. A malformed file raises ``NoteDefinitionError``.
+
+    Within one directory each part of speech may be served by at most one note:
+    two files with the same ``applies_to`` raise ``NoteDefinitionError``, naming
+    both, rather than silently letting the first-by-stem win and the other go
+    dead. Files with no ``applies_to`` match nothing and are exempt.
     """
     if not directory.is_dir():
         return []
-    definitions: list[NoteDefinition] = []
+    by_path: list[tuple[Path, NoteDefinition]] = []
     for path in sorted(directory.glob("*.toml")):
         try:
-            definitions.append(_parse(tomllib.loads(path.read_text("utf-8"))))
+            by_path.append((path, _parse(tomllib.loads(path.read_text("utf-8")))))
         except (tomllib.TOMLDecodeError, KeyError, OSError) as exc:
             raise NoteDefinitionError(f"{path}: {exc}") from exc
-    return definitions
+    _reject_duplicate_pos(by_path)
+    return [definition for _, definition in by_path]
+
+
+def _reject_duplicate_pos(by_path: list[tuple[Path, NoteDefinition]]) -> None:
+    """Raise if two definitions in one directory serve the same part of speech.
+
+    ``applies_to is None`` (a note that routes to nothing) is exempt — only real
+    POS values can collide.
+    """
+    seen: dict[str, Path] = {}
+    for path, definition in by_path:
+        pos = definition.applies_to
+        if pos is None:
+            continue
+        if pos in seen:
+            raise NoteDefinitionError(
+                f"{seen[pos].name} and {path.name} both serve part of speech "
+                f"{pos!r} in {path.parent}; a part of speech may be served by at "
+                "most one note definition per directory."
+            )
+        seen[pos] = path
+
+
+def merge_note_definitions(
+    base: list[NoteDefinition], override: list[NoteDefinition]
+) -> list[NoteDefinition]:
+    """Layer `override` over `base`, keyed by part of speech.
+
+    For each part of speech an `override` definition serves, it replaces the
+    `base` definition for that POS in place; a POS only `override` serves is
+    appended after the base set. ``applies_to is None`` definitions key on
+    nothing, so they never replace and are carried through unchanged (base ones
+    in place, override ones appended). Both lists are assumed already free of
+    intra-directory POS duplicates (see ``load_notes_from_dir``), so the result
+    serves each POS exactly once and routing order does not affect which note a
+    word gets.
+    """
+    override_by_pos = {
+        d.applies_to: d for d in override if d.applies_to is not None
+    }
+    merged = [override_by_pos.get(d.applies_to, d) for d in base]
+    placed = {d.applies_to for d in base if d.applies_to is not None}
+    merged += [
+        d for d in override if d.applies_to is None or d.applies_to not in placed
+    ]
+    return merged
 
 
 def _parse(raw: dict) -> NoteDefinition:

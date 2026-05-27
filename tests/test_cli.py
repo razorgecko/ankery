@@ -173,6 +173,15 @@ def test_langs_dir_flag_sets_user_pack_dir(patched):
     assert captured["config"].langs_dir == Path("/srv/packs")
 
 
+def test_notes_dir_flag_sets_notes_dir(patched):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+
+    cli.main(["--notes-dir", "/srv/notes", "Buch"])
+
+    assert captured["config"].notes_dir == Path("/srv/notes")
+
+
 def test_config_error_reports_and_exits_two(monkeypatch, capsys):
     def boom(*args, **kwargs):
         raise ConfigError("unknown config keys: dekc")

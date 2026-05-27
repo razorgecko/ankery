@@ -9,6 +9,7 @@ from ankery.notedef import (
     NoteDefinitionError,
     default_field_map,
     load_notes_from_dir,
+    merge_note_definitions,
 )
 
 # The bundled German pack's note definitions live here now (not a top-level
@@ -168,6 +169,69 @@ def test_malformed_note_file_raises(tmp_path):
     (tmp_path / "broken.toml").write_text("name = \n", "utf-8")  # missing value
     with pytest.raises(NoteDefinitionError):
         load_notes_from_dir(tmp_path)
+
+
+def _write_note(directory: Path, stem: str, name: str, applies_to: str | None):
+    directory.mkdir(parents=True, exist_ok=True)
+    applies = f'applies_to = "{applies_to}"\n' if applies_to is not None else ""
+    (directory / f"{stem}.toml").write_text(
+        f'name = "{name}"\n{applies}[map]\nFront = "{{{{ word }}}}"\n', "utf-8"
+    )
+
+
+def test_two_notes_serving_one_pos_in_a_directory_raise(tmp_path):
+    # Silently letting the first-by-stem win and the other go dead is the trap we
+    # close: a same-POS clash names both files and the POS.
+    _write_note(tmp_path, "a_noun", "Noun A", "noun")
+    _write_note(tmp_path, "b_noun", "Noun B", "noun")
+    with pytest.raises(NoteDefinitionError, match="both serve part of speech 'noun'"):
+        load_notes_from_dir(tmp_path)
+
+
+def test_notes_without_applies_to_do_not_collide(tmp_path):
+    # A note with no applies_to matches nothing, so two of them are not a clash.
+    _write_note(tmp_path, "a", "Catchall A", None)
+    _write_note(tmp_path, "b", "Catchall B", None)
+    assert [d.name for d in load_notes_from_dir(tmp_path)] == ["Catchall A", "Catchall B"]
+
+
+def _note(name: str, applies_to: str | None) -> NoteDefinition:
+    return NoteDefinition(name=name, field_map={"Front": "{{ word }}"}, applies_to=applies_to)
+
+
+def test_merge_override_replaces_same_pos_in_place():
+    base = [_note("Noun (DE)", "noun"), _note("Verb (DE)", "verb")]
+    override = [_note("Simple Noun", "noun")]
+
+    merged = merge_note_definitions(base, override)
+
+    # The override's noun takes the base noun's slot; the verb is untouched.
+    assert [d.name for d in merged] == ["Simple Noun", "Verb (DE)"]
+
+
+def test_merge_appends_a_new_pos():
+    base = [_note("Noun (DE)", "noun")]
+    override = [_note("Adjective", "adjective")]
+
+    merged = merge_note_definitions(base, override)
+
+    assert [d.name for d in merged] == ["Noun (DE)", "Adjective"]
+
+
+def test_merge_carries_through_none_keyed_notes_without_replacing():
+    base = [_note("Noun (DE)", "noun")]
+    override = [_note("Loose", None)]
+
+    merged = merge_note_definitions(base, override)
+
+    # A None-keyed override note keys on nothing: it appends, replaces no base.
+    assert [d.name for d in merged] == ["Noun (DE)", "Loose"]
+
+
+def test_merge_empty_override_returns_the_base_unchanged():
+    base = [_note("Noun (DE)", "noun"), _note("Verb (DE)", "verb")]
+
+    assert merge_note_definitions(base, []) == base
 
 
 def test_default_field_map_is_the_neutral_catch_all():

@@ -127,6 +127,13 @@ def test_load_reads_langs_dir_as_path(tmp_path):
     assert config.langs_dir == Path("/srv/packs")  # string coerced to Path
 
 
+def test_load_reads_notes_dir_as_path(tmp_path):
+    path = _write(tmp_path, 'notes_dir = "/srv/notes"\n')
+    config = Config.load(path=path, environ={})
+
+    assert config.notes_dir == Path("/srv/notes")  # string coerced to Path
+
+
 def test_load_reads_providers_list(tmp_path):
     path = _write(tmp_path, 'providers = ["verbformen", "llm"]\n')
     config = Config.load(path=path, environ={})
@@ -306,6 +313,38 @@ def test_build_deck_builder_loads_the_packs_notes_and_style():
 
     assert [d.name for d in builder.note_definitions] == ["Noun (DE)", "Verb (DE)"]
     assert ".card" in builder.style_css
+
+
+def _write_note(directory: Path, stem: str, name: str, applies_to: str | None):
+    directory.mkdir(parents=True, exist_ok=True)
+    applies = f'applies_to = "{applies_to}"\n' if applies_to is not None else ""
+    (directory / f"{stem}.toml").write_text(
+        f'name = "{name}"\n{applies}[map]\nFront = "{{{{ word }}}}"\n', "utf-8"
+    )
+
+
+def test_notes_dir_merges_over_the_packs_notes_by_pos(tmp_path):
+    # A generic noun layout replaces the pack's "Noun (DE)" for nouns; a new POS
+    # (adjective) is added; the pack's verb is left in place.
+    _write_note(tmp_path, "noun", "Simple Noun", "noun")
+    _write_note(tmp_path, "adj", "Simple Adjective", "adjective")
+    builder = build_deck_builder(Config(notes_dir=tmp_path))
+
+    names = [d.name for d in builder.note_definitions]
+    assert names == ["Simple Noun", "Verb (DE)", "Simple Adjective"]
+
+
+def test_notes_dir_unset_leaves_the_packs_notes_alone():
+    builder = build_deck_builder(Config())  # notes_dir is None by default
+
+    assert [d.name for d in builder.note_definitions] == ["Noun (DE)", "Verb (DE)"]
+
+
+def test_notes_dir_with_duplicate_pos_surfaces_as_config_error(tmp_path):
+    _write_note(tmp_path, "a_noun", "Noun A", "noun")
+    _write_note(tmp_path, "b_noun", "Noun B", "noun")
+    with pytest.raises(ConfigError, match="both serve part of speech 'noun'"):
+        build_deck_builder(Config(notes_dir=tmp_path))
 
 
 def test_empty_chain_falls_back_to_the_packs_preferred_chain():

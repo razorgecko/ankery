@@ -5,6 +5,11 @@ from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from ankery.manager import DeckBuilder
+from ankery.notedef import (
+    NoteDefinitionError,
+    load_notes_from_dir,
+    merge_note_definitions,
+)
 from ankery.pack import LanguagePack, PackError, load_pack
 from ankery.prompts import render_system_prompt
 from ankery.providers.base import WordProvider
@@ -76,6 +81,14 @@ class Config:
     deck: str = "Default"
     note_type: str = "Basic"
     tags: tuple[str, ...] = ()
+
+    # `notes_dir`, when set, holds extra note layouts (*.toml, same shape as a
+    # pack's notes/) merged over the active pack's notes by part of speech: a
+    # file here whose `applies_to` matches a pack note replaces it, one serving a
+    # new POS is added. This is the one note channel that is not pack-specific,
+    # so language-agnostic layouts (word + translation, no features) can be
+    # shared across packs. See notedef.merge_note_definitions.
+    notes_dir: Path | None = None
 
     # Language selection. `source_language` is the pack code to load (e.g. "de");
     # `target_language` is where translations go. `langs_dir`, when set, is the
@@ -176,8 +189,9 @@ def _load_config_file(path: Path) -> dict:
     for key in ("llm_timeout", "anki_timeout"):
         if key in raw:
             raw[key] = float(raw[key])
-    if isinstance(raw.get("langs_dir"), str):
-        raw["langs_dir"] = Path(raw["langs_dir"]).expanduser()
+    for key in ("langs_dir", "notes_dir"):
+        if isinstance(raw.get(key), str):
+            raw[key] = Path(raw[key]).expanduser()
     return raw
 
 
@@ -254,6 +268,14 @@ def build_deck_builder(config: Config) -> DeckBuilder:
             ) from None
         providers.append(build(config, pack))
 
+    notes = pack.notes
+    if config.notes_dir is not None:
+        try:
+            extra = load_notes_from_dir(config.notes_dir)
+        except NoteDefinitionError as exc:
+            raise ConfigError(str(exc)) from exc
+        notes = merge_note_definitions(pack.notes, extra)
+
     sink = AnkiConnectSink(
         base_url=config.anki_url,
         timeout=config.anki_timeout,
@@ -266,6 +288,6 @@ def build_deck_builder(config: Config) -> DeckBuilder:
         note_type=config.note_type,
         style_css=pack.style_css,
         normalize=pack.normalize,
-        note_definitions=pack.notes,
+        note_definitions=notes,
         tags=list(config.tags),
     )
