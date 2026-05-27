@@ -127,7 +127,7 @@ def _parse_noun(
     steckbrief = _steckbrief_panel(krz)
     examples, example_translations = _example(steckbrief)
     info = WordInfo(
-        word=word,
+        word=_headword(krz, fallback=word),
         part_of_speech="noun",
         gender=_gender(krz),
         translations=_translations(soup, target_language),
@@ -153,7 +153,7 @@ def _parse_verb(
     steckbrief = _steckbrief_panel(krz)
     examples, example_translations = _example(steckbrief)
     info = WordInfo(
-        word=word,
+        word=_headword(krz, fallback=word),
         part_of_speech="verb",
         separable=_separable(soup),
         translations=_translations(soup, target_language),
@@ -327,6 +327,29 @@ def _normalize_verb_input(word: str) -> str:
         if word.startswith(prefix + "zu") and len(word) > len(prefix) + 2:
             return prefix + word[len(prefix) + 2 :]
     return word
+
+
+def _headword(krz, *, fallback: str) -> str:
+    """The canonical lemma the page is actually about, read from the headword
+    span (span.vGrnd).
+
+    verbformen resolves a misspelled or umlaut-stripped request to the right
+    page ("Ol" -> the "Öl" page), so reading the lemma the page displays gives
+    the corrected form, where echoing the requested `word` would keep the typo.
+    The span carries the noun's article ("das Öl") and a middot at a separable
+    verb's seam ("ein·kaufen"); strip both for the bare lemma. Falls back to the
+    requested word when the span is absent or empty.
+    """
+    if krz is None:
+        return fallback
+    span = krz.select_one("span.vGrnd")
+    if span is None:
+        return fallback
+    text = _normalize(span.get_text()).replace("·", "")
+    head, _, rest = text.partition(" ")
+    if head in ("der", "die", "das"):
+        text = rest
+    return text.strip() or fallback
 
 
 def _gender(krz) -> str | None:

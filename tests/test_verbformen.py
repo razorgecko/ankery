@@ -49,6 +49,20 @@ def test_noun_fetch_returns_wordinfo(httpx_mock):
     )
 
 
+def test_word_taken_from_page_headword_not_request(httpx_mock):
+    # verbformen resolves a misspelled/umlaut-stripped request to the right page
+    # ("Ol" -> the "Öl" page); `word` must be the lemma the page displays, not
+    # the requested spelling. Here the page's headword is "das Haus", so a
+    # "Hause" request still yields "Haus".
+    url = "https://www.verbformen.com/declension/nouns/Hause.htm"
+    httpx_mock.add_response(url=url, text=_fixture("verbformen_noun_Haus.html"))
+
+    info = VerbformenProvider().fetch("Hause", source_language="de", target_language="en")
+
+    assert info is not None
+    assert info.word == "Haus"
+
+
 def test_noun_declension_table_parsed(httpx_mock):
     httpx_mock.add_response(url=NOUN_URL, text=_fixture("verbformen_noun_Haus.html"))
 
