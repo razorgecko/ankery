@@ -1,0 +1,64 @@
+# German language pack.
+#
+# Everything language-specific about German lives in this directory: this file
+# (grammar vocabulary + LLM guidance + provider preferences), the optional
+# filter.py (output normalization), the optional provider.py (the verbformen
+# scraper), and notes/ (card layouts). The engine names no language; it loads a
+# pack by code and wires itself from it.
+
+name = "German"
+
+# Preferred provider chain, in fallback order. Names resolve first against this
+# pack's provider.py, then the engine's cross-language registry (currently just
+# "llm"). Overridable per run with --provider.
+providers = ["verbformen", "llm"]
+
+# Options handed to this pack's providers when built. Keyed by provider name;
+# the builder in provider.py reads its own table. Keeps provider tunables in the
+# pack instead of leaking a German-specific knob into the engine's Config.
+[provider_options.verbformen]
+timeout = 15.0
+
+# Features common to every part of speech: declared key -> what it means to the
+# LLM. `ipa` is where the old `pronunciation` field went — a feature, not a
+# privileged core field, so a language can declare `reading`/`pinyin` instead.
+[features]
+ipa = "IPA transcription of the pronunciation, e.g. /haʊs/; omit if unsure"
+
+# Per-POS grammar. `citation` defines the lemma form, `guidance` is extra prose
+# for the LLM, and each `features` table declares the keys for that POS with the
+# meaning handed to the LLM and read back by the notes. The set of [pos.*]
+# sections is also the closed vocabulary the LLM classifies `part_of_speech` into.
+
+[pos.noun]
+citation = "nominative singular; the bare lemma with no article"
+[pos.noun.features]
+gender = "the definite article der/die/das that marks grammatical gender"
+nominative_pl = "nominative plural form (bare, no article)"
+genitive_sg = "genitive singular form (bare, no article)"
+
+[pos.verb]
+citation = "the infinitive"
+guidance = [
+    "Fill all six present-tense forms even when the verb is regular; per-person stem changes cannot be recovered from a single form.",
+    "preterite is the 1st/3rd person singular form.",
+    "perfect is the full compound form (auxiliary + past participle).",
+    "For separable/prefixed verbs, give each form as it appears in a sentence.",
+]
+[pos.verb.features]
+present_1sg = "1st person singular present (ich)"
+present_2sg = "2nd person singular present (du)"
+present_3sg = "3rd person singular present (er/sie/es)"
+present_1pl = "1st person plural present (wir)"
+present_2pl = "2nd person plural present (ihr)"
+present_3pl = "3rd person plural present (sie)"
+preterite = "preterite, 1st/3rd person singular"
+perfect = "perfect tense: auxiliary + past participle"
+auxiliary = "perfect-tense auxiliary, haben or sein"
+separable = "\"true\" if the verb has a separable prefix, else \"false\""
+
+[pos.adjective]
+citation = "the base (positive) form"
+[pos.adjective.features]
+comparative = "comparative form"
+superlative = "superlative form"

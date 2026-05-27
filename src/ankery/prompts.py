@@ -1,66 +1,62 @@
-"""Prompt text and the canonical inflection-key vocabulary for the LLM provider.
+"""Render the LLM system prompt from a language pack.
 
-The `inflections` dict on `WordInfo` is intentionally untyped, so consistency
-comes from pinning the key vocabulary in the system prompt and instructing the
-LLM to use exactly those keys. Keys are lowercase, underscore-separated
-grammatical labels (`genitive_sg`, `present_3sg`, ...) that the note
-definitions in `notes/*.toml` read back out.
+The `features` dict on `WordInfo` is intentionally untyped, so consistency comes
+from telling the LLM exactly which keys to fill. That key vocabulary — and the
+grammar guidance around it — is no longer hardcoded here; it lives in the active
+pack (lang.toml, see pack.py). This module is a pure renderer: pack in, prompt
+out. Adding a language is authoring a pack, never editing this file.
 
-The prompt is parameterised by the source/target language passed per request
-(`build_user_prompt`); grammatical rules are stated in terms of "the source
-language" rather than baking in any one language's articles or auxiliaries.
+The set of parts of speech the pack declares doubles as the closed vocabulary
+the model classifies `part_of_speech` into, so routing (which keys on a note)
+always lines up with what was requested.
 """
 
-SYSTEM_PROMPT = """\
-You are a lexicographer building Anki vocabulary cards. Given a single word in \
-the source language, return ONLY a JSON object (no prose, no markdown fences) \
-describing it.
-
-General rules:
-- `word`: the citation/dictionary form (the infinitive for verbs, the \
-nominative singular for nouns). Give the bare lemma: no article, and no \
-parentheses around optional or detachable affixes.
-- `part_of_speech`: one of "noun", "verb", "adjective", "adverb", etc.
-- `definitions` and `examples`: written in the SOURCE language.
-- `translations`: a JSON array of strings written in the TARGET language, \
-e.g. ["house", "home"]. Always an array, never an object keyed by language.
-- `gender`: for nouns in languages that mark grammatical gender, the article \
-that expresses it. null otherwise.
-- `separable`: for verbs in languages with separable/detachable prefixes, true \
-if this verb has one. null for non-verbs and for languages without them.
-- `pronunciation`: IPA if known, else null.
-- Leave any field you are unsure about null or empty rather than guessing.
-
-The `inflections` object must use EXACTLY the canonical keys below for the \
-word's part of speech (omit a key only if it genuinely does not apply). Give \
-each inflected form bare: the form alone, with no leading article.
-
-NOUN keys:
-  genitive_sg, nominative_pl
-
-VERB keys:
-  present_1sg, present_2sg, present_3sg, present_1pl, present_2pl, present_3pl, \
-preterite, perfect, auxiliary, imperative_sg
-
-ADJECTIVE keys:
-  comparative, superlative
-
-Verb specifics:
-- Fill ALL SIX present-tense forms even when the verb is regular, since \
-per-person stem changes cannot be recovered from a single form.
-- `preterite` is the 1st/3rd person singular form.
-- `perfect` is the full compound form (auxiliary + participle).
-- `auxiliary` is the perfect-tense auxiliary verb the source language uses.
-- For separable/prefixed verbs, give the inflected forms as they actually \
-appear in a sentence.
-"""
+from ankery.pack import LanguagePack
 
 
-def build_user_prompt(
-    word: str,
-    source_language: str,
-    target_language: str,
-) -> str:
+def render_system_prompt(pack: LanguagePack) -> str:
+    """Build the system prompt for `pack`: general rules + per-POS feature keys."""
+    pos_names = sorted(pack.grammar)
+    lines: list[str] = [
+        f"You are a lexicographer building Anki vocabulary cards for {pack.name}. "
+        "Given a single word in the source language, return ONLY a JSON object "
+        "(no prose, no markdown fences) describing it.",
+        "",
+        "General rules:",
+        "- `word`: the citation/dictionary form for its part of speech (see "
+        "below). Give the bare lemma: no article, no surrounding parentheses.",
+        f"- `part_of_speech`: exactly one of: {', '.join(pos_names)}.",
+        "- `definitions` and `examples`: written in the SOURCE language. "
+        "`example_translations`: the TARGET-language gloss of each example, "
+        "aligned by position.",
+        "- `translations`: a JSON array of strings in the TARGET language, e.g. "
+        '["house", "home"]. Always an array, never an object keyed by language.',
+        "- `features`: a JSON object of grammatical properties, using EXACTLY the "
+        "keys listed below for the word's part of speech plus the common keys. "
+        "Omit a key only if it genuinely does not apply. Give each value bare — "
+        "forms with no leading article.",
+        "- Leave anything you are unsure about empty rather than guessing.",
+    ]
+
+    if pack.common_features:
+        lines += ["", "Common feature keys (any part of speech):"]
+        lines += [f"  {key}: {meaning}" for key, meaning in pack.common_features.items()]
+
+    for pos in pos_names:
+        grammar = pack.grammar[pos]
+        lines += ["", f"Part of speech: {pos}"]
+        if grammar.citation:
+            lines.append(f"  citation form: {grammar.citation}")
+        for note in grammar.guidance:
+            lines.append(f"  - {note}")
+        if grammar.features:
+            lines.append("  feature keys:")
+            lines += [f"    {key}: {meaning}" for key, meaning in grammar.features.items()]
+
+    return "\n".join(lines)
+
+
+def build_user_prompt(word: str, source_language: str, target_language: str) -> str:
     """Render the per-word instruction for the LLM provider."""
     return (
         f"Source language: {source_language}\n"

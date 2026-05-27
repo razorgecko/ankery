@@ -3,17 +3,17 @@ import pytest
 from pathlib import Path
 
 from ankery.config import Config, ConfigError, _config_dir, build_deck_builder
-from ankery.manager import DeckBuilder, default_field_map
+from ankery.manager import DeckBuilder
+from ankery.notedef import default_field_map
 from ankery.providers.llm import LLMProvider
-from ankery.providers.verbformen import VerbformenProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
 
 
 @pytest.fixture(autouse=True)
 def _isolate_default_config_dir(monkeypatch, tmp_path):
     # Keep Config.load() hermetic: tests that don't pass path/auth_path must not
-    # read the developer's real ~/.config/ankery/. Point the XDG base
-    # dir at an empty tmp dir so both config.toml and auth.toml defaults miss.
+    # read the developer's real ~/.config/ankery/. Point the XDG base dir at an
+    # empty tmp dir so both config.toml and auth.toml defaults miss.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "_xdg"))
 
 
@@ -29,6 +29,16 @@ def _write_auth(tmp_path, text: str):
     return path
 
 
+def _provider_named(builder, name):
+    [provider] = [p for p in builder.providers if p.name == name]
+    return provider
+
+
+# ---------------------------------------------------------------------------
+# Config resolution
+# ---------------------------------------------------------------------------
+
+
 def test_from_env_uses_defaults_when_unset():
     config = Config.from_env({})
 
@@ -39,40 +49,26 @@ def test_from_env_uses_defaults_when_unset():
     assert config.tags == ()
     assert config.allow_duplicate is False
     assert config.source_language == "de"
+    assert config.providers == ()  # empty => use the pack's preferred chain
 
 
 def test_from_env_ignores_non_secret_vars():
-    # Env carries only the secret; every other field is set in config.toml or
-    # via CLI flags. Legacy ANKERY_* names for those fields are deliberately
-    # ignored rather than silently honored.
+    # Env carries only the secret; every other field is set in config.toml or via
+    # CLI flags. Legacy ANKERY_* names for those fields are deliberately ignored.
     base = Config(deck="FromFile", llm_model="file-model")
     env = {
         "ANKERY_LLM_URL": "https://api.groq.com/openai/v1",
-        "ANKERY_LLM_MODEL": "llama-3.3-70b",
-        "ANKERY_ANKI_URL": "http://anki.local:8765",
         "ANKERY_DECK": "German::Verbs",
         "ANKERY_PROVIDERS": "llm, verbformen",
-        "ANKERY_TAGS": "auto, de",
-        "ANKERY_NOTES_DIR": "/srv/notes",
         "ANKERY_ALLOW_DUPLICATE": "true",
     }
     config = Config.from_env(env, base=base)
 
     assert config.llm_base_url == "http://localhost:8080/v1"  # default, env ignored
     assert config.llm_model == "file-model"  # base shows through, env ignored
-    assert config.anki_url == "http://localhost:8765"
     assert config.deck == "FromFile"
-    assert config.providers == ("verbformen", "llm")
-    assert config.tags == ()
-    assert config.notes_dir is None
+    assert config.providers == ()
     assert config.allow_duplicate is False
-
-
-def test_notes_dir_and_notes_default_to_bundled_whole_set():
-    config = Config.from_env({})
-
-    assert config.notes_dir is None  # None -> load only the bundled notes/
-    assert config.notes == ()  # empty -> the whole merged set, no subset
 
 
 def test_from_env_layers_api_key_on_top_of_base():
@@ -124,28 +120,11 @@ def test_load_reads_file_values(tmp_path):
     assert config.tags == ("auto", "de")  # list coerced to tuple
 
 
-def test_load_reads_notes_dir_as_path_and_notes_as_tuple(tmp_path):
-    path = _write(
-        tmp_path,
-        'notes_dir = "/srv/notes"\n'
-        'notes = ["noun_de", "verb_de"]\n',
-    )
+def test_load_reads_langs_dir_as_path(tmp_path):
+    path = _write(tmp_path, 'langs_dir = "/srv/packs"\n')
     config = Config.load(path=path, environ={})
 
-    assert config.notes_dir == Path("/srv/notes")  # string coerced to Path
-    assert config.notes == ("noun_de", "verb_de")  # list coerced to tuple
-
-
-def test_build_deck_builder_rejects_unknown_note_name():
-    # A subset name matching no definition is a config error, surfaced up front.
-    with pytest.raises(ConfigError, match="unknown note definition"):
-        build_deck_builder(Config(notes=("nonexistent",)))
-
-
-def test_build_deck_builder_loads_named_subset_for_routing():
-    builder = build_deck_builder(Config(notes=("verb_de", "noun_de")))
-
-    assert [d.name for d in builder.note_definitions] == ["Verb (DE)", "Noun (DE)"]
+    assert config.langs_dir == Path("/srv/packs")  # string coerced to Path
 
 
 def test_load_reads_providers_list(tmp_path):
@@ -156,8 +135,6 @@ def test_load_reads_providers_list(tmp_path):
 
 
 def test_load_env_does_not_override_non_secret_file_value(tmp_path):
-    # Env no longer carries non-secret fields, so config.toml's deck stands
-    # even when a legacy ANKERY_DECK is set in the environment.
     path = _write(tmp_path, 'deck = "FromFile"\nnote_type = "Cloze"\n')
     config = Config.load(path=path, environ={"ANKERY_DECK": "FromEnv"})
 
@@ -178,7 +155,6 @@ def test_load_refuses_api_key_in_config_file(tmp_path):
 
 
 def test_load_refuses_api_key_even_alongside_valid_keys(tmp_path):
-    # The api_key message must win over the generic unknown-keys message.
     path = _write(tmp_path, 'deck = "German"\nllm_api_key = "secret"\n')
     with pytest.raises(ConfigError, match="auth.toml"):
         Config.load(path=path, environ={})
@@ -228,7 +204,6 @@ def test_load_auth_file_rejects_non_secret_keys(tmp_path):
 
 
 def test_load_reads_config_path_from_env(tmp_path):
-    # With no explicit `path`, ANKERY_CONFIG selects which config.toml to read.
     path = _write(tmp_path, 'deck = "FromEnvPath"\n')
     config = Config.load(environ={"ANKERY_CONFIG": str(path)})
 
@@ -236,7 +211,6 @@ def test_load_reads_config_path_from_env(tmp_path):
 
 
 def test_load_explicit_config_path_wins_over_env(tmp_path):
-    # The explicit `path` (the CLI-flag channel) beats ANKERY_CONFIG.
     flag_file = _write(tmp_path, 'deck = "FromFlag"\n')
     env_file = tmp_path / "from-env.toml"
     env_file.write_text('deck = "FromEnvPath"\n')
@@ -246,12 +220,8 @@ def test_load_explicit_config_path_wins_over_env(tmp_path):
 
 
 def test_load_reads_auth_path_from_env(tmp_path):
-    # With no explicit `auth_path`, ANKERY_AUTH selects which auth.toml to read.
     auth = _write_auth(tmp_path, 'llm_api_key = "sk-from-env-path"\n')
-    config = Config.load(
-        path=tmp_path / "absent.toml",
-        environ={"ANKERY_AUTH": str(auth)},
-    )
+    config = Config.load(path=tmp_path / "absent.toml", environ={"ANKERY_AUTH": str(auth)})
 
     assert config.llm_api_key == "sk-from-env-path"
 
@@ -294,10 +264,14 @@ def test_api_key_read_from_env_only():
     assert Config.from_env({"ANKERY_LLM_API_KEY": "sk-123"}).llm_api_key == "sk-123"
 
 
+# ---------------------------------------------------------------------------
+# Pack-driven wiring
+# ---------------------------------------------------------------------------
+
+
 def test_build_deck_builder_passes_api_key():
     builder = build_deck_builder(Config(llm_api_key="sk-123", providers=("llm",)))
-    [provider] = builder.providers
-    assert provider.api_key == "sk-123"
+    assert _provider_named(builder, "llm").api_key == "sk-123"
 
 
 def test_build_deck_builder_wires_provider_and_sink():
@@ -318,7 +292,7 @@ def test_build_deck_builder_wires_provider_and_sink():
     assert builder.tags == ["auto"]
     assert builder.map_fields is default_field_map
 
-    [provider] = builder.providers
+    provider = _provider_named(builder, "llm")
     assert isinstance(provider, LLMProvider)
     assert provider.base_url == "http://llm.local/v1"
     assert provider.model == "my-model"
@@ -327,28 +301,35 @@ def test_build_deck_builder_wires_provider_and_sink():
     assert builder.sink.base_url == "http://anki.local:8765"
 
 
-def test_build_deck_builder_builds_chain_in_configured_order():
-    # The default German chain: verbformen first, LLM as fallback.
+def test_build_deck_builder_loads_the_packs_notes_and_style():
+    builder = build_deck_builder(Config())  # default source_language "de"
+
+    assert [d.name for d in builder.note_definitions] == ["Noun (DE)", "Verb (DE)"]
+    assert ".card" in builder.style_css
+
+
+def test_empty_chain_falls_back_to_the_packs_preferred_chain():
+    # config.providers is () by default, so the pack's chain is used.
     builder = build_deck_builder(Config())
 
     assert [p.name for p in builder.providers] == ["verbformen", "llm"]
-    assert isinstance(builder.providers[0], VerbformenProvider)
-    assert isinstance(builder.providers[1], LLMProvider)
 
 
 def test_build_deck_builder_honors_provider_order():
-    # Reordering the names reorders the fallback chain.
     builder = build_deck_builder(Config(providers=("llm", "verbformen")))
 
     assert [p.name for p in builder.providers] == ["llm", "verbformen"]
 
 
-def test_build_deck_builder_passes_verbformen_timeout():
-    builder = build_deck_builder(
-        Config(providers=("verbformen",), verbformen_timeout=42.0)
-    )
-    [provider] = builder.providers
-    assert provider._client.timeout.read == 42.0
+def test_pack_local_provider_gets_options_from_lang_toml():
+    # verbformen's timeout comes from the de pack's [provider_options], not Config.
+    builder = build_deck_builder(Config(providers=("verbformen",)))
+    assert _provider_named(builder, "verbformen")._client.timeout.read == 15.0
+
+
+def test_llm_provider_gets_the_pack_rendered_prompt():
+    builder = build_deck_builder(Config(providers=("llm",)))
+    assert "German" in _provider_named(builder, "llm").system_prompt
 
 
 def test_build_deck_builder_rejects_unknown_provider():
@@ -356,13 +337,30 @@ def test_build_deck_builder_rejects_unknown_provider():
         build_deck_builder(Config(providers=("nope",)))
 
 
-def test_build_deck_builder_rejects_empty_chain():
+def test_build_deck_builder_rejects_unknown_source_language():
+    with pytest.raises(ConfigError, match="no language pack for 'zz'"):
+        build_deck_builder(Config(source_language="zz"))
+
+
+def test_source_language_selects_a_user_pack_via_langs_dir(tmp_path):
+    pack_dir = tmp_path / "xx"
+    (pack_dir / "notes").mkdir(parents=True)
+    (pack_dir / "lang.toml").write_text(
+        'name = "Examplish"\nproviders = ["llm"]\n[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
+        "utf-8",
+    )
+    builder = build_deck_builder(Config(source_language="xx", langs_dir=tmp_path))
+
+    assert [p.name for p in builder.providers] == ["llm"]
+    assert "Examplish" in _provider_named(builder, "llm").system_prompt
+
+
+def test_empty_chain_with_packless_chain_is_an_error(tmp_path):
+    # A pack that declares no providers and a config that overrides none leaves
+    # nothing to build.
+    pack_dir = tmp_path / "yy"
+    (pack_dir / "notes").mkdir(parents=True)
+    (pack_dir / "lang.toml").write_text('name = "Y"\nproviders = []\n[pos.noun]\n', "utf-8")
+
     with pytest.raises(ConfigError, match="no providers configured"):
-        build_deck_builder(Config(providers=()))
-
-
-def test_build_deck_builder_accepts_custom_field_map():
-    custom = lambda info: {"Word": info.word}
-    builder = build_deck_builder(Config(), map_fields=custom)
-
-    assert builder.map_fields is custom
+        build_deck_builder(Config(source_language="yy", langs_dir=tmp_path))

@@ -3,19 +3,20 @@ id = 1890202981
 applies_to = "verb"
 
 # The six present forms are separate fields; the "ich .. / du .." layout lives in
-# the card templates below, not in the map.
+# the card templates below, not in the map. Keys read from features (declared in
+# ../lang.toml [pos.verb]).
 [map]
 Infinitive  = "{{ word }}"
 Translation = "{{ translations | join(', ') }}"
-Aux         = "{{ inflections.auxiliary }}"
-Present1sg  = "{{ inflections.present_1sg }}"
-Present2sg  = "{{ inflections.present_2sg }}"
-Present3sg  = "{{ inflections.present_3sg }}"
-Present1pl  = "{{ inflections.present_1pl }}"
-Present2pl  = "{{ inflections.present_2pl }}"
-Present3pl  = "{{ inflections.present_3pl }}"
-Preterite   = "{{ inflections.preterite }}"
-Perfect     = "{{ inflections.perfect }}"
+Aux         = "{{ features.auxiliary }}"
+Present1sg  = "{{ features.present_1sg }}"
+Present2sg  = "{{ features.present_2sg }}"
+Present3sg  = "{{ features.present_3sg }}"
+Present1pl  = "{{ features.present_1pl }}"
+Present2pl  = "{{ features.present_2pl }}"
+Present3pl  = "{{ features.present_3pl }}"
+Preterite   = "{{ features.preterite }}"
+Perfect     = "{{ features.perfect }}"
 Example     = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
 
 [[cards]]

@@ -13,7 +13,7 @@ class FakeBuilder:
 
     def __init__(self, results: dict[str, object]):
         self._results = results
-        self.calls: list[dict] = []
+        self.calls: list[str] = []
         self.verified = False
         self.verify_error: Exception | None = None
 
@@ -22,10 +22,8 @@ class FakeBuilder:
             raise self.verify_error
         self.verified = True
 
-    def add_word(self, word, *, source_language, target_language):
-        self.calls.append(
-            {"word": word, "source": source_language, "target": target_language}
-        )
+    def add_word(self, word):
+        self.calls.append(word)
         outcome = self._results[word]
         if isinstance(outcome, Exception):
             raise outcome
@@ -34,13 +32,13 @@ class FakeBuilder:
 
 @pytest.fixture
 def patched(monkeypatch):
-    """Patch build_deck_builder; return (captured_config, set_results)."""
+    """Patch build_deck_builder; return (captured, set_results)."""
     captured: dict[str, object] = {}
 
     def factory(results):
         builder = FakeBuilder(results)
 
-        def fake_build(config, *, map_fields=None):
+        def fake_build(config):
             captured["config"] = config
             captured["builder"] = builder
             return builder
@@ -60,8 +58,7 @@ def test_added_word_prints_note_id_and_exits_zero(patched, capsys):
     code = cli.main(["Buch"])
 
     assert code == 0
-    out = capsys.readouterr().out
-    assert "Buch: added (note 42)" in out
+    assert "Buch: added (note 42)" in capsys.readouterr().out
 
 
 def test_not_found_reports_and_exits_nonzero(patched, capsys):
@@ -113,7 +110,7 @@ def test_multiple_words_one_failure_still_processes_all(patched, capsys):
     code = cli.main(["a", "b", "c"])
 
     assert code == 1  # one miss
-    assert [c["word"] for c in captured["builder"].calls] == ["a", "b", "c"]
+    assert captured["builder"].calls == ["a", "b", "c"]
 
 
 def test_flags_override_config(patched):
@@ -133,6 +130,7 @@ def test_flags_override_config(patched):
 
     config = captured["config"]
     assert config.deck == "German::Verbs"
+    assert config.source_language == "de"
     assert config.target_language == "ru"
     assert config.note_type == "Cloze"
     assert config.allow_duplicate is True
@@ -166,15 +164,13 @@ def test_provider_flag_overrides_chain(patched):
     assert captured["config"].providers == ("verbformen", "llm")
 
 
-def test_languages_passed_through_to_builder(patched):
+def test_langs_dir_flag_sets_user_pack_dir(patched):
     captured, set_results = patched
     set_results({"Buch": 1})
 
-    cli.main(["--source-lang", "de", "--target-lang", "en", "Buch"])
+    cli.main(["--langs-dir", "/srv/packs", "Buch"])
 
-    call = captured["builder"].calls[0]
-    assert call["source"] == "de"
-    assert call["target"] == "en"
+    assert captured["config"].langs_dir == Path("/srv/packs")
 
 
 def test_config_error_reports_and_exits_two(monkeypatch, capsys):
@@ -187,6 +183,22 @@ def test_config_error_reports_and_exits_two(monkeypatch, capsys):
 
     assert code == 2  # distinct from the 1 used for per-word failures
     assert "config error: unknown config keys: dekc" in capsys.readouterr().err
+
+
+def test_pack_error_at_wiring_reports_and_exits_two(patched, monkeypatch, capsys):
+    # A bad source_language surfaces from build_deck_builder as ConfigError; the
+    # CLI catches it and exits 2, like any other config problem.
+    captured, set_results = patched
+
+    def boom(config):
+        raise ConfigError("no language pack for 'zz'")
+
+    monkeypatch.setattr(cli, "build_deck_builder", boom)
+
+    code = cli.main(["Buch"])
+
+    assert code == 2
+    assert "config error: no language pack for 'zz'" in capsys.readouterr().err
 
 
 def _capture_load_path(monkeypatch) -> dict:
@@ -213,8 +225,6 @@ def test_config_flag_sets_load_path(patched, monkeypatch):
 
 
 def test_config_flag_passed_through_even_with_env_set(patched, monkeypatch):
-    # The flag goes straight to Config.load as `path`; __main__ no longer reads
-    # ANKERY_CONFIG (Config.load does), so the env var can't interfere here.
     captured, set_results = patched
     set_results({"Buch": 1})
     seen = _capture_load_path(monkeypatch)
@@ -247,8 +257,6 @@ def test_auth_flag_sets_auth_path(patched, monkeypatch):
 
 
 def test_auth_flag_passed_through_even_with_env_set(patched, monkeypatch):
-    # As with --config: the flag is handed to Config.load directly; __main__
-    # leaves ANKERY_AUTH for Config.load to resolve when no flag is given.
     captured, set_results = patched
     set_results({"Buch": 1})
     seen = _capture_load_path(monkeypatch)

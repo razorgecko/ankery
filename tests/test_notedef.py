@@ -1,28 +1,23 @@
+from pathlib import Path
+
 import pytest
 
+import ankery
 from ankery.models import WordInfo
 from ankery.notedef import (
     NoteDefinition,
     NoteDefinitionError,
-    default_css,
     default_field_map,
-    load_note_definitions,
+    load_notes_from_dir,
 )
 
-
-def _write_note(directory, stem, name, *, applies_to="noun"):
-    """Write a minimal valid note definition TOML and return its path."""
-    (directory / f"{stem}.toml").write_text(
-        f'name = "{name}"\n'
-        f'applies_to = "{applies_to}"\n'
-        "[map]\n"
-        'Word = "{{ word }}"\n',
-        "utf-8",
-    )
+# The bundled German pack's note definitions live here now (not a top-level
+# notes/ dir merged by config).
+DE_NOTES = Path(ankery.__file__).parent / "langs" / "de" / "notes"
 
 
 def _defs() -> dict[str, NoteDefinition]:
-    return {d.name: d for d in load_note_definitions()}
+    return {d.name: d for d in load_notes_from_dir(DE_NOTES)}
 
 
 def _noun() -> WordInfo:
@@ -30,10 +25,9 @@ def _noun() -> WordInfo:
         word="Haus",
         source="test",
         part_of_speech="noun",
-        gender="das",
         translations=["house", "home"],
         examples=["Das Haus ist groß."],
-        inflections={"nominative_pl": "Häuser", "genitive_sg": "Hauses"},
+        features={"gender": "das", "nominative_pl": "Häuser", "genitive_sg": "Hauses"},
     )
 
 
@@ -44,7 +38,7 @@ def _verb() -> WordInfo:
         part_of_speech="verb",
         translations=["to see"],
         examples=["Ich sehe dich."],
-        inflections={
+        features={
             "present_1sg": "sehe",
             "present_2sg": "siehst",
             "present_3sg": "sieht",
@@ -83,14 +77,13 @@ def test_noun_render_fills_the_noun_model_fields():
 
 
 def test_render_copies_forms_verbatim_no_stripping():
-    # Normalization (dropping the article) is the provider's job, not the
-    # template's. An article-bearing value must survive the map untouched.
+    # Normalization (dropping the article) is the pack filter's job, not the
+    # template's. An article-bearing feature value must survive the map untouched.
     info = WordInfo(
         word="Haus",
         source="test",
         part_of_speech="noun",
-        gender="das",
-        inflections={"nominative_pl": "die Häuser", "genitive_sg": "des Hauses"},
+        features={"gender": "das", "nominative_pl": "die Häuser", "genitive_sg": "des Hauses"},
     )
     fields = _defs()["Noun (DE)"].render(info)
 
@@ -118,7 +111,7 @@ def test_verb_render_fills_present_forms_as_separate_fields():
 def test_verb_render_uses_empty_string_for_missing_present_forms():
     info = WordInfo(
         word="x", source="test", part_of_speech="verb",
-        inflections={"present_1sg": "bin", "present_3sg": "ist"},
+        features={"present_1sg": "bin", "present_3sg": "ist"},
     )
     fields = _defs()["Verb (DE)"].render(info)
 
@@ -129,8 +122,8 @@ def test_verb_render_uses_empty_string_for_missing_present_forms():
 
 
 def test_render_tolerates_absent_data_without_literal_none():
-    # Optional WordInfo fields are None, not absent; they must render "" not
-    # the string "None", and missing inflection keys must render "".
+    # Optional WordInfo fields are None, not absent; they must render "" not the
+    # string "None", and missing feature keys must render "".
     bare = WordInfo(word="Ding", source="test", part_of_speech="noun")
     fields = _defs()["Noun (DE)"].render(bare)
 
@@ -155,62 +148,40 @@ def test_applies_routes_by_part_of_speech():
     assert not any(d.applies(adj) for d in defs.values())
 
 
-def test_default_css_is_the_bundled_stylesheet():
-    css = default_css()
-
-    # The shared fallback look, kept in notes/style.css apart from any field map.
-    assert ".card {" in css
-    assert "font-family: arial;" in css
-
-
 def test_bundled_definitions_carry_no_css_of_their_own():
-    # The per-POS notes leave styling to the shared default, so the sink can
-    # supply it (catch-all model or the bundle) without a definition overriding.
+    # The per-POS notes leave styling to the pack's style.css, so the sink can
+    # supply it (catch-all model or the pack fallback) without a definition
+    # overriding.
     assert all(d.css == "" for d in _defs().values())
 
 
-def test_notes_dir_adds_new_stems_to_the_bundled_set(tmp_path):
-    _write_note(tmp_path, "adjective_de", "Adjective (DE)", applies_to="adjective")
-    names = {d.name for d in load_note_definitions(tmp_path)}
-
-    # Bundled definitions remain, the custom new stem is added alongside them.
-    assert {"Noun (DE)", "Verb (DE)", "Adjective (DE)"} <= names
+def test_load_notes_orders_by_stem_for_routing_precedence():
+    # Stem order is routing order: noun_de before verb_de.
+    assert [d.name for d in load_notes_from_dir(DE_NOTES)] == ["Noun (DE)", "Verb (DE)"]
 
 
-def test_notes_dir_same_stem_replaces_the_bundled_definition(tmp_path):
-    # A custom noun_de.toml shadows the bundled one (same stem), so the bundled
-    # "Noun (DE)" is gone and the override's name takes its place.
-    _write_note(tmp_path, "noun_de", "Custom Noun")
-    names = {d.name for d in load_note_definitions(tmp_path)}
-
-    assert "Custom Noun" in names
-    assert "Noun (DE)" not in names
+def test_missing_directory_yields_no_definitions(tmp_path):
+    assert load_notes_from_dir(tmp_path / "absent") == []
 
 
-def test_names_select_a_subset_in_the_order_listed():
-    defs = load_note_definitions(names=("verb_de", "noun_de"))
-
-    # Only the named stems load, and routing precedence follows the given order.
-    assert [d.name for d in defs] == ["Verb (DE)", "Noun (DE)"]
-
-
-def test_unknown_name_raises_rather_than_being_skipped():
-    with pytest.raises(NoteDefinitionError, match="nonexistent"):
-        load_note_definitions(names=("noun_de", "nonexistent"))
+def test_malformed_note_file_raises(tmp_path):
+    (tmp_path / "broken.toml").write_text("name = \n", "utf-8")  # missing value
+    with pytest.raises(NoteDefinitionError):
+        load_notes_from_dir(tmp_path)
 
 
-def test_default_field_map_is_the_procedural_catch_all():
+def test_default_field_map_is_the_neutral_catch_all():
     info = WordInfo(
         word="Buch",
         source="test",
-        gender="das",
         translations=["book"],
         definitions=["gebundene Seiten"],
-        inflections={"nominative_pl": "Bücher"},
+        features={"gender": "das", "nominative_pl": "Bücher"},
     )
     fields = default_field_map(info)
 
-    # Nouns show their article so gender is learned with the word.
-    assert fields["Front"] == "das Buch"
+    # No article prefix, no German-specific layout: front is the bare word.
+    assert fields["Front"] == "Buch"
     assert "book" in fields["Back"]
+    assert "gender: das" in fields["Back"]
     assert "nominative_pl: Bücher" in fields["Back"]

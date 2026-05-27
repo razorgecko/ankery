@@ -8,14 +8,21 @@ from ankery.providers.llm import LLMProvider
 BASE_URL = "http://localhost:8080/v1"
 CHAT_URL = f"{BASE_URL}/chat/completions"
 
+# Stand-in for the pack-rendered system prompt; the provider only passes it
+# through, so its exact content is the renderer's concern (see test_prompts).
+SYSTEM = "You are a lexicographer building Anki vocabulary cards for German."
+
 
 def _completion(content: str) -> dict:
     """Wrap a content string in an OpenAI chat-completion envelope."""
     return {"choices": [{"message": {"role": "assistant", "content": content}}]}
 
 
-def _provider() -> LLMProvider:
-    return LLMProvider(base_url=BASE_URL, model="test-model")
+def _provider(**kwargs) -> LLMProvider:
+    kwargs.setdefault("system_prompt", SYSTEM)
+    kwargs.setdefault("source_language", "de")
+    kwargs.setdefault("target_language", "en")
+    return LLMProvider(base_url=BASE_URL, model="test-model", **kwargs)
 
 
 def test_fetch_returns_wordinfo(httpx_mock):
@@ -23,43 +30,36 @@ def test_fetch_returns_wordinfo(httpx_mock):
         {
             "word": "Buch",
             "part_of_speech": "noun",
-            "gender": "das",
             "definitions": ["gebundene Seiten zum Lesen"],
-            "inflections": {"genitive_sg": "Buches", "nominative_pl": "Bücher"},
+            "features": {"gender": "das", "genitive_sg": "Buches", "nominative_pl": "Bücher"},
         }
     )
     httpx_mock.add_response(url=CHAT_URL, json=_completion(word_json))
 
-    info = _provider().fetch("Buch", source_language="de", target_language="en")
+    info = _provider().fetch("Buch")
 
     assert info is not None
     assert info.word == "Buch"
-    assert info.gender == "das"
-    assert info.inflections["nominative_pl"] == "Bücher"
+    assert info.features["gender"] == "das"
+    assert info.features["nominative_pl"] == "Bücher"
 
 
-def test_fetch_strips_leading_articles_from_inflections(httpx_mock):
-    # The prompt asks for bare forms, but a model may still return them with an
-    # article; the provider enforces the WordInfo.inflections bare-form contract
-    # at this untrusted boundary.
+def test_fetch_does_not_normalize_forms(httpx_mock):
+    # Bare-form normalization is the pack's filter, applied by the manager — not
+    # the provider. The provider returns features verbatim.
     word_json = json.dumps(
-        {
-            "word": "Haus",
-            "part_of_speech": "noun",
-            "gender": "das",
-            "inflections": {"genitive_sg": "des Hauses", "nominative_pl": "die Häuser"},
-        }
+        {"word": "Haus", "features": {"genitive_sg": "des Hauses"}}
     )
     httpx_mock.add_response(url=CHAT_URL, json=_completion(word_json))
 
-    info = _provider().fetch("Haus", source_language="de", target_language="en")
+    info = _provider().fetch("Haus")
 
-    assert info.inflections == {"genitive_sg": "Hauses", "nominative_pl": "Häuser"}
+    assert info.features["genitive_sg"] == "des Hauses"
 
 
 def test_fetch_sets_provenance_and_languages(httpx_mock):
     # The model echoes back bogus provenance/language values; the provider must
-    # overwrite them with what it controls.
+    # overwrite them with what it controls (its construction-time language pair).
     word_json = json.dumps(
         {
             "word": "Buch",
@@ -70,7 +70,7 @@ def test_fetch_sets_provenance_and_languages(httpx_mock):
     )
     httpx_mock.add_response(url=CHAT_URL, json=_completion(word_json))
 
-    info = _provider().fetch("Buch", source_language="de", target_language="en")
+    info = _provider().fetch("Buch")
 
     assert info.source == "llm"
     assert info.source_language == "de"
@@ -81,7 +81,7 @@ def test_fetch_strips_code_fences(httpx_mock):
     fenced = '```json\n{"word": "Buch"}\n```'
     httpx_mock.add_response(url=CHAT_URL, json=_completion(fenced))
 
-    info = _provider().fetch("Buch", source_language="de", target_language="en")
+    info = _provider().fetch("Buch")
 
     assert info.word == "Buch"
 
@@ -89,24 +89,22 @@ def test_fetch_strips_code_fences(httpx_mock):
 def test_request_payload_carries_prompt_and_model(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": "Buch"}'))
 
-    _provider().fetch("Buch", source_language="de", target_language="en")
+    _provider().fetch("Buch")
 
     request = httpx_mock.get_requests()[0]
     body = json.loads(request.content)
     assert body["model"] == "test-model"
     assert body["response_format"] == {"type": "json_object"}
     roles = {m["role"]: m["content"] for m in body["messages"]}
-    assert "lexicographer" in roles["system"]
+    assert roles["system"] == SYSTEM
     assert "Word: Buch" in roles["user"]
+    assert "Source language: de" in roles["user"]
 
 
 def test_no_response_format_when_disabled(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": "Buch"}'))
 
-    provider = LLMProvider(
-        base_url=BASE_URL, model="test-model", request_json_format=False
-    )
-    provider.fetch("Buch", source_language="de", target_language="en")
+    _provider(request_json_format=False).fetch("Buch")
 
     body = json.loads(httpx_mock.get_requests()[0].content)
     assert "response_format" not in body
@@ -115,8 +113,7 @@ def test_no_response_format_when_disabled(httpx_mock):
 def test_api_key_sends_bearer_header(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": "Buch"}'))
 
-    provider = LLMProvider(base_url=BASE_URL, model="test-model", api_key="sk-123")
-    provider.fetch("Buch", source_language="de", target_language="en")
+    _provider(api_key="sk-123").fetch("Buch")
 
     request = httpx_mock.get_requests()[0]
     assert request.headers["Authorization"] == "Bearer sk-123"
@@ -125,7 +122,7 @@ def test_api_key_sends_bearer_header(httpx_mock):
 def test_no_auth_header_without_api_key(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": "Buch"}'))
 
-    _provider().fetch("Buch", source_language="de", target_language="en")
+    _provider().fetch("Buch")
 
     request = httpx_mock.get_requests()[0]
     assert "Authorization" not in request.headers
@@ -136,30 +133,29 @@ def test_auth_rejection_raises_provider_error(httpx_mock):
     # keyed llama-server); raise_for_status must turn that into a ProviderError.
     httpx_mock.add_response(url=CHAT_URL, status_code=401)
 
-    provider = LLMProvider(base_url=BASE_URL, model="test-model", api_key="wrong")
     with pytest.raises(ProviderError):
-        provider.fetch("Buch", source_language="de", target_language="en")
+        _provider(api_key="wrong").fetch("Buch")
 
 
 def test_http_error_raises_provider_error(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, status_code=500)
 
     with pytest.raises(ProviderError):
-        _provider().fetch("Buch", source_language="de", target_language="en")
+        _provider().fetch("Buch")
 
 
 def test_non_json_content_raises_provider_error(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion("not json at all"))
 
     with pytest.raises(ProviderError):
-        _provider().fetch("Buch", source_language="de", target_language="en")
+        _provider().fetch("Buch")
 
 
 def test_unexpected_response_shape_raises_provider_error(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json={"unexpected": "shape"})
 
     with pytest.raises(ProviderError):
-        _provider().fetch("Buch", source_language="de", target_language="en")
+        _provider().fetch("Buch")
 
 
 def test_invalid_wordinfo_raises_provider_error(httpx_mock):
@@ -167,7 +163,7 @@ def test_invalid_wordinfo_raises_provider_error(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": ""}'))
 
     with pytest.raises(ProviderError):
-        _provider().fetch("Buch", source_language="de", target_language="en")
+        _provider().fetch("Buch")
 
 
 def test_malformed_output_raises_with_validation_detail(httpx_mock):
@@ -178,4 +174,4 @@ def test_malformed_output_raises_with_validation_detail(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion(bad))
 
     with pytest.raises(ProviderError, match="definitions"):
-        _provider().fetch("schnell", source_language="de", target_language="en")
+        _provider().fetch("schnell")

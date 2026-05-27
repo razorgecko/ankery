@@ -18,18 +18,17 @@ class WordProvider(Protocol):
     """A source of word information.
 
     The seam the manager's fallback chain types against. Implementations are
-    interchangeable: the LLM provider here, or later a dictionary API, a
-    web scraper, or a manual stdin entry provider — all behind this one method.
+    interchangeable: the cross-language LLM provider, or a pack-local scraper
+    (verbformen), or later a dictionary API — all behind this one method.
+
+    A provider is built for one run against one language pack, so the language
+    pair is fixed at construction (the LLM provider is handed the rendered
+    prompt; a scraper knows its own language). `fetch` therefore takes only the
+    word — the engine never re-passes language at call time.
     """
 
     name: str
 
-    def fetch(
-        self,
-        word: str,
-        *,
-        source_language: str,
-        target_language: str,
-    ) -> WordInfo | None:
+    def fetch(self, word: str) -> WordInfo | None:
         """Return word info, or None if this provider has no result for `word`."""
         ...

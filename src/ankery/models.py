@@ -2,12 +2,20 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class WordInfo(BaseModel):
-    """Structured information about a word.
+    """Structured information about a word — the contract every layer speaks.
 
-    The contract every layer speaks: providers produce it, the manager maps it
-    to note fields, the sink writes it to Anki. It is also the schema the LLM
-    provider is asked to fill, so it doubles as the validation boundary for
-    untrusted model output. Unknown keys are ignored rather than rejected.
+    Providers produce it, the manager normalizes and maps it to note fields, the
+    sink writes it to Anki. It is also the schema the LLM provider is asked to
+    fill, so it doubles as the validation boundary for untrusted model output.
+    Unknown keys are ignored rather than rejected.
+
+    The model carries **no language knowledge**. The invariant core below is
+    typed and universal; everything a particular language needs — gender, case
+    forms, verb classes, kana readings, IPA — lives in the open `features` dict,
+    whose key vocabulary is declared by the active language pack (see pack.py).
+    The pack hands those keys to the LLM as the requested schema and the note
+    templates read them back via Jinja, so the pack is the single source of truth
+    and the contract stays neutral.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -21,33 +29,21 @@ class WordInfo(BaseModel):
     # consumers index it defensively.
     example_translations: list[str] = Field(default_factory=list)
     translations: list[str] = Field(default_factory=list)
-    pronunciation: str | None = None
     part_of_speech: str | None = None
 
-    # Language pair. Affects prompting (e.g. "define this German word") and
-    # disambiguates which language `translations` are written in.
+    # Language pair. `source_language` is the pack code (e.g. "de"); both affect
+    # prompting and disambiguate which language `translations` are written in.
     source_language: str | None = None
     target_language: str | None = None
 
-    # Grammar. `gender` is the article for nouns ("der"/"die"/"das"); None when
-    # not applicable. `separable` flags German separable verbs (einkaufen);
-    # None means not applicable to this word.
-    gender: str | None = None
-    separable: bool | None = None
-
-    # Part-of-speech-appropriate inflected forms keyed by a canonical label.
-    # The key vocabulary is pinned per language/POS in prompts.py so the LLM
-    # fills consistent keys (e.g. "nominative_pl", "present_3sg") rather than ad-hoc
-    # ones. Kept as a flat dict so the type stays language-neutral and the
-    # Anki-field mapping stays simple.
-    #
-    # Contract: each value is the bare form, with no leading article (the noun's
-    # nominative article lives in `gender`). Providers normalize to this at their
-    # boundary — verbformen reads only the form cell; the LLM is asked for bare
-    # forms by the prompt and the output is stripped defensively
-    # (providers/normalize.py) — so consumers (note templates, Anki) need no
-    # stripping.
-    inflections: dict[str, str] = Field(default_factory=dict)
+    # Open, language-defined vocabulary: inherent properties and variant forms
+    # alike, keyed by labels the active pack declares per part of speech
+    # (e.g. "gender", "genitive_sg", "present_3sg", "reading", "ipa"). Kept a
+    # flat str->str dict so the contract names no language; the pack supplies the
+    # meaning of each key and the note templates render them. Values are bare
+    # forms (no leading article); a pack's normalize hook enforces that at the
+    # boundary so consumers need no stripping.
+    features: dict[str, str] = Field(default_factory=dict)
 
     audio_url: str | None = None
 

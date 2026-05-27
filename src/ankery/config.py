@@ -5,15 +5,10 @@ from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from ankery.manager import DeckBuilder
+from ankery.pack import LanguagePack, PackError, load_pack
+from ankery.prompts import render_system_prompt
 from ankery.providers.base import WordProvider
 from ankery.providers.llm import LLMProvider
-from ankery.providers.verbformen import VerbformenProvider
-from ankery.notedef import (
-    FieldMap,
-    NoteDefinitionError,
-    default_field_map,
-    load_note_definitions,
-)
 from ankery.sinks.ankiconnect import AnkiConnectSink
 
 ENV_PREFIX = "ANKERY_"
@@ -41,20 +36,21 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Config:
-    """All the values that were hardcoded across the slices, in one place.
+    """Infrastructure settings only — the engine names no language.
 
-    Plain dataclass rather than pydantic-settings (deliberately omitted): the
-    settings are a handful of scalars resolved from TOML and CLI flags, with env
-    carrying only the secret. The field-mapping function is not here because it
-    is a callable, not a value — pass it to `build_deck_builder` instead.
+    Everything language-specific (grammar, guidance, normalization, note
+    layouts, the preferred provider chain) lives in the language pack, selected
+    by `source_language` and loaded at wiring time (see pack.py). `Config` keeps
+    only where things are and how to reach them: the Anki/LLM endpoints, the
+    deck, the catch-all note type, the language pair, and the user pack
+    override dir.
     """
 
-    # Provider chain, tried in fallback order: the first name with a result for
-    # a word wins. Names index the registry in `build_deck_builder`. The German
-    # default puts verbformen first (authoritative scraped gender/declension/
-    # conjugation) with the LLM behind it to catch what it misses or non-German
-    # words. Set to a single name to use one provider, or reorder to taste.
-    providers: tuple[str, ...] = ("verbformen", "llm")
+    # Provider chain in fallback order: the first name with a result wins. Empty
+    # (the default) means "use the pack's preferred chain"; set it to override.
+    # Names resolve against the pack's own providers first, then the engine's
+    # cross-language registry. --provider sets this.
+    providers: tuple[str, ...] = ()
 
     # LLM provider. base_url is the OpenAI-compatible root; the defaults target
     # a local llama.cpp `llama-server` (port 8080), but any compatible server
@@ -69,34 +65,25 @@ class Config:
     # secret: only ever read from the env, never the config file or a CLI flag.
     llm_api_key: str | None = None
 
-    # verbformen.com scraping provider.
-    verbformen_timeout: float = 15.0
-
     # AnkiConnect sink.
     anki_url: str = "http://localhost:8765"
     anki_timeout: float = 10.0
     allow_duplicate: bool = False
 
     # Note destination. `note_type` is the catch-all model for words that match
-    # no note definition (adjectives, adverbs, function words). Part-of-speech
-    # routing to specific models (e.g. "Noun (DE)", "Verb (DE)") is owned by the
-    # note definitions in notes/*.toml (their `applies_to`), not by config.
+    # no note definition in the pack. Part-of-speech routing to specific models
+    # is owned by the pack's note definitions (their `applies_to`), not config.
     deck: str = "Default"
     note_type: str = "Basic"
     tags: tuple[str, ...] = ()
 
-    # Note definitions. `notes_dir`, when set, is merged over the bundled
-    # notes/ by file stem — a custom file with the same stem replaces the
-    # bundled one, new stems are added. `notes`, when non-empty, selects a
-    # subset of definitions by stem (e.g. ("noun_de", "verb_de")) in the order
-    # listed, so a collection can ship many note types and a run use only those
-    # for the language at hand. Empty `notes` loads the whole merged set.
-    notes_dir: Path | None = None
-    notes: tuple[str, ...] = ()
-
-    # Default language pair for lookups (a German -> English vocab builder).
+    # Language selection. `source_language` is the pack code to load (e.g. "de");
+    # `target_language` is where translations go. `langs_dir`, when set, is the
+    # user pack directory: a pack at `<langs_dir>/<code>/` overrides the bundled
+    # one of the same code.
     source_language: str = "de"
     target_language: str = "en"
+    langs_dir: Path | None = None
 
     @classmethod
     def load(
@@ -112,11 +99,9 @@ class Config:
         stays safe to share. auth.toml is its sibling holding only the secret.
         Which file each reads is resolved in three steps: an explicit `path` /
         `auth_path` (the CLI-flag channel) wins; failing that the
-        `ANKERY_CONFIG` / `ANKERY_AUTH` env vars (a value that can't live inside
-        the file it selects); failing both, the default name in `_config_dir()`.
-        Both files are read with the same tomllib; the `ANKERY_LLM_API_KEY` env
-        var overrides the secret. CLI flags, the final layer, are applied by the
-        caller (`__main__`) after this returns.
+        `ANKERY_CONFIG` / `ANKERY_AUTH` env vars; failing both, the default name
+        in `_config_dir()`. CLI flags, the final layer, are applied by the caller
+        (`__main__`) after this returns.
         """
         env = os.environ if environ is None else environ
         if path is None:
@@ -141,12 +126,11 @@ class Config:
     ) -> "Config":
         """Overlay the only env-supplied field — the secret — onto `base`.
 
-        Env carries just the two things nothing else can: the API-key override
-        (`ANKERY_LLM_API_KEY`, a secret that must not sit in a file) and, in
-        `load`, the config/auth file *paths* (a value that can't live inside the
-        file it selects). Everything else is set in config.toml or via CLI
-        flags, so other `ANKERY_*` variables are deliberately ignored here.
-        `base` supplies the fallback; this is how `load` layers env on the file.
+        Env carries just the API-key override (`ANKERY_LLM_API_KEY`, a secret
+        that must not sit in a file) and, in `load`, the config/auth file
+        *paths*. Everything else is set in config.toml or via CLI flags, so other
+        `ANKERY_*` variables are deliberately ignored here. `base` supplies the
+        fallback; this is how `load` layers env on the file.
         """
         env = os.environ if environ is None else environ
         base = cls() if base is None else base
@@ -186,14 +170,14 @@ def _load_config_file(path: Path) -> dict:
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 
     # TOML gives native types; only nudge the ones Config types differently.
-    for key in ("tags", "providers", "notes"):
+    for key in ("tags", "providers"):
         if isinstance(raw.get(key), list):
             raw[key] = tuple(raw[key])
-    for key in ("llm_timeout", "anki_timeout", "verbformen_timeout"):
+    for key in ("llm_timeout", "anki_timeout"):
         if key in raw:
             raw[key] = float(raw[key])
-    if isinstance(raw.get("notes_dir"), str):
-        raw["notes_dir"] = Path(raw["notes_dir"]).expanduser()
+    if isinstance(raw.get("langs_dir"), str):
+        raw["langs_dir"] = Path(raw["langs_dir"]).expanduser()
     return raw
 
 
@@ -215,51 +199,61 @@ def _load_auth_file(path: Path) -> dict:
     return raw
 
 
-# Provider name -> how to build it from config. Each entry is the seam the
-# `providers` chain selects from; adding a provider is registering it here.
-def _build_llm(config: "Config") -> WordProvider:
+# Engine-level provider registry: only cross-language providers live here. Each
+# builder takes (config, pack); language-specific providers come from the pack's
+# own provider.py and are merged over this at wiring time. The LLM builder
+# renders its system prompt from the pack, which is what makes it work for any
+# language.
+def _build_llm(config: "Config", pack: LanguagePack) -> WordProvider:
     return LLMProvider(
         base_url=config.llm_base_url,
         model=config.llm_model,
+        system_prompt=render_system_prompt(pack),
+        source_language=pack.code,
+        target_language=config.target_language,
         timeout=config.llm_timeout,
         request_json_format=config.llm_request_json_format,
         api_key=config.llm_api_key,
     )
 
 
-def _build_verbformen(config: "Config") -> WordProvider:
-    return VerbformenProvider(timeout=config.verbformen_timeout)
+ProviderBuilder = Callable[["Config", LanguagePack], WordProvider]
 
-
-PROVIDER_REGISTRY: dict[str, Callable[["Config"], WordProvider]] = {
+PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
     "llm": _build_llm,
-    "verbformen": _build_verbformen,
 }
 
 
-def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) -> DeckBuilder:
-    """Wire the provider chain and sink from config into a ready DeckBuilder.
+def build_deck_builder(config: Config) -> DeckBuilder:
+    """Resolve the language pack and wire the chain, sink, and DeckBuilder from it.
 
-    `config.providers` names the chain in fallback order; each name is looked up
-    in `PROVIDER_REGISTRY`. An unknown name or an empty chain is a config error.
+    `config.source_language` selects the pack. The chain is `config.providers`
+    when set, else the pack's preferred chain; each name resolves against the
+    pack's own providers first, then `PROVIDER_REGISTRY`. An unknown name or an
+    empty chain is a config error.
     """
-    if not config.providers:
-        raise ConfigError("no providers configured; set `providers` to at least one of: "
-                          f"{', '.join(sorted(PROVIDER_REGISTRY))}.")
+    try:
+        pack = load_pack(config.source_language, config.langs_dir)
+    except PackError as exc:
+        raise ConfigError(str(exc)) from exc
+
+    registry: dict[str, ProviderBuilder] = {**PROVIDER_REGISTRY, **pack.provider_builders}
+    chain = config.providers or pack.providers
+    if not chain:
+        raise ConfigError(
+            "no providers configured; set `providers` or give the pack a default chain."
+        )
     providers = []
-    for name in config.providers:
+    for name in chain:
         try:
-            build = PROVIDER_REGISTRY[name]
+            build = registry[name]
         except KeyError:
             raise ConfigError(
-                f"unknown provider {name!r}; known providers: "
-                f"{', '.join(sorted(PROVIDER_REGISTRY))}."
+                f"unknown provider {name!r} for pack {pack.code!r}; known: "
+                f"{', '.join(sorted(registry))}."
             ) from None
-        providers.append(build(config))
-    try:
-        note_definitions = load_note_definitions(config.notes_dir, config.notes)
-    except NoteDefinitionError as exc:
-        raise ConfigError(str(exc)) from exc
+        providers.append(build(config, pack))
+
     sink = AnkiConnectSink(
         base_url=config.anki_url,
         timeout=config.anki_timeout,
@@ -270,7 +264,8 @@ def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) ->
         sink,
         deck=config.deck,
         note_type=config.note_type,
-        map_fields=map_fields or default_field_map,
-        note_definitions=note_definitions,
+        style_css=pack.style_css,
+        normalize=pack.normalize,
+        note_definitions=pack.notes,
         tags=list(config.tags),
     )

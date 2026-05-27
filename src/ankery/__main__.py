@@ -27,11 +27,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--provider",
         metavar="NAMES",
-        help="comma-separated providers in fallback order. Known: llm, verbformen.",
+        help="comma-separated providers in fallback order, overriding the pack's "
+        "default chain.",
     )
     parser.add_argument("--deck", help="destination deck")
-    parser.add_argument("--source-lang", help="language of the words")
+    parser.add_argument(
+        "--source-lang", help="language pack to load (e.g. de), keyed by code"
+    )
     parser.add_argument("--target-lang", help="language to translate into")
+    parser.add_argument(
+        "--langs-dir", help="user pack directory; a pack here overrides the bundled one"
+    )
     parser.add_argument("--note-type", help="Anki note type")
     parser.add_argument("--llm-url", help="OpenAI-compatible base URL for the LLM provider")
     parser.add_argument("--llm-model", help="model name sent to the LLM provider")
@@ -57,6 +63,8 @@ def _config_from_args(args: argparse.Namespace) -> Config:
         overrides["target_language"] = args.target_lang
     if args.note_type is not None:
         overrides["note_type"] = args.note_type
+    if args.langs_dir is not None:
+        overrides["langs_dir"] = Path(args.langs_dir).expanduser()
     if args.llm_url is not None:
         overrides["llm_base_url"] = args.llm_url
     if args.llm_model is not None:
@@ -83,7 +91,11 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
-    builder = build_deck_builder(config)
+    try:
+        builder = build_deck_builder(config)
+    except ConfigError as exc:
+        print(f"config error: {exc}", file=sys.stderr)
+        return 2
     try:
         builder.verify_note_types()
     except SinkError as exc:
@@ -93,11 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
     for word in args.words:
         try:
-            note_id = builder.add_word(
-                word,
-                source_language=config.source_language,
-                target_language=config.target_language,
-            )
+            note_id = builder.add_word(word)
         except ProviderError as exc:
             print(f"{word}: lookup failed: {exc}", file=sys.stderr)
             exit_code = 1

@@ -1,14 +1,19 @@
-"""Note definitions loaded from TOML — one file per note type.
+"""Note definitions loaded from a pack's notes/ directory — one file per type.
 
 A note definition is the single source of truth for a note type: its Anki field
 set (and order), how each field is filled from a `WordInfo` (Jinja templates),
 the card templates, and the part of speech it serves. The runtime reads the
 field map and the routing predicate; ``AnkiConnectSink.verify_note_types`` reads
-the *same* files to create the Anki note types (via ``createModel``). So a field
-name is written once — in the ``[map]`` of one file — and can no longer drift
-between the model and the filler.
+the *same* definitions to create the Anki note types (via ``createModel``). So a
+field name is written once — in the ``[map]`` of one file — and can no longer
+drift between the model and the filler.
 
-File shape (see ``notes/noun_de.toml``)::
+The files live in the active language pack (``langs/<code>/notes/``); the pack
+loader calls ``load_notes_from_dir``. The maps read the feature keys the pack
+declares, e.g. ``{{ features.gender }}`` / ``{{ features.genitive_sg }}``; an
+undeclared/absent key renders empty via ``ChainableUndefined``.
+
+File shape (see ``langs/de/notes/noun_de.toml``)::
 
     name = "Noun (DE)"        # the Anki note type name
     id = 1986815750           # genanki model id; omit for a built-in note type
@@ -22,16 +27,10 @@ File shape (see ``notes/noun_de.toml``)::
     qfmt = "..."
     afmt = "..."
 
-    css = "..."               # optional; omitted falls back to the shared style
+    css = "..."               # optional; omitted falls back to the pack's style.css
 
 The map values are Jinja; the card ``qfmt``/``afmt`` are Anki's own mustache and
-are never run through Jinja here. Both happen to use ``{{ }}`` — only the map is
-rendered.
-
-A definition that sets no ``css`` keeps it empty here; resolving the fallback —
-the catch-all model's live styling or the bundled ``notes/style.css`` — is the
-sink's job at create time, so card *appearance* can be tuned (here or in Anki)
-without touching a definition's fields or layout.
+are never run through Jinja here.
 """
 
 import tomllib
@@ -43,9 +42,6 @@ import jinja2
 
 from ankery.models import WordInfo
 
-_NOTES_DIR = Path(__file__).parent / "notes"
-_STYLE_PATH = _NOTES_DIR / "style.css"
-
 # A filler: WordInfo -> flat {field name: value}. Both NoteDefinition.render
 # (the file-driven, declarative path) and default_field_map (the procedural
 # catch-all) satisfy it, so DeckBuilder can treat either uniformly.
@@ -53,15 +49,15 @@ FieldMap = Callable[[WordInfo], dict[str, str]]
 
 
 class NoteDefinitionError(Exception):
-    """Raised when a requested note definition can't be found."""
+    """Raised when a note definition can't be found or parsed."""
 
 
 def _finalize(value: object) -> object:
     """Render `WordInfo`'s None-valued optionals as "" rather than "None".
 
-    Absent inflection keys are already Undefined (-> "") via ChainableUndefined;
-    this only has to catch the fields that are present-but-None (gender,
-    pronunciation, ...), which Jinja would otherwise stringify as "None".
+    Absent feature keys are already Undefined (-> "") via ChainableUndefined;
+    this catches the core fields that are present-but-None (part_of_speech,
+    audio_url, ...), which Jinja would otherwise stringify as "None".
     """
     return "" if value is None else value
 
@@ -69,7 +65,7 @@ def _finalize(value: object) -> object:
 _env = jinja2.Environment(
     trim_blocks=True,
     lstrip_blocks=True,
-    undefined=jinja2.ChainableUndefined,  # inflections.missing_key -> "" not error
+    undefined=jinja2.ChainableUndefined,  # features.missing_key -> "" not error
     finalize=_finalize,
     autoescape=False,  # field values are HTML we assemble deliberately
 )
@@ -113,50 +109,22 @@ class NoteDefinition:
         }
 
 
-def default_css() -> str:
-    """The bundled fallback card stylesheet (``notes/style.css``).
+def load_notes_from_dir(directory: Path) -> list[NoteDefinition]:
+    """Load every ``*.toml`` note definition in `directory`, ordered by stem.
 
-    Used for note types whose definition sets no ``css`` of its own, when the
-    sink can't read a live style off the catch-all model. Kept in its own file,
-    apart from the field maps and card layouts, so the look can be tuned on its
-    own.
+    Stem order is the routing order (first whose ``applies`` matches wins). A
+    missing directory yields no definitions; the pack just routes everything to
+    the catch-all. A malformed file raises ``NoteDefinitionError``.
     """
-    return _STYLE_PATH.read_text("utf-8")
-
-
-def load_note_definitions(
-    notes_dir: Path | None = None,
-    names: tuple[str, ...] = (),
-) -> list[NoteDefinition]:
-    """Load note definitions, a custom directory merged over the bundled set.
-
-    Files are keyed by stem (filename without ``.toml``). The bundled ``notes/``
-    loads first; ``notes_dir`` is layered on top, so a custom file with the same
-    stem replaces the bundled one and new stems are added — the merge is a dict
-    keyed by stem, built fresh each call (nothing persists between runs).
-
-    ``names``, when given, selects a subset by stem *in the order listed*, so
-    config can control routing precedence; a name matching no file (in either
-    directory) raises ``NoteDefinitionError`` rather than being skipped.
-    """
-    paths: dict[str, Path] = {}
-    for directory in (_NOTES_DIR, notes_dir):
-        if directory is None:
-            continue
-        for path in sorted(directory.glob("*.toml")):
-            paths[path.stem] = path  # later assignment wins: custom over bundled
-
-    if names:
-        missing = [name for name in names if name not in paths]
-        if missing:
-            available = ", ".join(sorted(paths)) or "(none)"
-            raise NoteDefinitionError(
-                f"unknown note definition(s): {', '.join(missing)}; "
-                f"available: {available}."
-            )
-        paths = {name: paths[name] for name in names}
-
-    return [_parse(tomllib.loads(path.read_text("utf-8"))) for path in paths.values()]
+    if not directory.is_dir():
+        return []
+    definitions: list[NoteDefinition] = []
+    for path in sorted(directory.glob("*.toml")):
+        try:
+            definitions.append(_parse(tomllib.loads(path.read_text("utf-8"))))
+        except (tomllib.TOMLDecodeError, KeyError, OSError) as exc:
+            raise NoteDefinitionError(f"{path}: {exc}") from exc
+    return definitions
 
 
 def _parse(raw: dict) -> NoteDefinition:
@@ -176,20 +144,13 @@ def _parse(raw: dict) -> NoteDefinition:
 def default_field_map(info: WordInfo) -> dict[str, str]:
     """Fill Anki's built-in "Basic" note from any `WordInfo`: Front + Back.
 
-    The catch-all for words that match no note definition (adjectives, adverbs,
-    function words, non-German). Unlike the per-POS note types, this collapses an
-    arbitrary `WordInfo` into two slots, so it is procedural rather than a
-    field-per-datum template — the one filler kept in Python. Fields are HTML, so
-    lines are joined with <br>.
+    The language-neutral catch-all for words that match no note definition
+    (adjectives, function words, anything a pack ships no layout for). It names
+    no language: the front is the bare word, the back collapses translations,
+    definitions, every declared `features` entry, and the examples. Fields are
+    HTML, so lines are joined with <br>.
     """
-    return {"Front": _front(info), "Back": _back(info)}
-
-
-def _front(info: WordInfo) -> str:
-    # Show nouns with their article so the gender is learned with the word.
-    if info.gender:
-        return f"{info.gender} {info.word}"
-    return info.word
+    return {"Front": info.word, "Back": _back(info)}
 
 
 def _back(info: WordInfo) -> str:
@@ -198,9 +159,9 @@ def _back(info: WordInfo) -> str:
         sections.append(", ".join(info.translations))
     if info.definitions:
         sections.append("<br>".join(info.definitions))
-    if info.inflections:
+    if info.features:
         sections.append(
-            "<br>".join(f"{key}: {value}" for key, value in info.inflections.items())
+            "<br>".join(f"{key}: {value}" for key, value in info.features.items())
         )
     if info.examples:
         rendered = []
@@ -208,6 +169,4 @@ def _back(info: WordInfo) -> str:
             gloss = info.example_translations[i] if i < len(info.example_translations) else ""
             rendered.append(f"<i>{ex}</i> — {gloss}" if gloss else f"<i>{ex}</i>")
         sections.append("<br>".join(rendered))
-    if info.pronunciation:
-        sections.append(f"[{info.pronunciation}]")
     return "<hr>".join(sections)

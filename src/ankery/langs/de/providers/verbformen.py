@@ -1,4 +1,9 @@
-"""Word provider that scrapes verbformen.com for German grammar data.
+"""verbformen.com scraper — the German pack's own provider.
+
+A language-specific provider lives in its pack, not the engine: it is named in
+lang.toml's chain and resolved here. The engine's registry holds only
+cross-language providers (the LLM). The pack exposes its builders through the
+module-level `PROVIDERS` dict, which the loader merges over the engine registry.
 
 Fetches the compact steckbrief (summary panel) from one URL per word:
   - Nouns (capital first letter): /declension/nouns/{Word}.htm
@@ -6,13 +11,12 @@ Fetches the compact steckbrief (summary panel) from one URL per word:
 
 Parsing uses BeautifulSoup for element selection — the steckbrief and the
 declension tables carry stable id/class anchors — with light regex only for
-*text* normalization (whitespace, footnote superscripts). A real parser is
-what lets the translation span be read whole: the site wraps rarer senses in
-nested <span> elements, and a non-greedy `(.*?)</span>` regex would stop at the
-first nested close tag and silently drop every sense after it. get_text() has
-no such failure mode.
+*text* normalization (whitespace, footnote superscripts). get_text() reads a
+translation cell whole, nested sense-spans included, where a non-greedy
+`(.*?)</span>` regex would truncate at the first inner close tag.
 
-No Cloudflare bypass needed — the site serves 200 to plain httpx.
+Imports are absolute: the engine loads this file by path, so a relative import
+has no package to resolve against.
 """
 
 import re
@@ -58,50 +62,46 @@ _SEPARABLE_PREFIXES = (
 class VerbformenProvider:
     name = "verbformen"
 
-    def __init__(self, *, timeout: float = 15.0) -> None:
+    def __init__(self, *, timeout: float = 15.0, target_language: str = "en") -> None:
+        # Source language is always German for this provider; target steers the
+        # gloss language requested via Accept-Language (see _get).
+        self._target_language = target_language
         self._client = httpx.Client(
             headers=_HEADERS, timeout=timeout, follow_redirects=True
         )
 
-    def fetch(
-        self,
-        word: str,
-        *,
-        source_language: str,
-        target_language: str,
-    ) -> WordInfo | None:
+    def fetch(self, word: str) -> WordInfo | None:
+        target = self._target_language
         # German nouns are always capitalised; verbs/adjectives start lowercase.
         if word[0].isupper():
-            html_text = self._get(f"/declension/nouns/{word}.htm", target_language)
+            html_text = self._get(f"/declension/nouns/{word}.htm")
             if html_text is None:
                 return None
             soup = BeautifulSoup(html_text, "html.parser")
-            return _parse_noun(word, soup, target_language, self.name)
+            return _parse_noun(word, soup, target, self.name)
         else:
             lemma = word
-            html_text = self._get(f"/conjugation/{word}.htm", target_language)
+            html_text = self._get(f"/conjugation/{word}.htm")
             if html_text is None:
                 # The literal form missed; if it looks like a "zu"-infinitive
                 # (umzusetzen) retry the base infinitive (umsetzen).
                 normalized = _normalize_verb_input(word)
                 if normalized != word:
-                    html_text = self._get(
-                        f"/conjugation/{normalized}.htm", target_language
-                    )
+                    html_text = self._get(f"/conjugation/{normalized}.htm")
                     lemma = normalized
             if html_text is None:
                 return None
             soup = BeautifulSoup(html_text, "html.parser")
-            return _parse_verb(lemma, soup, target_language, self.name)
+            return _parse_verb(lemma, soup, target, self.name)
 
-    def _get(self, path: str, target_language: str) -> str | None:
+    def _get(self, path: str) -> str | None:
         url = f"{_BASE}{path}"
         # The steckbrief example's gloss is rendered in whatever language the
         # Accept-Language header requests (the German sentence is unchanged), so
         # set it per request to get the example in the target language rather
         # than English. The translation list (dl.vNrn) carries every language
         # regardless, so this only steers the example/primary-span language.
-        headers = {"Accept-Language": _accept_language(target_language)}
+        headers = {"Accept-Language": _accept_language(self._target_language)}
         try:
             r = self._client.get(url, headers=headers)
         except httpx.HTTPError as exc:
@@ -115,6 +115,20 @@ class VerbformenProvider:
         return r.text
 
 
+# Pack provider builders: name -> (config, pack) -> provider. The loader merges
+# this over the engine's cross-language registry, so "verbformen" in a chain
+# resolves here. Reads its own options from lang.toml [provider_options.*].
+def _build(config, pack) -> VerbformenProvider:
+    options = pack.provider_options.get("verbformen", {})
+    return VerbformenProvider(
+        timeout=float(options.get("timeout", 15.0)),
+        target_language=config.target_language,
+    )
+
+
+PROVIDERS = {"verbformen": _build}
+
+
 # ---------------------------------------------------------------------------
 # Top-level parsers
 # ---------------------------------------------------------------------------
@@ -126,17 +140,22 @@ def _parse_noun(
     krz = soup.find(id="vStckKrz")
     steckbrief = _steckbrief_panel(krz)
     examples, example_translations = _example(steckbrief)
+    features = _declension_tables(soup)
+    gender = _gender(krz)
+    if gender:
+        features["gender"] = gender
+    ipa = _pronunciation(steckbrief)
+    if ipa:
+        features["ipa"] = ipa
     info = WordInfo(
         word=_headword(krz, fallback=word),
         part_of_speech="noun",
-        gender=_gender(krz),
         translations=_translations(soup, target_language),
-        pronunciation=_pronunciation(steckbrief),
         audio_url=_audio_url(krz),
         definitions=_definition(steckbrief),
         examples=examples,
         example_translations=example_translations,
-        inflections=_declension_tables(soup),
+        features=features,
         source=source,
         source_language="de",
         target_language=target_language,
@@ -152,17 +171,22 @@ def _parse_verb(
     krz = soup.find(id="vStckKrz")
     steckbrief = _steckbrief_panel(krz)
     examples, example_translations = _example(steckbrief)
+    features = _conjugation(soup)
+    separable = _separable(soup)
+    if separable is not None:
+        features["separable"] = "true" if separable else "false"
+    ipa = _pronunciation(steckbrief)
+    if ipa:
+        features["ipa"] = ipa
     info = WordInfo(
         word=_headword(krz, fallback=word),
         part_of_speech="verb",
-        separable=_separable(soup),
         translations=_translations(soup, target_language),
-        pronunciation=_pronunciation(steckbrief),
         audio_url=_audio_url(krz),
         definitions=_definition(steckbrief),
         examples=examples,
         example_translations=example_translations,
-        inflections=_conjugation(soup),
+        features=features,
         source=source,
         source_language="de",
         target_language=target_language,
@@ -384,14 +408,14 @@ def _separable(soup: BeautifulSoup) -> bool | None:
 
 
 def _conjugation(soup: BeautifulSoup) -> dict[str, str]:
-    """Verb forms keyed by the canonical inflection vocabulary (see prompts.py).
+    """Verb forms keyed by the conjugation vocabulary the de pack declares.
 
-    Fills the same keys the note definitions and the LLM provider speak — the full present
-    paradigm (`present_1sg` .. `present_3pl`) plus `preterite`, `perfect` and
-    `auxiliary` — so a verbformen note carries the same fields an LLM note would.
-    The present paradigm comes from the indicative present table (six rows);
-    `preterite`/`perfect` from the principal-parts line; `auxiliary` from the
-    attribute line shared with `_separable`.
+    Fills the same keys the note definitions and the LLM provider speak — the
+    full present paradigm (`present_1sg` .. `present_3pl`) plus `preterite`,
+    `perfect` and `auxiliary` — so a verbformen note carries the same fields an
+    LLM note would. The present paradigm comes from the indicative present table
+    (six rows); `preterite`/`perfect` from the principal-parts line; `auxiliary`
+    from the attribute line shared with `_separable`.
     """
     result: dict[str, str] = {}
 
@@ -471,13 +495,10 @@ def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
     get_text() joins; slash-separated variants keep only the primary form.
 
     Keys are `{case}_{number}` with the case spelled out (`genitive_sg`,
-    `nominative_pl`) — the canonical inflection vocabulary the note definitions
-    and the LLM provider speak (prompts.py), and the same `_sg`/`_pl` suffixes the verb
-    keys use. The form is stored bare: the site renders it in an article cell
-    (<td>des</td>) and a form cell (<td>Hauses</td>), and only the form cell is
-    read, so the contract's "no leading article" rule (see WordInfo.inflections)
-    holds by construction — the article is simply never joined in. The noun's
-    nominative article is captured separately as `gender`.
+    `nominative_pl`) — the vocabulary the de pack declares. The form is stored
+    bare: only the form cell (<td>Hauses</td>) is read, never the article cell
+    (<td>des</td>), so the no-leading-article contract holds by construction. The
+    noun's nominative article is captured separately as the `gender` feature.
     """
     decl = [t for t in soup.find_all("table") if t.find("th", class_="vKs")]
 
@@ -493,8 +514,7 @@ def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
             tds = tr.find_all("td")
             if len(tds) < 2:
                 continue
-            # tds[0] is the article cell ("des"); read only the form cell so the
-            # value is article-free per the WordInfo.inflections contract.
+            # tds[0] is the article cell ("des"); read only the form cell.
             form = _normalize(tds[1].get_text().split("/")[0])
             if form:
                 result[f"{case}_{number}"] = form
