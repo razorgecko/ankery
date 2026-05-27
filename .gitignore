@@ -1,14 +1,15 @@
-# Byte-compiled / optimized
+# Compiled files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environments
+# Virtual environment
 .venv/
-venv/
-env/
 
-# uv: the lockfile uv.lock is committed; only the venv (above) is ignored.
+# Testing
+.pytest_cache/
+config.toml
+tmp/
 
 # Packaging / build artifacts
 build/
@@ -16,27 +17,11 @@ dist/
 *.egg-info/
 .eggs/
 
-# Test / coverage / type-checker caches
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.tox/
-.mypy_cache/
-.ruff_cache/
-config.toml
-tmp/
-
-# Safety net: the app reads ANKERY_LLM_API_KEY from the environment only, but
-# if you keep a local .env to populate it (e.g. `set -a; source .env`), never
-# let that secrets file reach the remote.
+# Environment variables
 .env
-
-# Editor / OS cruft
-.idea/
-.vscode/
-*.swp
-.DS_Store
 
 # Claude files
 CLAUDE.md
+
+# TODO list
+todo.md
