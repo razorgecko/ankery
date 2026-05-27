@@ -14,6 +14,13 @@ class FakeBuilder:
     def __init__(self, results: dict[str, object]):
         self._results = results
         self.calls: list[dict] = []
+        self.verified = False
+        self.verify_error: Exception | None = None
+
+    def verify_note_types(self):
+        if self.verify_error is not None:
+            raise self.verify_error
+        self.verified = True
 
     def add_word(self, word, *, source_language, target_language):
         self.calls.append(
@@ -85,6 +92,18 @@ def test_sink_error_reports_and_exits_nonzero(patched, capsys):
 
     assert code == 1
     assert "could not add note: anki offline" in capsys.readouterr().err
+
+
+def test_note_type_verification_failure_exits_before_words(patched, capsys):
+    captured, set_results = patched
+    builder = set_results({"Buch": 1})
+    builder.verify_error = SinkError("note type 'Noun (DE)' already exists")
+
+    code = cli.main(["Buch"])
+
+    assert code == 1
+    assert "note type setup failed:" in capsys.readouterr().err
+    assert builder.calls == []  # no words processed once verification fails
 
 
 def test_multiple_words_one_failure_still_processes_all(patched, capsys):

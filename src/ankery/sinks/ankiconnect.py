@@ -1,5 +1,8 @@
+from collections.abc import Iterable
+
 import httpx
 
+from ankery.notedef import NoteDefinition
 from ankery.sinks.base import SinkError
 
 ANKICONNECT_VERSION = 6
@@ -43,6 +46,60 @@ class AnkiConnectSink:
         if not isinstance(result, int):
             raise SinkError(f"addNote returned an unexpected result: {result!r}")
         return result
+
+    def verify_note_types(self, definitions: Iterable[NoteDefinition]) -> None:
+        """Provision or validate the note-type models the definitions describe.
+
+        Create-only. A model that is absent is created from its definition
+        (fields in order, card templates, css). A model that already exists must
+        have exactly the same field names in the same order, or this raises
+        SinkError — we never mutate a model that may already hold the user's
+        notes. Field order is part of the contract, not cosmetics: Anki keys
+        both duplicate detection and its empty-note guard on the first field, so
+        a superset model whose extra field sorts first would silently break
+        every write. Card templates and css are set only at creation; later GUI
+        edits to them are the user's to keep. Safe to re-run.
+        """
+        existing = self._model_names()
+        for note_def in definitions:
+            if note_def.name not in existing:
+                self._create_model(note_def)
+                continue
+            actual = self._model_field_names(note_def.name)
+            if actual != note_def.fields:
+                raise SinkError(
+                    f"note type {note_def.name!r} already exists in Anki with "
+                    f"different fields: found {actual}, expected {note_def.fields}. "
+                    "Refusing to modify a note type that may already have notes; "
+                    "reconcile the fields in Anki or rename the note type."
+                )
+
+    def _model_names(self) -> set[str]:
+        result = self._invoke("modelNames")
+        if not isinstance(result, list):
+            raise SinkError(f"modelNames returned an unexpected result: {result!r}")
+        return set(result)
+
+    def _model_field_names(self, note_type: str) -> list[str]:
+        # AnkiConnect returns field names in the model's own order, which is the
+        # order we compare against (note_def.fields is also Anki order).
+        result = self._invoke("modelFieldNames", modelName=note_type)
+        if not isinstance(result, list):
+            raise SinkError(f"modelFieldNames returned an unexpected result: {result!r}")
+        return result
+
+    def _create_model(self, note_def: NoteDefinition) -> None:
+        self._invoke(
+            "createModel",
+            modelName=note_def.name,
+            inOrderFields=note_def.fields,
+            css=note_def.css,
+            isCloze=False,
+            cardTemplates=[
+                {"Name": card.name, "Front": card.qfmt, "Back": card.afmt}
+                for card in note_def.cards
+            ],
+        )
 
     def _invoke(self, action: str, **params: object) -> object:
         payload = {

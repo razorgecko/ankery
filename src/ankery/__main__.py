@@ -79,6 +79,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
     builder = build_deck_builder(config)
+    try:
+        builder.verify_note_types()
+    except SinkError as exc:
+        print(f"note type setup failed: {exc}", file=sys.stderr)
+        return 1
 
     exit_code = 0
     for word in args.words:

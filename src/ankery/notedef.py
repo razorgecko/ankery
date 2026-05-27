@@ -3,9 +3,10 @@
 A note definition is the single source of truth for a note type: its Anki field
 set (and order), how each field is filled from a `WordInfo` (Jinja templates),
 the card templates, and the part of speech it serves. The runtime reads the
-field map and the routing predicate; ``scripts/build_deck.py`` reads the *same*
-files to build the genanki models. So a field name is written once — in the
-``[map]`` of one file — and can no longer drift between the model and the filler.
+field map and the routing predicate; ``AnkiConnectSink.verify_note_types`` reads
+the *same* files to create the Anki note types (via ``createModel``). So a field
+name is written once — in the ``[map]`` of one file — and can no longer drift
+between the model and the filler.
 
 File shape (see ``notes/noun_de.toml``)::
 
@@ -21,7 +22,7 @@ File shape (see ``notes/noun_de.toml``)::
     qfmt = "..."
     afmt = "..."
 
-    css = "..."               # optional; omitted falls back to genanki's default
+    css = "..."               # optional; omitted creates the note type unstyled
 
 The map values are Jinja; the card ``qfmt``/``afmt`` are Anki's own mustache and
 are never run through Jinja here. Both happen to use ``{{ }}`` — only the map is

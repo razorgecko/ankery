@@ -1,4 +1,7 @@
+from collections.abc import Iterable
 from typing import Protocol, runtime_checkable
+
+from ankery.notedef import NoteDefinition
 
 
 class SinkError(Exception):
@@ -30,4 +33,13 @@ class AnkiSink(Protocol):
         tags: list[str] | None = None,
     ) -> int:
         """Create a note and return its Anki note id."""
+        ...
+
+    def verify_note_types(self, definitions: Iterable[NoteDefinition]) -> None:
+        """Ensure each definition's note type exists in the target and matches.
+
+        Create the model if absent; if present, require its field set and order
+        to match exactly and raise SinkError otherwise — never silently mutate
+        an existing model. Run once before writing notes.
+        """
         ...

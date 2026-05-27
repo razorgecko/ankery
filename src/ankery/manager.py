@@ -36,6 +36,16 @@ class DeckBuilder:
         self.note_definitions = list(note_definitions or [])
         self.tags = tags or []
 
+    def verify_note_types(self) -> None:
+        """Provision/validate the per-POS note types this builder routes to.
+
+        Delegates the loaded note definitions to the sink (see
+        AnkiSink.verify_note_types). The catch-all `note_type` carries no
+        definition — it is a built-in like "Basic" we assume Anki already has —
+        so it is left out. Call once before adding words.
+        """
+        self.sink.verify_note_types(self.note_definitions)
+
     def add_word(
         self,
         word: str,
