@@ -9,12 +9,7 @@ ANKICONNECT_VERSION = 6
 
 
 class AnkiConnectSink:
-    """Writes notes to a running Anki via the AnkiConnect add-on.
-
-    AnkiConnect speaks a small JSON-RPC dialect over HTTP. Two quirks shape this
-    code: it always returns HTTP 200 and reports failures in the body's `error`
-    field, and every response carries both `result` and `error` keys.
-    """
+    """AnkiConnect JSON-RPC sink. Always HTTP 200; failures are in the body's `error` field."""
 
     def __init__(
         self,
@@ -54,22 +49,10 @@ class AnkiConnectSink:
         default_css: str = "",
         catch_all: str | None = None,
     ) -> None:
-        """Provision or validate the note-type models the definitions describe.
+        """Create missing note types; raise SinkError if fields don't match an existing model.
 
-        Create-only. A model that is absent is created from its definition
-        (fields in order, card templates, css). A model that already exists must
-        have exactly the same field names in the same order, or this raises
-        SinkError — we never mutate a model that may already hold the user's
-        notes. Field order is part of the contract, not cosmetics: Anki keys
-        both duplicate detection and its empty-note guard on the first field, so
-        a superset model whose extra field sorts first would silently break
-        every write. Card templates and css are set only at creation; later GUI
-        edits to them are the user's to keep. Safe to re-run.
-
-        A created model whose definition sets no css is styled to match the
-        `catch_all` model (e.g. "Basic") so new cards look like the user's
-        existing ones; if that model is absent or its styling can't be read, it
-        falls back to `default_css`. The fallback is resolved once.
+        Field order is contractual: Anki keys duplicate detection and empty-note
+        guard on the first field. Never mutates an existing model. Safe to re-run.
         """
         existing = self._model_names()
         fallback_css = self._catch_all_css(catch_all, default_css, existing)
@@ -89,12 +72,7 @@ class AnkiConnectSink:
     def _catch_all_css(
         self, catch_all: str | None, default_css: str, existing: set[str]
     ) -> str:
-        """The stylesheet for created models that carry no css of their own.
-
-        Prefer the live styling of the `catch_all` model so new note types match
-        the user's existing cards; fall back to `default_css` on any problem —
-        the model being absent, or a styling response we can't read.
-        """
+        """CSS for created models with no css of their own; prefers the catch-all model's styling."""
         if not catch_all or catch_all not in existing:
             return default_css
         try:
@@ -112,8 +90,6 @@ class AnkiConnectSink:
         return set(result)
 
     def _model_field_names(self, note_type: str) -> list[str]:
-        # AnkiConnect returns field names in the model's own order, which is the
-        # order we compare against (note_def.fields is also Anki order).
         result = self._invoke("modelFieldNames", modelName=note_type)
         if not isinstance(result, list):
             raise SinkError(f"modelFieldNames returned an unexpected result: {result!r}")
@@ -149,7 +125,6 @@ class AnkiConnectSink:
         except ValueError as exc:
             raise SinkError(f"AnkiConnect returned non-JSON response: {exc}") from exc
 
-        # Every valid AnkiConnect response is an object with exactly these keys.
         if not isinstance(body, dict) or "error" not in body or "result" not in body:
             raise SinkError(f"Unexpected AnkiConnect response shape: {body!r}")
         if body["error"] is not None:

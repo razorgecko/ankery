@@ -9,16 +9,7 @@ from ankery.providers.base import ProviderError
 
 
 class LLMProvider:
-    """Word provider backed by an OpenAI-compatible chat endpoint.
-
-    The one cross-language provider: it works for any language because the
-    language-specific part — the requested schema and grammar guidance — is
-    rendered from the active pack and handed in as `system_prompt`. Targets any
-    server exposing `/v1/chat/completions` (local llama.cpp/Ollama/LM Studio or
-    hosted). The model fills the `WordInfo` schema as JSON; this class is the
-    validation boundary for that untrusted output. Bare-form normalization is
-    not done here — the pack's filter does it uniformly for every provider.
-    """
+    """Word provider backed by an OpenAI-compatible /v1/chat/completions endpoint."""
 
     name = "llm"
 
@@ -34,17 +25,13 @@ class LLMProvider:
         request_json_format: bool = True,
         api_key: str | None = None,
     ) -> None:
-        # base_url is the OpenAI-compatible root, e.g. "http://localhost:8080/v1".
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.system_prompt = system_prompt
         self.source_language = source_language
         self.target_language = target_language
         self.timeout = timeout
-        # Most servers honor response_format json_object; disable for the few
-        # that reject the field.
         self.request_json_format = request_json_format
-        # Bearer token for hosted endpoints; None means no auth (local servers).
         self.api_key = api_key
 
     def fetch(self, word: str) -> WordInfo | None:
@@ -80,8 +67,7 @@ class LLMProvider:
 
         data = _parse_json_object(content)
 
-        # Provenance and the language pair are inputs we own — never trust the
-        # model to set them. Overwrite whatever it may have echoed back.
+        # Always overwrite — never trust the model to set provenance fields.
         data["source"] = self.name
         data["source_language"] = self.source_language
         data["target_language"] = self.target_language
@@ -89,11 +75,6 @@ class LLMProvider:
         try:
             return WordInfo.model_validate(data)
         except ValidationError as exc:
-            # Small local models routinely emit JSON of the wrong shape (a field
-            # as a string instead of a list, a missing required field). This is
-            # the untrusted boundary: bad output must not become a silent
-            # half-filled note, so raise rather than salvage. The CLI reports
-            # this error (word + reason) to the user.
             raise ProviderError(f"LLM output failed WordInfo validation: {exc}") from exc
 
 
@@ -101,8 +82,7 @@ def _strip_code_fences(text: str) -> str:
     text = text.strip()
     if not text.startswith("```"):
         return text
-    lines = text.splitlines()
-    lines = lines[1:]  # drop opening ``` / ```json
+    lines = text.splitlines()[1:]  # drop opening ``` / ```json
     if lines and lines[-1].strip().startswith("```"):
         lines = lines[:-1]
     return "\n".join(lines).strip()

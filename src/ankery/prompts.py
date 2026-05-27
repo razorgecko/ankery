@@ -1,21 +1,7 @@
-"""Render the LLM system prompt from a language pack.
-
-The `features` dict on `WordInfo` is intentionally untyped, so consistency comes
-from telling the LLM exactly which keys to fill. That key vocabulary — and the
-grammar guidance around it — is no longer hardcoded here; it lives in the active
-pack (lang.toml, see pack.py). This module is a pure renderer: pack in, prompt
-out. Adding a language is authoring a pack, never editing this file.
-
-The set of parts of speech the pack declares doubles as the closed vocabulary
-the model classifies `part_of_speech` into, so routing (which keys on a note)
-always lines up with what was requested.
-"""
-
 from ankery.pack import LanguagePack
 
 
 def render_system_prompt(pack: LanguagePack) -> str:
-    """Build the system prompt for `pack`: general rules + per-POS feature keys."""
     pos_names = sorted(pack.grammar)
     lines: list[str] = [
         f"You are a lexicographer building Anki vocabulary cards for {pack.name}. "
@@ -57,7 +43,6 @@ def render_system_prompt(pack: LanguagePack) -> str:
 
 
 def build_user_prompt(word: str, source_language: str, target_language: str) -> str:
-    """Render the per-word instruction for the LLM provider."""
     return (
         f"Source language: {source_language}\n"
         f"Target language: {target_language}\n"

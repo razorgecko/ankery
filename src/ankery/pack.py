@@ -1,28 +1,3 @@
-"""Language packs — the one boundary that holds all language knowledge.
-
-A pack is a directory keyed by language code. Bundled packs live under
-``src/ankery/langs/<code>/``; a user pack at ``<langs_dir>/<code>/`` overrides
-the bundled one of the same code (whole-directory override). The engine resolves
-a pack from ``source_language`` at wiring time and builds everything from it —
-so a new language is a directory you author and drop in, with no engine change.
-
-A pack directory contains:
-
-  lang.toml      grammar vocabulary (per-POS feature keys + meanings), LLM
-                 guidance, the preferred provider chain, and provider options.
-  notes/         card layouts (one *.toml per note type) + style.css fallback.
-  filter.py      OPTIONAL. Exposes ``normalize(WordInfo) -> WordInfo``, applied
-                 to every provider's output before routing. Absent => identity.
-  providers/     OPTIONAL. Each ``*.py`` exposes ``PROVIDERS: dict[name,
-                 (config, pack) -> WordProvider]`` — language-specific providers
-                 (e.g. scrapers). All files' dicts are merged and the result is
-                 layered over the engine's cross-language registry; a name
-                 registered by two files is an error.
-
-``filter.py`` and the ``providers/`` modules are loaded by file path, so their
-imports must be absolute. They are pack-author code: a pack you drop in runs in
-ankery's interpreter, with ankery's dependencies (httpx, bs4) available.
-"""
 
 import importlib.util
 import tomllib
@@ -36,8 +11,7 @@ from ankery.notedef import NoteDefinition, load_notes_from_dir
 
 _BUNDLED_LANGS = Path(__file__).parent / "langs"
 
-# A pack's normalize hook and provider builders. ProviderBuilder is typed
-# loosely (config, pack) -> provider to avoid an import cycle with config.py.
+# Typed loosely to avoid an import cycle with config.py.
 Normalize = Callable[[WordInfo], WordInfo]
 ProviderBuilder = Callable[..., object]
 
@@ -48,28 +22,24 @@ class PackError(Exception):
 
 @dataclass(frozen=True)
 class POSGrammar:
-    """The grammar a pack declares for one part of speech."""
-
     pos: str
     citation: str | None
     guidance: tuple[str, ...]
-    # feature key -> meaning handed to the LLM and read back by the notes.
-    features: dict[str, str]
+    features: dict[str, str]  # key -> meaning, handed to the LLM and read by notes
 
 
 @dataclass(frozen=True)
 class LanguagePack:
     code: str
     name: str
-    # Feature keys common to every POS (e.g. ipa/reading): key -> meaning.
     common_features: dict[str, str]
-    grammar: dict[str, POSGrammar]  # POS name -> its grammar
-    providers: tuple[str, ...]  # preferred chain, fallback order
-    provider_options: dict[str, dict]  # provider name -> its options table
-    provider_builders: dict[str, ProviderBuilder]  # pack-local providers
-    notes: list[NoteDefinition]  # card layouts, in routing order
-    style_css: str  # fallback card stylesheet
-    normalize: Normalize  # post-fetch output filter (identity if no filter.py)
+    grammar: dict[str, POSGrammar]
+    providers: tuple[str, ...]
+    provider_options: dict[str, dict]
+    provider_builders: dict[str, ProviderBuilder]
+    notes: list[NoteDefinition]
+    style_css: str
+    normalize: Normalize
 
 
 def _identity(info: WordInfo) -> WordInfo:
@@ -77,12 +47,7 @@ def _identity(info: WordInfo) -> WordInfo:
 
 
 def load_pack(code: str, langs_dir: Path | None = None) -> LanguagePack:
-    """Resolve and load the pack for `code`.
-
-    A user pack at ``<langs_dir>/<code>/`` wins over the bundled one; otherwise
-    the bundled ``langs/<code>/`` is used. Raises ``PackError`` if neither
-    exists or the pack is malformed.
-    """
+    """Load the pack for `code`; user pack at `langs_dir/<code>/` overrides the bundled one."""
     directory = _resolve_dir(code, langs_dir)
     raw = _read_lang_toml(directory / "lang.toml")
 
@@ -175,14 +140,7 @@ def _load_normalize(path: Path, code: str) -> Normalize:
 
 
 def _load_providers(directory: Path, code: str) -> dict[str, ProviderBuilder]:
-    """Merge the PROVIDERS dicts of every module in the pack's providers/ dir.
-
-    Each providers/*.py is imported by path and must define ``PROVIDERS``, a
-    ``{name: (config, pack) -> WordProvider}`` dict. The dicts are unioned so a
-    pack can split its language-specific providers across files; a name
-    registered by two files is a ``PackError``. A missing directory yields no
-    pack-local providers.
-    """
+    """Merge PROVIDERS dicts from every *.py in the pack's providers/ directory."""
     if not directory.is_dir():
         return {}
     builders: dict[str, ProviderBuilder] = {}

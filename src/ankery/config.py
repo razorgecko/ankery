@@ -20,18 +20,11 @@ ENV_PREFIX = "ANKERY_"
 
 
 def _config_dir() -> Path:
-    """The ankery config directory, honoring the XDG base-dir spec.
-
-    Read at call time (not as an import-time constant) so an env change — or a
-    test pointing XDG_CONFIG_HOME at a tmp dir — takes effect. Per the spec, an
-    unset, empty, or non-absolute XDG_CONFIG_HOME falls back to ~/.config.
-    """
+    """Return the ankery config dir, honoring XDG. Read at call time so tests can redirect it."""
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".config"
     return base / "ankery"
 
-# The keys config.toml refuses and auth.toml requires — the split that keeps
-# config.toml safe to share/commit while the secret sits in a sibling file.
 SECRET_KEYS = {"llm_api_key"}
 
 
@@ -41,59 +34,30 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Config:
-    """Infrastructure settings only — the engine names no language.
+    """Infrastructure settings — endpoints, deck, language pair. Language behavior lives in the pack."""
 
-    Everything language-specific (grammar, guidance, normalization, note
-    layouts, the preferred provider chain) lives in the language pack, selected
-    by `source_language` and loaded at wiring time (see pack.py). `Config` keeps
-    only where things are and how to reach them: the Anki/LLM endpoints, the
-    deck, the catch-all note type, the language pair, and the user pack
-    override dir.
-    """
-
-    # Provider chain in fallback order: the first name with a result wins. Empty
-    # (the default) means "use the pack's preferred chain"; set it to override.
-    # Names resolve against the pack's own providers first, then the engine's
-    # cross-language registry. --provider sets this.
+    # Empty means use the pack's preferred chain.
     providers: tuple[str, ...] = ()
 
-    # LLM provider. base_url is the OpenAI-compatible root; the defaults target
-    # a local llama.cpp `llama-server` (port 8080), but any compatible server
-    # works. llama-server ignores the model field and serves whatever GGUF is
-    # loaded, so the model is just a non-empty placeholder here.
     llm_base_url: str = "http://localhost:8080/v1"
     llm_model: str = "local-model"
     llm_timeout: float = 30.0
     llm_request_json_format: bool = True
-    # Bearer token for hosted OpenAI-compatible endpoints. None (the default)
-    # sends no Authorization header, which is correct for local servers. A
-    # secret: only ever read from the env, never the config file or a CLI flag.
+    # Bearer token for hosted endpoints; None sends no Authorization header.
     llm_api_key: str | None = None
 
-    # AnkiConnect sink.
     anki_url: str = "http://localhost:8765"
     anki_timeout: float = 10.0
     allow_duplicate: bool = False
 
-    # Note destination. `note_type` is the catch-all model for words that match
-    # no note definition in the pack. Part-of-speech routing to specific models
-    # is owned by the pack's note definitions (their `applies_to`), not config.
+    # `note_type` is the catch-all for words that match no pack note definition.
     deck: str = "Default"
     note_type: str = "Basic"
     tags: tuple[str, ...] = ()
 
-    # `notes_dir`, when set, holds extra note layouts (*.toml, same shape as a
-    # pack's notes/) merged over the active pack's notes by part of speech: a
-    # file here whose `applies_to` matches a pack note replaces it, one serving a
-    # new POS is added. This is the one note channel that is not pack-specific,
-    # so language-agnostic layouts (word + translation, no features) can be
-    # shared across packs. See notedef.merge_note_definitions.
+    # Extra note layouts merged over the pack's by POS; language-agnostic layouts live here.
     notes_dir: Path | None = None
 
-    # Language selection. `source_language` is the pack code to load (e.g. "de");
-    # `target_language` is where translations go. `langs_dir`, when set, is the
-    # user pack directory: a pack at `<langs_dir>/<code>/` overrides the bundled
-    # one of the same code.
     source_language: str = "de"
     target_language: str = "en"
     langs_dir: Path | None = None
@@ -106,16 +70,7 @@ class Config:
         auth_path: Path | None = None,
         environ: dict[str, str] | None = None,
     ) -> "Config":
-        """Resolve config across all layers: defaults < config.toml < auth.toml < env.
-
-        config.toml holds set-once preferences and refuses the api key, so it
-        stays safe to share. auth.toml is its sibling holding only the secret.
-        Which file each reads is resolved in three steps: an explicit `path` /
-        `auth_path` (the CLI-flag channel) wins; failing that the
-        `ANKERY_CONFIG` / `ANKERY_AUTH` env vars; failing both, the default name
-        in `_config_dir()`. CLI flags, the final layer, are applied by the caller
-        (`__main__`) after this returns.
-        """
+        """Resolve config: defaults < config.toml < auth.toml < env. CLI flags applied by caller."""
         env = os.environ if environ is None else environ
         if path is None:
             raw = env.get(ENV_PREFIX + "CONFIG")
@@ -125,8 +80,6 @@ class Config:
             auth_path = Path(raw).expanduser() if raw else None
         config_path = _config_dir() / "config.toml" if path is None else path
         auth_path = _config_dir() / "auth.toml" if auth_path is None else auth_path
-        # The two dicts are disjoint by construction (inverse allow-lists around
-        # SECRET_KEYS), so this merge can never clash.
         overrides = {**_load_config_file(config_path), **_load_auth_file(auth_path)}
         return cls.from_env(environ, base=replace(cls(), **overrides))
 
@@ -137,14 +90,7 @@ class Config:
         *,
         base: "Config | None" = None,
     ) -> "Config":
-        """Overlay the only env-supplied field — the secret — onto `base`.
-
-        Env carries just the API-key override (`ANKERY_LLM_API_KEY`, a secret
-        that must not sit in a file) and, in `load`, the config/auth file
-        *paths*. Everything else is set in config.toml or via CLI flags, so other
-        `ANKERY_*` variables are deliberately ignored here. `base` supplies the
-        fallback; this is how `load` layers env on the file.
-        """
+        """Overlay `ANKERY_LLM_API_KEY` from env onto `base`."""
         env = os.environ if environ is None else environ
         base = cls() if base is None else base
         return replace(
@@ -165,12 +111,7 @@ def _read_toml(path: Path) -> dict:
 
 
 def _load_config_file(path: Path) -> dict:
-    """Read config.toml into a dict of Config field overrides, minus the secret.
-
-    Keys must match Config field names; unknown keys are rejected so typos
-    surface loudly rather than being silently ignored. The api key is refused
-    here on purpose so config.toml stays safe to share — it belongs in auth.toml.
-    """
+    """Read config.toml; rejects unknown keys and refuses the secret (belongs in auth.toml)."""
     raw = _read_toml(path)
     allowed = {f.name for f in fields(Config)} - SECRET_KEYS
     unknown = set(raw) - allowed
@@ -182,7 +123,6 @@ def _load_config_file(path: Path) -> dict:
             )
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 
-    # TOML gives native types; only nudge the ones Config types differently.
     for key in ("tags", "providers"):
         if isinstance(raw.get(key), list):
             raw[key] = tuple(raw[key])
@@ -196,13 +136,7 @@ def _load_config_file(path: Path) -> dict:
 
 
 def _load_auth_file(path: Path) -> dict:
-    """Read auth.toml — the secret-only sibling of config.toml.
-
-    The inverse of `_load_config_file`'s allow-list: only SECRET_KEYS are
-    accepted. Any ordinary config key is rejected with a pointer back to
-    config.toml, so the two files keep their split (shareable preferences vs.
-    the secret) instead of drifting into two places that set the same things.
-    """
+    """Read auth.toml; accepts only SECRET_KEYS and rejects anything else."""
     raw = _read_toml(path)
     unknown = set(raw) - SECRET_KEYS
     if unknown:
@@ -213,11 +147,6 @@ def _load_auth_file(path: Path) -> dict:
     return raw
 
 
-# Engine-level provider registry: only cross-language providers live here. Each
-# builder takes (config, pack); language-specific providers come from the pack's
-# own provider.py and are merged over this at wiring time. The LLM builder
-# renders its system prompt from the pack, which is what makes it work for any
-# language.
 def _build_llm(config: "Config", pack: LanguagePack) -> WordProvider:
     return LLMProvider(
         base_url=config.llm_base_url,
@@ -239,13 +168,7 @@ PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
 
 
 def build_deck_builder(config: Config) -> DeckBuilder:
-    """Resolve the language pack and wire the chain, sink, and DeckBuilder from it.
-
-    `config.source_language` selects the pack. The chain is `config.providers`
-    when set, else the pack's preferred chain; each name resolves against the
-    pack's own providers first, then `PROVIDER_REGISTRY`. An unknown name or an
-    empty chain is a config error.
-    """
+    """Resolve the pack from `source_language` and wire providers, notes, sink, and builder."""
     try:
         pack = load_pack(config.source_language, config.langs_dir)
     except PackError as exc:

@@ -5,25 +5,11 @@ from ankery.notedef import NoteDefinition
 
 
 class SinkError(Exception):
-    """A sink failed to write a note.
-
-    Covers transport failures (Anki not running, network error) and
-    application-level failures the target reports in-band (AnkiConnect returns
-    errors in the JSON body, not via HTTP status). The manager lets this
-    propagate: unlike a provider miss, a sink failure means the card was not
-    created and there is no fallback.
-    """
+    """Failed to write a note (transport error or application-level error from the target)."""
 
 
 @runtime_checkable
 class AnkiSink(Protocol):
-    """A destination that turns mapped note fields into a card.
-
-    The seam between the manager and Anki. The only implementation now is
-    AnkiConnect, but an offline .apkg writer (genanki) would slot in behind the
-    same method later.
-    """
-
     def add_note(
         self,
         *,
@@ -42,14 +28,5 @@ class AnkiSink(Protocol):
         default_css: str = "",
         catch_all: str | None = None,
     ) -> None:
-        """Ensure each definition's note type exists in the target and matches.
-
-        Create the model if absent; if present, require its field set and order
-        to match exactly and raise SinkError otherwise — never silently mutate
-        an existing model. Run once before writing notes.
-
-        A created model whose definition sets no ``css`` is styled to match the
-        ``catch_all`` model's own look when the target can report it, else
-        `default_css`. A definition with its own ``css`` keeps it.
-        """
+        """Create missing note types; raise SinkError if an existing type has wrong fields."""
         ...

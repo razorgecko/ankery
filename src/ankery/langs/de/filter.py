@@ -1,19 +1,6 @@
-"""German output normalization — the pack's optional post-fetch filter.
+"""German pack filter: strips leading definite articles from feature values ("des Hauses" -> "Hauses").
 
-The engine calls `normalize(info)` on every provider's `WordInfo` before
-routing, if this file exists (no filter.py => identity). This is where a
-language's source-shape quirks are cleaned up in code, with full knowledge of
-its grammar — the alternative to a fixed toolbox of transforms in the engine.
-
-For German the one job is enforcing the bare-form contract on `features`: a
-model may return "des Hauses" where the note wants "Hauses". Stripping a leading
-definite article does that. It is safe to run over every feature value: the
-`gender` value ("der"/"die"/"das") is a single token with nothing after it, so
-it is returned unchanged; only article+form values ("des Hauses") are trimmed.
-Idempotent, so re-running it on verbformen's already-bare forms is a no-op.
-
-Imports must be absolute — the engine loads this file by path, so a relative
-import has no package to resolve against.
+Imports must be absolute — this file is loaded by path.
 """
 
 from ankery.models import WordInfo

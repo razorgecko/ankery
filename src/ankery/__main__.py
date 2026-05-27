@@ -56,7 +56,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _config_from_args(args: argparse.Namespace) -> Config:
-    # Env is the base; explicit flags win over it.
     overrides: dict[str, object] = {}
     if args.provider:
         overrides["providers"] = tuple(p.strip() for p in args.provider.split(","))
@@ -81,9 +80,6 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     if args.allow_duplicate:
         overrides["allow_duplicate"] = True
 
-    # Which files to load: pass the --config/--auth flags as the explicit path;
-    # an unset flag (None) lets Config.load fall back to the ANKERY_CONFIG/
-    # ANKERY_AUTH env vars, then to its default path.
     path = Path(args.config).expanduser() if args.config else None
     auth = Path(args.auth).expanduser() if args.auth else None
 

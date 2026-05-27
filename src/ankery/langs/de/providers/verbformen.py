@@ -1,22 +1,9 @@
-"""verbformen.com scraper — the German pack's own provider.
+"""verbformen.com scraper for the German pack.
 
-A language-specific provider lives in its pack, not the engine: it is named in
-lang.toml's chain and resolved here. The engine's registry holds only
-cross-language providers (the LLM). The pack exposes its builders through the
-module-level `PROVIDERS` dict, which the loader merges over the engine registry.
+Nouns (capital first letter): /declension/nouns/{Word}.htm
+Verbs (lowercase):            /conjugation/{word}.htm
 
-Fetches the compact steckbrief (summary panel) from one URL per word:
-  - Nouns (capital first letter): /declension/nouns/{Word}.htm
-  - Verbs (lowercase):            /conjugation/{word}.htm
-
-Parsing uses BeautifulSoup for element selection — the steckbrief and the
-declension tables carry stable id/class anchors — with light regex only for
-*text* normalization (whitespace, footnote superscripts). get_text() reads a
-translation cell whole, nested sense-spans included, where a non-greedy
-`(.*?)</span>` regex would truncate at the first inner close tag.
-
-Imports are absolute: the engine loads this file by path, so a relative import
-has no package to resolve against.
+Imports must be absolute — this file is loaded by path.
 """
 
 import re
@@ -42,16 +29,13 @@ _CASES = {
     "Dative": "dative",
     "Accusative": "accusative",
 }
-# Subject pronouns keying a conjugation table's rows, in citation order. The
-# present-indicative table is the first table whose rows are exactly these.
+# Present-indicative table is the first table whose rows are exactly these six pronouns.
 _PRONOUNS = ("ich", "du", "er", "wir", "ihr", "sie")
 _PRESENT_KEYS = (
     "present_1sg", "present_2sg", "present_3sg",
     "present_1pl", "present_2pl", "present_3pl",
 )
-# Separable prefixes a "zu"-infinitive inserts "zu" after (umzusetzen ->
-# umsetzen). Used only as a 404 fallback, so a real lemma that merely looks like
-# prefix+zu is tried literally first and never rewritten out from under itself.
+# Used only as a 404 fallback to strip "zu" from separable-verb zu-infinitives.
 _SEPARABLE_PREFIXES = (
     "ab", "an", "auf", "aus", "bei", "ein", "empor", "entgegen", "fort", "vor",
     "weg", "zurück", "zusammen", "durch", "über", "unter", "wieder", "gegen",
@@ -63,8 +47,6 @@ class VerbformenProvider:
     name = "verbformen"
 
     def __init__(self, *, timeout: float = 15.0, target_language: str = "en") -> None:
-        # Source language is always German for this provider; target steers the
-        # gloss language requested via Accept-Language (see _get).
         self._target_language = target_language
         self._client = httpx.Client(
             headers=_HEADERS, timeout=timeout, follow_redirects=True
@@ -72,7 +54,6 @@ class VerbformenProvider:
 
     def fetch(self, word: str) -> WordInfo | None:
         target = self._target_language
-        # German nouns are always capitalised; verbs/adjectives start lowercase.
         if word[0].isupper():
             html_text = self._get(f"/declension/nouns/{word}.htm")
             if html_text is None:
@@ -83,8 +64,6 @@ class VerbformenProvider:
             lemma = word
             html_text = self._get(f"/conjugation/{word}.htm")
             if html_text is None:
-                # The literal form missed; if it looks like a "zu"-infinitive
-                # (umzusetzen) retry the base infinitive (umsetzen).
                 normalized = _normalize_verb_input(word)
                 if normalized != word:
                     html_text = self._get(f"/conjugation/{normalized}.htm")
@@ -96,11 +75,6 @@ class VerbformenProvider:
 
     def _get(self, path: str) -> str | None:
         url = f"{_BASE}{path}"
-        # The steckbrief example's gloss is rendered in whatever language the
-        # Accept-Language header requests (the German sentence is unchanged), so
-        # set it per request to get the example in the target language rather
-        # than English. The translation list (dl.vNrn) carries every language
-        # regardless, so this only steers the example/primary-span language.
         headers = {"Accept-Language": _accept_language(self._target_language)}
         try:
             r = self._client.get(url, headers=headers)
@@ -115,9 +89,6 @@ class VerbformenProvider:
         return r.text
 
 
-# Pack provider builders: name -> (config, pack) -> provider. The loader merges
-# this over the engine's cross-language registry, so "verbformen" in a chain
-# resolves here. Reads its own options from lang.toml [provider_options.*].
 def _build(config, pack) -> VerbformenProvider:
     options = pack.provider_options.get("verbformen", {})
     return VerbformenProvider(
@@ -128,10 +99,6 @@ def _build(config, pack) -> VerbformenProvider:
 
 PROVIDERS = {"verbformen": _build}
 
-
-# ---------------------------------------------------------------------------
-# Top-level parsers
-# ---------------------------------------------------------------------------
 
 
 def _parse_noun(
@@ -196,18 +163,9 @@ def _parse_verb(
     return info
 
 
-# ---------------------------------------------------------------------------
-# HTML helpers
-# ---------------------------------------------------------------------------
-
 
 def _accept_language(target_language: str | None) -> str:
-    """Accept-Language value that selects the gloss language for the example.
-
-    The target tag goes first; English trails as a low-priority fallback so a
-    word with no gloss in the target still yields an English example rather than
-    none. An absent target degrades to plain English.
-    """
+    """Build Accept-Language header; target first, English as low-priority fallback."""
     lang = (target_language or "en").strip()
     if lang.lower().startswith("en"):
         return "en-US,en;q=0.9"
@@ -215,22 +173,12 @@ def _accept_language(target_language: str | None) -> str:
 
 
 def _normalize(text: str) -> str:
-    """Collapse whitespace and strip the footnote superscripts the site appends.
-
-    BeautifulSoup already unescapes entities and discards markup; this only
-    tidies the *text* the elements carried.
-    """
+    """Collapse whitespace and strip footnote superscripts."""
     return re.sub(r"\s+", " ", text).strip().translate(_SUPERSCRIPTS)
 
 
 def _steckbrief_panel(krz):
-    """The inner summary panel holding IPA, definition and example.
-
-    It is the div wrapping the translation span (translations themselves are
-    read separately from the page's translation list); fall back to the whole
-    steckbrief if the structure differs. Returns None when there is no
-    steckbrief at all so the field extractors degrade to empty.
-    """
+    """The inner summary panel (IPA, definition, example); None when absent."""
     if krz is None:
         return None
     span = krz.select_one("span[lang]")
@@ -241,22 +189,12 @@ def _steckbrief_panel(krz):
     return krz
 
 
-# ---------------------------------------------------------------------------
-# Field extractors
-# ---------------------------------------------------------------------------
-
 
 def _translations(soup: BeautifulSoup, lang: str) -> list[str]:
-    # Every language the site offers lives in the "Translations" list as a
-    # <dd lang="xx"> (one per language, page-unique), inside a dl.vNrn. The
-    # compact steckbrief only renders the primary language, so read from the
-    # list to honour an arbitrary target. An absent language yields nothing
-    # rather than silently returning the wrong language's words.
+    # dl.vNrn holds all languages as <dd lang="xx">; read from here to support any target.
     dd = soup.select_one(f'dl.vNrn dd[lang="{lang}"]')
     if dd is None:
         return []
-    # get_text() reads the whole cell, nested sense-spans included — the case a
-    # non-greedy regex would truncate at the first inner </span>.
     text = _normalize(dd.get_text())
     return [t.strip() for t in text.split(",") if t.strip() and "..." not in t]
 
@@ -264,8 +202,7 @@ def _translations(soup: BeautifulSoup, lang: str) -> list[str]:
 def _pronunciation(steckbrief) -> str | None:
     if steckbrief is None:
         return None
-    # The IPA paragraph is the one whose text starts with "/"; several
-    # middot-separated forms may follow, keep only the first (base form).
+    # IPA paragraph starts with "/"; keep only the first middot-separated form.
     for p in steckbrief.find_all("p"):
         text = _normalize(p.get_text())
         if text.startswith("/"):
@@ -276,9 +213,7 @@ def _pronunciation(steckbrief) -> str | None:
 def _definition(steckbrief) -> list[str]:
     if steckbrief is None:
         return []
-    # The German definition is the lone <i> in the panel (translations and the
-    # example carry no <i>).
-    i = steckbrief.find("i")
+    i = steckbrief.find("i")  # the lone <i> in the panel holds the definition
     if i is None:
         return []
     text = _normalize(i.get_text())
@@ -286,15 +221,7 @@ def _definition(steckbrief) -> list[str]:
 
 
 def _example(steckbrief) -> tuple[list[str], list[str]]:
-    """Return ([german_sentence], [translation]) for the example, if present.
-
-    The example paragraph starts with » and carries the German sentence and its
-    gloss in one <p>, divided by a flag <img> (its alt names the target
-    language). Splitting on that image keeps the sentence and its translation in
-    separate fields instead of mashing them into one string. Each list holds at
-    most one item and is empty when its half is missing (no example, or a
-    sentence with no gloss).
-    """
+    """Return ([german_sentence], [translation]); a flag <img> separates the two halves."""
     if steckbrief is None:
         return [], []
     for p in steckbrief.find_all("p"):
@@ -317,20 +244,16 @@ def _example(steckbrief) -> tuple[list[str], list[str]]:
 
 
 def _node_text(nodes) -> str:
-    """Concatenate the text of a run of mixed Tag/NavigableString siblings."""
     return "".join(n.get_text() if isinstance(n, Tag) else str(n) for n in nodes)
 
 
 def _clean_example(text: str) -> str:
-    # Drop the leading » marker and rejoin the period the site renders as a
-    # separate sibling of the highlighted word (" ." -> ".").
+    # Rejoin detached period (" ." -> ".") the site renders as a separate sibling.
     text = re.sub(r"\s+\.", ".", _normalize(text))
     return text.lstrip("»").strip()
 
 
 def _audio_url(krz) -> str | None:
-    # The lemma's pronunciation audio is the <a> inside the headword span
-    # (span.vGrnd) for both nouns and verbs; its href is an absolute .mp3 URL.
     if krz is None:
         return None
     a = krz.select_one("span.vGrnd a[href]")
@@ -341,12 +264,7 @@ def _audio_url(krz) -> str | None:
 
 
 def _normalize_verb_input(word: str) -> str:
-    """Strip the inserted "zu" from a separable-verb zu-infinitive.
-
-    umzusetzen -> umsetzen, anzufangen -> anfangen. Returns the word unchanged
-    when it is not a recognisable prefix+zu form, so callers can compare and
-    only retry when it actually rewrote something.
-    """
+    """Strip inserted "zu" from a separable zu-infinitive: umzusetzen -> umsetzen."""
     for prefix in _SEPARABLE_PREFIXES:
         if word.startswith(prefix + "zu") and len(word) > len(prefix) + 2:
             return prefix + word[len(prefix) + 2 :]
@@ -354,16 +272,7 @@ def _normalize_verb_input(word: str) -> str:
 
 
 def _headword(krz, *, fallback: str) -> str:
-    """The canonical lemma the page is actually about, read from the headword
-    span (span.vGrnd).
-
-    verbformen resolves a misspelled or umlaut-stripped request to the right
-    page ("Ol" -> the "Öl" page), so reading the lemma the page displays gives
-    the corrected form, where echoing the requested `word` would keep the typo.
-    The span carries the noun's article ("das Öl") and a middot at a separable
-    verb's seam ("ein·kaufen"); strip both for the bare lemma. Falls back to the
-    requested word when the span is absent or empty.
-    """
+    """Canonical lemma from span.vGrnd; strips article and separable-verb middot."""
     if krz is None:
         return fallback
     span = krz.select_one("span.vGrnd")
@@ -377,7 +286,6 @@ def _headword(krz, *, fallback: str) -> str:
 
 
 def _gender(krz) -> str | None:
-    # vGrnd holds the article + lemma: "das Haus" / "der Mann".
     if krz is None:
         return None
     span = krz.select_one("span.vGrnd")
@@ -390,9 +298,7 @@ def _gender(krz) -> str | None:
 
 
 def _separable(soup: BeautifulSoup) -> bool | None:
-    # The attribute line ("A1 · regular · haben · separable") is the paragraph
-    # just before the conjugation block. Split on the middot and match a whole
-    # token so "inseparable" is not read as containing "separable".
+    # Attribute line ("A1 · regular · haben · separable") is the <p> before #vStckInf.
     div = soup.find(id="vStckInf")
     if div is None:
         return None
@@ -408,25 +314,14 @@ def _separable(soup: BeautifulSoup) -> bool | None:
 
 
 def _conjugation(soup: BeautifulSoup) -> dict[str, str]:
-    """Verb forms keyed by the conjugation vocabulary the de pack declares.
-
-    Fills the same keys the note definitions and the LLM provider speak — the
-    full present paradigm (`present_1sg` .. `present_3pl`) plus `preterite`,
-    `perfect` and `auxiliary` — so a verbformen note carries the same fields an
-    LLM note would. The present paradigm comes from the indicative present table
-    (six rows); `preterite`/`perfect` from the principal-parts line; `auxiliary`
-    from the attribute line shared with `_separable`.
-    """
+    """Extract present paradigm, preterite, perfect, and auxiliary from the page."""
     result: dict[str, str] = {}
 
     for key, form in zip(_PRESENT_KEYS, _present_paradigm(soup)):
         if form:
             result[key] = form
 
-    # Principal parts: "kauft ein · kaufte ein · hat eingekauft" -> the
-    # preterite (1st/3rd sg, identical in German) and the perfect. The present
-    # 3sg it also carries is already covered by the table above. The trailing
-    # audio link holds only an <img>, so it contributes no text.
+    # Principal parts: "kauft ein · kaufte ein · hat eingekauft"
     p = soup.find(id="stammformen")
     if p is not None:
         parts = [s.strip() for s in _normalize(p.get_text()).split("·") if s.strip()]
@@ -443,16 +338,7 @@ def _conjugation(soup: BeautifulSoup) -> dict[str, str]:
 
 
 def _present_paradigm(soup: BeautifulSoup) -> list[str]:
-    """The six present-indicative forms, in `_PRONOUNS` order.
-
-    The indicative present is the first conjugation table whose rows are exactly
-    the six subject pronouns (the translation table above it is language-keyed,
-    so it is skipped; subjunctive/preterite tables come after). Each row's
-    remaining cells are the conjugated stem and, for separable verbs, the split
-    prefix — joined into one form ("kauft" + "ein" -> "kauft ein"). The optional
-    "-e" the site parenthesises ("kauf(e)") is kept as the full written form
-    ("kaufe"). Returns [] when no such table is found.
-    """
+    """Six present-indicative forms from the first table whose rows are exactly _PRONOUNS."""
     for table in soup.find_all("table"):
         forms: dict[str, str] = {}
         for tr in table.find_all("tr"):
@@ -471,9 +357,7 @@ def _present_paradigm(soup: BeautifulSoup) -> list[str]:
 
 
 def _auxiliary(soup: BeautifulSoup) -> str | None:
-    # The perfect-tense auxiliary is a token on the attribute line
-    # ("A1 · regular · haben · separable"), the paragraph before the conjugation
-    # block — the same line `_separable` reads.
+    # Same attribute line as _separable ("A1 · regular · haben · separable").
     div = soup.find(id="vStckInf")
     if div is None:
         return None
@@ -488,18 +372,7 @@ def _auxiliary(soup: BeautifulSoup) -> str | None:
 
 
 def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
-    """Parse the two noun declension tables (singular, then plural).
-
-    Each row is <th class="vKs" title="Nominative/…"> + <td>article</td> +
-    <td>form</td>. The form cell concatenates several <b>/<i>/<u> nodes, which
-    get_text() joins; slash-separated variants keep only the primary form.
-
-    Keys are `{case}_{number}` with the case spelled out (`genitive_sg`,
-    `nominative_pl`) — the vocabulary the de pack declares. The form is stored
-    bare: only the form cell (<td>Hauses</td>) is read, never the article cell
-    (<td>des</td>), so the no-leading-article contract holds by construction. The
-    noun's nominative article is captured separately as the `gender` feature.
-    """
+    """Parse singular and plural declension tables; keys are {case}_{number} (e.g. genitive_sg)."""
     decl = [t for t in soup.find_all("table") if t.find("th", class_="vKs")]
 
     result: dict[str, str] = {}
@@ -514,8 +387,7 @@ def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
             tds = tr.find_all("td")
             if len(tds) < 2:
                 continue
-            # tds[0] is the article cell ("des"); read only the form cell.
-            form = _normalize(tds[1].get_text().split("/")[0])
+            form = _normalize(tds[1].get_text().split("/")[0])  # skip article cell (tds[0])
             if form:
                 result[f"{case}_{number}"] = form
 
