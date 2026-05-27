@@ -44,8 +44,8 @@ class Config:
     """All the values that were hardcoded across the slices, in one place.
 
     Plain dataclass rather than pydantic-settings (deliberately omitted): the
-    settings are a handful of scalars, and `from_env` does the small amount of
-    string parsing explicitly. The field-mapping function is not here because it
+    settings are a handful of scalars resolved from TOML and CLI flags, with env
+    carrying only the secret. The field-mapping function is not here because it
     is a callable, not a value — pass it to `build_deck_builder` instead.
     """
 
@@ -108,12 +108,23 @@ class Config:
     ) -> "Config":
         """Resolve config across all layers: defaults < config.toml < auth.toml < env.
 
-        config.toml (in ``_config_dir()`` unless `path` overrides) holds
-        set-once preferences and refuses the api key, so it stays safe to share.
-        auth.toml (its sibling in the same dir unless `auth_path` overrides)
-        holds only the secret. Both are read with the same tomllib; env vars
-        override both. CLI flags, the final layer, are applied by the caller.
+        config.toml holds set-once preferences and refuses the api key, so it
+        stays safe to share. auth.toml is its sibling holding only the secret.
+        Which file each reads is resolved in three steps: an explicit `path` /
+        `auth_path` (the CLI-flag channel) wins; failing that the
+        `ANKERY_CONFIG` / `ANKERY_AUTH` env vars (a value that can't live inside
+        the file it selects); failing both, the default name in `_config_dir()`.
+        Both files are read with the same tomllib; the `ANKERY_LLM_API_KEY` env
+        var overrides the secret. CLI flags, the final layer, are applied by the
+        caller (`__main__`) after this returns.
         """
+        env = os.environ if environ is None else environ
+        if path is None:
+            raw = env.get(ENV_PREFIX + "CONFIG")
+            path = Path(raw).expanduser() if raw else None
+        if auth_path is None:
+            raw = env.get(ENV_PREFIX + "AUTH")
+            auth_path = Path(raw).expanduser() if raw else None
         config_path = _config_dir() / "config.toml" if path is None else path
         auth_path = _config_dir() / "auth.toml" if auth_path is None else auth_path
         # The two dicts are disjoint by construction (inverse allow-lists around
@@ -128,60 +139,20 @@ class Config:
         *,
         base: "Config | None" = None,
     ) -> "Config":
-        """Build a Config from environment variables, falling back to `base`.
+        """Overlay the only env-supplied field — the secret — onto `base`.
 
-        Variables are read from the ANKERY_ namespace, e.g.
-        ANKERY_LLM_MODEL, ANKERY_DECK, ANKERY_TAGS (comma-separated).
-        `base` supplies the fallback values (the bare defaults when omitted); it
-        is how `load` layers env on top of the config file.
+        Env carries just the two things nothing else can: the API-key override
+        (`ANKERY_LLM_API_KEY`, a secret that must not sit in a file) and, in
+        `load`, the config/auth file *paths* (a value that can't live inside the
+        file it selects). Everything else is set in config.toml or via CLI
+        flags, so other `ANKERY_*` variables are deliberately ignored here.
+        `base` supplies the fallback; this is how `load` layers env on the file.
         """
         env = os.environ if environ is None else environ
         base = cls() if base is None else base
-
-        def _str(key: str, fallback: str) -> str:
-            return env.get(ENV_PREFIX + key, fallback)
-
-        def _opt_str(key: str, fallback: str | None) -> str | None:
-            return env.get(ENV_PREFIX + key, fallback)
-
-        def _opt_path(key: str, fallback: Path | None) -> Path | None:
-            raw = env.get(ENV_PREFIX + key)
-            return fallback if raw is None else Path(raw).expanduser()
-
-        def _float(key: str, fallback: float) -> float:
-            raw = env.get(ENV_PREFIX + key)
-            return fallback if raw is None else float(raw)
-
-        def _bool(key: str, fallback: bool) -> bool:
-            raw = env.get(ENV_PREFIX + key)
-            if raw is None:
-                return fallback
-            return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-        def _csv(key: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
-            raw = env.get(ENV_PREFIX + key)
-            if raw is None:
-                return fallback
-            return tuple(t.strip() for t in raw.split(",") if t.strip())
-
-        return cls(
-            providers=_csv("PROVIDERS", base.providers),
-            llm_base_url=_str("LLM_URL", base.llm_base_url),
-            llm_model=_str("LLM_MODEL", base.llm_model),
-            llm_timeout=_float("LLM_TIMEOUT", base.llm_timeout),
-            llm_request_json_format=_bool("LLM_JSON_FORMAT", base.llm_request_json_format),
-            llm_api_key=_opt_str("LLM_API_KEY", base.llm_api_key),
-            verbformen_timeout=_float("VERBFORMEN_TIMEOUT", base.verbformen_timeout),
-            anki_url=_str("ANKI_URL", base.anki_url),
-            anki_timeout=_float("ANKI_TIMEOUT", base.anki_timeout),
-            allow_duplicate=_bool("ALLOW_DUPLICATE", base.allow_duplicate),
-            deck=_str("DECK", base.deck),
-            note_type=_str("NOTE_TYPE", base.note_type),
-            tags=_csv("TAGS", base.tags),
-            notes_dir=_opt_path("NOTES_DIR", base.notes_dir),
-            notes=_csv("NOTES", base.notes),
-            source_language=_str("SOURCE_LANG", base.source_language),
-            target_language=_str("TARGET_LANG", base.target_language),
+        return replace(
+            base,
+            llm_api_key=env.get(ENV_PREFIX + "LLM_API_KEY", base.llm_api_key),
         )
 
 

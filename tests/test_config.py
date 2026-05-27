@@ -41,53 +41,31 @@ def test_from_env_uses_defaults_when_unset():
     assert config.source_language == "de"
 
 
-def test_from_env_overrides_scalars():
+def test_from_env_ignores_non_secret_vars():
+    # Env carries only the secret; every other field is set in config.toml or
+    # via CLI flags. Legacy ANKERY_* names for those fields are deliberately
+    # ignored rather than silently honored.
+    base = Config(deck="FromFile", llm_model="file-model")
     env = {
         "ANKERY_LLM_URL": "https://api.groq.com/openai/v1",
         "ANKERY_LLM_MODEL": "llama-3.3-70b",
-        "ANKERY_LLM_TIMEOUT": "5.5",
         "ANKERY_ANKI_URL": "http://anki.local:8765",
         "ANKERY_DECK": "German::Verbs",
-        "ANKERY_NOTE_TYPE": "Cloze",
-        "ANKERY_TARGET_LANG": "ru",
+        "ANKERY_PROVIDERS": "llm, verbformen",
+        "ANKERY_TAGS": "auto, de",
+        "ANKERY_NOTES_DIR": "/srv/notes",
+        "ANKERY_ALLOW_DUPLICATE": "true",
     }
-    config = Config.from_env(env)
+    config = Config.from_env(env, base=base)
 
-    assert config.llm_base_url == "https://api.groq.com/openai/v1"
-    assert config.llm_model == "llama-3.3-70b"
-    assert config.llm_timeout == 5.5
-    assert config.anki_url == "http://anki.local:8765"
-    assert config.deck == "German::Verbs"
-    assert config.note_type == "Cloze"
-    assert config.target_language == "ru"
-
-
-def test_from_env_parses_bools():
-    assert Config.from_env({"ANKERY_ALLOW_DUPLICATE": "true"}).allow_duplicate is True
-    assert Config.from_env({"ANKERY_ALLOW_DUPLICATE": "1"}).allow_duplicate is True
-    assert Config.from_env({"ANKERY_ALLOW_DUPLICATE": "no"}).allow_duplicate is False
-    assert Config.from_env({"ANKERY_LLM_JSON_FORMAT": "off"}).llm_request_json_format is False
-
-
-def test_from_env_parses_comma_separated_providers():
-    config = Config.from_env({"ANKERY_PROVIDERS": "llm, verbformen"})
-
-    assert config.providers == ("llm", "verbformen")
-
-
-def test_from_env_parses_comma_separated_tags():
-    config = Config.from_env({"ANKERY_TAGS": "auto, de , vocab"})
-
-    assert config.tags == ("auto", "de", "vocab")
-
-
-def test_from_env_parses_notes_dir_and_subset():
-    config = Config.from_env(
-        {"ANKERY_NOTES_DIR": "/srv/notes", "ANKERY_NOTES": "noun_de, verb_de"}
-    )
-
-    assert config.notes_dir == Path("/srv/notes")
-    assert config.notes == ("noun_de", "verb_de")
+    assert config.llm_base_url == "http://localhost:8080/v1"  # default, env ignored
+    assert config.llm_model == "file-model"  # base shows through, env ignored
+    assert config.anki_url == "http://localhost:8765"
+    assert config.deck == "FromFile"
+    assert config.providers == ("verbformen", "llm")
+    assert config.tags == ()
+    assert config.notes_dir is None
+    assert config.allow_duplicate is False
 
 
 def test_notes_dir_and_notes_default_to_bundled_whole_set():
@@ -97,12 +75,13 @@ def test_notes_dir_and_notes_default_to_bundled_whole_set():
     assert config.notes == ()  # empty -> the whole merged set, no subset
 
 
-def test_from_env_layers_on_top_of_base():
+def test_from_env_layers_api_key_on_top_of_base():
     base = Config(deck="FromFile", llm_model="file-model")
-    config = Config.from_env({"ANKERY_DECK": "FromEnv"}, base=base)
+    config = Config.from_env({"ANKERY_LLM_API_KEY": "sk-from-env"}, base=base)
 
-    assert config.deck == "FromEnv"  # env wins
-    assert config.llm_model == "file-model"  # base shows through where env is silent
+    assert config.llm_api_key == "sk-from-env"  # env supplies the secret
+    assert config.deck == "FromFile"  # everything else shows through from base
+    assert config.llm_model == "file-model"
 
 
 def test_config_dir_honors_xdg(monkeypatch, tmp_path):
@@ -176,11 +155,13 @@ def test_load_reads_providers_list(tmp_path):
     assert config.providers == ("verbformen", "llm")  # list coerced to tuple
 
 
-def test_load_env_overrides_file(tmp_path):
+def test_load_env_does_not_override_non_secret_file_value(tmp_path):
+    # Env no longer carries non-secret fields, so config.toml's deck stands
+    # even when a legacy ANKERY_DECK is set in the environment.
     path = _write(tmp_path, 'deck = "FromFile"\nnote_type = "Cloze"\n')
     config = Config.load(path=path, environ={"ANKERY_DECK": "FromEnv"})
 
-    assert config.deck == "FromEnv"  # env beats file
+    assert config.deck == "FromFile"  # file wins; env ignored
     assert config.note_type == "Cloze"  # file beats default
 
 
@@ -246,6 +227,48 @@ def test_load_auth_file_rejects_non_secret_keys(tmp_path):
         Config.load(path=tmp_path / "absent.toml", auth_path=auth, environ={})
 
 
+def test_load_reads_config_path_from_env(tmp_path):
+    # With no explicit `path`, ANKERY_CONFIG selects which config.toml to read.
+    path = _write(tmp_path, 'deck = "FromEnvPath"\n')
+    config = Config.load(environ={"ANKERY_CONFIG": str(path)})
+
+    assert config.deck == "FromEnvPath"
+
+
+def test_load_explicit_config_path_wins_over_env(tmp_path):
+    # The explicit `path` (the CLI-flag channel) beats ANKERY_CONFIG.
+    flag_file = _write(tmp_path, 'deck = "FromFlag"\n')
+    env_file = tmp_path / "from-env.toml"
+    env_file.write_text('deck = "FromEnvPath"\n')
+    config = Config.load(path=flag_file, environ={"ANKERY_CONFIG": str(env_file)})
+
+    assert config.deck == "FromFlag"
+
+
+def test_load_reads_auth_path_from_env(tmp_path):
+    # With no explicit `auth_path`, ANKERY_AUTH selects which auth.toml to read.
+    auth = _write_auth(tmp_path, 'llm_api_key = "sk-from-env-path"\n')
+    config = Config.load(
+        path=tmp_path / "absent.toml",
+        environ={"ANKERY_AUTH": str(auth)},
+    )
+
+    assert config.llm_api_key == "sk-from-env-path"
+
+
+def test_load_explicit_auth_path_wins_over_env(tmp_path):
+    flag_auth = _write_auth(tmp_path, 'llm_api_key = "sk-from-flag"\n')
+    env_auth = tmp_path / "auth-from-env.toml"
+    env_auth.write_text('llm_api_key = "sk-from-env-path"\n')
+    config = Config.load(
+        path=tmp_path / "absent.toml",
+        auth_path=flag_auth,
+        environ={"ANKERY_AUTH": str(env_auth)},
+    )
+
+    assert config.llm_api_key == "sk-from-flag"
+
+
 def test_load_reads_bool_from_file(tmp_path):
     path = _write(tmp_path, "llm_request_json_format = false\n")
     config = Config.load(path=path, environ={})
@@ -260,10 +283,10 @@ def test_load_wraps_malformed_toml(tmp_path):
 
 
 def test_from_env_reads_process_environ_when_unset(monkeypatch):
-    monkeypatch.setenv("ANKERY_DECK", "FromProcessEnv")
+    monkeypatch.setenv("ANKERY_LLM_API_KEY", "sk-from-process-env")
     config = Config.from_env()  # environ=None -> falls back to os.environ
 
-    assert config.deck == "FromProcessEnv"
+    assert config.llm_api_key == "sk-from-process-env"
 
 
 def test_api_key_read_from_env_only():

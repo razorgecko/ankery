@@ -1,5 +1,4 @@
 import argparse
-import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -28,13 +27,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--provider",
         metavar="NAMES",
-        help="comma-separated providers in fallback order (overrides "
-        "ANKERY_PROVIDERS). Known: llm, verbformen.",
+        help="comma-separated providers in fallback order. Known: llm, verbformen.",
     )
-    parser.add_argument("--deck", help="destination deck (overrides ANKERY_DECK)")
+    parser.add_argument("--deck", help="destination deck")
     parser.add_argument("--source-lang", help="language of the words")
     parser.add_argument("--target-lang", help="language to translate into")
     parser.add_argument("--note-type", help="Anki note type")
+    parser.add_argument("--llm-url", help="OpenAI-compatible base URL for the LLM provider")
+    parser.add_argument("--llm-model", help="model name sent to the LLM provider")
+    parser.add_argument("--anki-url", help="base URL of the AnkiConnect endpoint")
     parser.add_argument(
         "--allow-duplicate",
         action="store_true",
@@ -56,16 +57,20 @@ def _config_from_args(args: argparse.Namespace) -> Config:
         overrides["target_language"] = args.target_lang
     if args.note_type is not None:
         overrides["note_type"] = args.note_type
+    if args.llm_url is not None:
+        overrides["llm_base_url"] = args.llm_url
+    if args.llm_model is not None:
+        overrides["llm_model"] = args.llm_model
+    if args.anki_url is not None:
+        overrides["anki_url"] = args.anki_url
     if args.allow_duplicate:
         overrides["allow_duplicate"] = True
 
-    # Which files to load: the --config/--auth flags win over the
-    # ANKERY_CONFIG/ANKERY_AUTH env vars; an unset source means Config.load
-    # uses its default path for that file.
-    config_path = args.config or os.environ.get("ANKERY_CONFIG")
-    auth_path = args.auth or os.environ.get("ANKERY_AUTH")
-    path = Path(config_path).expanduser() if config_path else None
-    auth = Path(auth_path).expanduser() if auth_path else None
+    # Which files to load: pass the --config/--auth flags as the explicit path;
+    # an unset flag (None) lets Config.load fall back to the ANKERY_CONFIG/
+    # ANKERY_AUTH env vars, then to its default path.
+    path = Path(args.config).expanduser() if args.config else None
+    auth = Path(args.auth).expanduser() if args.auth else None
 
     config = Config.load(path=path, auth_path=auth)
     return replace(config, **overrides) if overrides else config

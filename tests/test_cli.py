@@ -138,6 +138,25 @@ def test_flags_override_config(patched):
     assert config.allow_duplicate is True
 
 
+def test_infra_flags_override_config(patched):
+    captured, set_results = patched
+    set_results({"Buch": 1})
+
+    cli.main(
+        [
+            "--llm-url", "https://api.groq.com/openai/v1",
+            "--llm-model", "llama-3.3-70b",
+            "--anki-url", "http://anki.local:8765",
+            "Buch",
+        ]
+    )
+
+    config = captured["config"]
+    assert config.llm_base_url == "https://api.groq.com/openai/v1"
+    assert config.llm_model == "llama-3.3-70b"
+    assert config.anki_url == "http://anki.local:8765"
+
+
 def test_provider_flag_overrides_chain(patched):
     captured, set_results = patched
     set_results({"Buch": 1})
@@ -193,18 +212,9 @@ def test_config_flag_sets_load_path(patched, monkeypatch):
     assert seen["path"] == Path("/tmp/custom.toml")
 
 
-def test_config_env_var_used_when_no_flag(patched, monkeypatch):
-    captured, set_results = patched
-    set_results({"Buch": 1})
-    seen = _capture_load_path(monkeypatch)
-    monkeypatch.setenv("ANKERY_CONFIG", "/tmp/from-env.toml")
-
-    cli.main(["Buch"])
-
-    assert seen["path"] == Path("/tmp/from-env.toml")
-
-
-def test_config_flag_overrides_env_var(patched, monkeypatch):
+def test_config_flag_passed_through_even_with_env_set(patched, monkeypatch):
+    # The flag goes straight to Config.load as `path`; __main__ no longer reads
+    # ANKERY_CONFIG (Config.load does), so the env var can't interfere here.
     captured, set_results = patched
     set_results({"Buch": 1})
     seen = _capture_load_path(monkeypatch)
@@ -236,18 +246,9 @@ def test_auth_flag_sets_auth_path(patched, monkeypatch):
     assert seen["auth_path"] == Path("/tmp/custom-auth.toml")
 
 
-def test_auth_env_var_used_when_no_flag(patched, monkeypatch):
-    captured, set_results = patched
-    set_results({"Buch": 1})
-    seen = _capture_load_path(monkeypatch)
-    monkeypatch.setenv("ANKERY_AUTH", "/tmp/auth-from-env.toml")
-
-    cli.main(["Buch"])
-
-    assert seen["auth_path"] == Path("/tmp/auth-from-env.toml")
-
-
-def test_auth_flag_overrides_env_var(patched, monkeypatch):
+def test_auth_flag_passed_through_even_with_env_set(patched, monkeypatch):
+    # As with --config: the flag is handed to Config.load directly; __main__
+    # leaves ANKERY_AUTH for Config.load to resolve when no flag is given.
     captured, set_results = patched
     set_results({"Buch": 1})
     seen = _capture_load_path(monkeypatch)
