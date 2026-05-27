@@ -81,6 +81,22 @@ def test_from_env_parses_comma_separated_tags():
     assert config.tags == ("auto", "de", "vocab")
 
 
+def test_from_env_parses_notes_dir_and_subset():
+    config = Config.from_env(
+        {"ANKERY_NOTES_DIR": "/srv/notes", "ANKERY_NOTES": "noun_de, verb_de"}
+    )
+
+    assert config.notes_dir == Path("/srv/notes")
+    assert config.notes == ("noun_de", "verb_de")
+
+
+def test_notes_dir_and_notes_default_to_bundled_whole_set():
+    config = Config.from_env({})
+
+    assert config.notes_dir is None  # None -> load only the bundled notes/
+    assert config.notes == ()  # empty -> the whole merged set, no subset
+
+
 def test_from_env_layers_on_top_of_base():
     base = Config(deck="FromFile", llm_model="file-model")
     config = Config.from_env({"ANKERY_DECK": "FromEnv"}, base=base)
@@ -127,6 +143,30 @@ def test_load_reads_file_values(tmp_path):
     assert config.llm_base_url == "http://llm.local/v1"
     assert config.llm_timeout == 12.0  # int in TOML coerced to float
     assert config.tags == ("auto", "de")  # list coerced to tuple
+
+
+def test_load_reads_notes_dir_as_path_and_notes_as_tuple(tmp_path):
+    path = _write(
+        tmp_path,
+        'notes_dir = "/srv/notes"\n'
+        'notes = ["noun_de", "verb_de"]\n',
+    )
+    config = Config.load(path=path, environ={})
+
+    assert config.notes_dir == Path("/srv/notes")  # string coerced to Path
+    assert config.notes == ("noun_de", "verb_de")  # list coerced to tuple
+
+
+def test_build_deck_builder_rejects_unknown_note_name():
+    # A subset name matching no definition is a config error, surfaced up front.
+    with pytest.raises(ConfigError, match="unknown note definition"):
+        build_deck_builder(Config(notes=("nonexistent",)))
+
+
+def test_build_deck_builder_loads_named_subset_for_routing():
+    builder = build_deck_builder(Config(notes=("verb_de", "noun_de")))
+
+    assert [d.name for d in builder.note_definitions] == ["Verb (DE)", "Noun (DE)"]
 
 
 def test_load_reads_providers_list(tmp_path):

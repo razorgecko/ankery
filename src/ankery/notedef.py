@@ -52,6 +52,10 @@ _STYLE_PATH = _NOTES_DIR / "style.css"
 FieldMap = Callable[[WordInfo], dict[str, str]]
 
 
+class NoteDefinitionError(Exception):
+    """Raised when a requested note definition can't be found."""
+
+
 def _finalize(value: object) -> object:
     """Render `WordInfo`'s None-valued optionals as "" rather than "None".
 
@@ -120,13 +124,39 @@ def default_css() -> str:
     return _STYLE_PATH.read_text("utf-8")
 
 
-def load_note_definitions(directory: Path | None = None) -> list[NoteDefinition]:
-    """Load every ``*.toml`` note definition from `directory` (default: bundled)."""
-    directory = directory or _NOTES_DIR
-    return [
-        _parse(tomllib.loads(path.read_text("utf-8")))
-        for path in sorted(directory.glob("*.toml"))
-    ]
+def load_note_definitions(
+    notes_dir: Path | None = None,
+    names: tuple[str, ...] = (),
+) -> list[NoteDefinition]:
+    """Load note definitions, a custom directory merged over the bundled set.
+
+    Files are keyed by stem (filename without ``.toml``). The bundled ``notes/``
+    loads first; ``notes_dir`` is layered on top, so a custom file with the same
+    stem replaces the bundled one and new stems are added — the merge is a dict
+    keyed by stem, built fresh each call (nothing persists between runs).
+
+    ``names``, when given, selects a subset by stem *in the order listed*, so
+    config can control routing precedence; a name matching no file (in either
+    directory) raises ``NoteDefinitionError`` rather than being skipped.
+    """
+    paths: dict[str, Path] = {}
+    for directory in (_NOTES_DIR, notes_dir):
+        if directory is None:
+            continue
+        for path in sorted(directory.glob("*.toml")):
+            paths[path.stem] = path  # later assignment wins: custom over bundled
+
+    if names:
+        missing = [name for name in names if name not in paths]
+        if missing:
+            available = ", ".join(sorted(paths)) or "(none)"
+            raise NoteDefinitionError(
+                f"unknown note definition(s): {', '.join(missing)}; "
+                f"available: {available}."
+            )
+        paths = {name: paths[name] for name in names}
+
+    return [_parse(tomllib.loads(path.read_text("utf-8"))) for path in paths.values()]
 
 
 def _parse(raw: dict) -> NoteDefinition:

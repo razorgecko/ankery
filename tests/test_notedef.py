@@ -1,10 +1,24 @@
+import pytest
+
 from ankery.models import WordInfo
 from ankery.notedef import (
     NoteDefinition,
+    NoteDefinitionError,
     default_css,
     default_field_map,
     load_note_definitions,
 )
+
+
+def _write_note(directory, stem, name, *, applies_to="noun"):
+    """Write a minimal valid note definition TOML and return its path."""
+    (directory / f"{stem}.toml").write_text(
+        f'name = "{name}"\n'
+        f'applies_to = "{applies_to}"\n'
+        "[map]\n"
+        'Word = "{{ word }}"\n',
+        "utf-8",
+    )
 
 
 def _defs() -> dict[str, NoteDefinition]:
@@ -153,6 +167,36 @@ def test_bundled_definitions_carry_no_css_of_their_own():
     # The per-POS notes leave styling to the shared default, so the sink can
     # supply it (catch-all model or the bundle) without a definition overriding.
     assert all(d.css == "" for d in _defs().values())
+
+
+def test_notes_dir_adds_new_stems_to_the_bundled_set(tmp_path):
+    _write_note(tmp_path, "adjective_de", "Adjective (DE)", applies_to="adjective")
+    names = {d.name for d in load_note_definitions(tmp_path)}
+
+    # Bundled definitions remain, the custom new stem is added alongside them.
+    assert {"Noun (DE)", "Verb (DE)", "Adjective (DE)"} <= names
+
+
+def test_notes_dir_same_stem_replaces_the_bundled_definition(tmp_path):
+    # A custom noun_de.toml shadows the bundled one (same stem), so the bundled
+    # "Noun (DE)" is gone and the override's name takes its place.
+    _write_note(tmp_path, "noun_de", "Custom Noun")
+    names = {d.name for d in load_note_definitions(tmp_path)}
+
+    assert "Custom Noun" in names
+    assert "Noun (DE)" not in names
+
+
+def test_names_select_a_subset_in_the_order_listed():
+    defs = load_note_definitions(names=("verb_de", "noun_de"))
+
+    # Only the named stems load, and routing precedence follows the given order.
+    assert [d.name for d in defs] == ["Verb (DE)", "Noun (DE)"]
+
+
+def test_unknown_name_raises_rather_than_being_skipped():
+    with pytest.raises(NoteDefinitionError, match="nonexistent"):
+        load_note_definitions(names=("noun_de", "nonexistent"))
 
 
 def test_default_field_map_is_the_procedural_catch_all():

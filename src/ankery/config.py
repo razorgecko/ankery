@@ -8,7 +8,12 @@ from ankery.manager import DeckBuilder
 from ankery.providers.base import WordProvider
 from ankery.providers.llm import LLMProvider
 from ankery.providers.verbformen import VerbformenProvider
-from ankery.notedef import FieldMap, default_field_map, load_note_definitions
+from ankery.notedef import (
+    FieldMap,
+    NoteDefinitionError,
+    default_field_map,
+    load_note_definitions,
+)
 from ankery.sinks.ankiconnect import AnkiConnectSink
 
 ENV_PREFIX = "ANKERY_"
@@ -80,6 +85,15 @@ class Config:
     note_type: str = "Basic"
     tags: tuple[str, ...] = ()
 
+    # Note definitions. `notes_dir`, when set, is merged over the bundled
+    # notes/ by file stem — a custom file with the same stem replaces the
+    # bundled one, new stems are added. `notes`, when non-empty, selects a
+    # subset of definitions by stem (e.g. ("noun_de", "verb_de")) in the order
+    # listed, so a collection can ship many note types and a run use only those
+    # for the language at hand. Empty `notes` loads the whole merged set.
+    notes_dir: Path | None = None
+    notes: tuple[str, ...] = ()
+
     # Default language pair for lookups (a German -> English vocab builder).
     source_language: str = "de"
     target_language: str = "en"
@@ -130,6 +144,10 @@ class Config:
         def _opt_str(key: str, fallback: str | None) -> str | None:
             return env.get(ENV_PREFIX + key, fallback)
 
+        def _opt_path(key: str, fallback: Path | None) -> Path | None:
+            raw = env.get(ENV_PREFIX + key)
+            return fallback if raw is None else Path(raw).expanduser()
+
         def _float(key: str, fallback: float) -> float:
             raw = env.get(ENV_PREFIX + key)
             return fallback if raw is None else float(raw)
@@ -160,6 +178,8 @@ class Config:
             deck=_str("DECK", base.deck),
             note_type=_str("NOTE_TYPE", base.note_type),
             tags=_csv("TAGS", base.tags),
+            notes_dir=_opt_path("NOTES_DIR", base.notes_dir),
+            notes=_csv("NOTES", base.notes),
             source_language=_str("SOURCE_LANG", base.source_language),
             target_language=_str("TARGET_LANG", base.target_language),
         )
@@ -195,12 +215,14 @@ def _load_config_file(path: Path) -> dict:
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 
     # TOML gives native types; only nudge the ones Config types differently.
-    for key in ("tags", "providers"):
+    for key in ("tags", "providers", "notes"):
         if isinstance(raw.get(key), list):
             raw[key] = tuple(raw[key])
     for key in ("llm_timeout", "anki_timeout", "verbformen_timeout"):
         if key in raw:
             raw[key] = float(raw[key])
+    if isinstance(raw.get("notes_dir"), str):
+        raw["notes_dir"] = Path(raw["notes_dir"]).expanduser()
     return raw
 
 
@@ -263,6 +285,10 @@ def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) ->
                 f"{', '.join(sorted(PROVIDER_REGISTRY))}."
             ) from None
         providers.append(build(config))
+    try:
+        note_definitions = load_note_definitions(config.notes_dir, config.notes)
+    except NoteDefinitionError as exc:
+        raise ConfigError(str(exc)) from exc
     sink = AnkiConnectSink(
         base_url=config.anki_url,
         timeout=config.anki_timeout,
@@ -274,6 +300,6 @@ def build_deck_builder(config: Config, *, map_fields: FieldMap | None = None) ->
         deck=config.deck,
         note_type=config.note_type,
         map_fields=map_fields or default_field_map,
-        note_definitions=load_note_definitions(),
+        note_definitions=note_definitions,
         tags=list(config.tags),
     )
