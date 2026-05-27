@@ -10,6 +10,7 @@ from ankery.models import WordInfo
 from ankery.notedef import NoteDefinition, load_notes_from_dir
 
 _BUNDLED_LANGS = Path(__file__).parent / "langs"
+_DEFAULT_STYLE = Path(__file__).parent / "default_style.css"
 
 # Typed loosely to avoid an import cycle with config.py.
 Normalize = Callable[[WordInfo], WordInfo]
@@ -59,7 +60,11 @@ def load_pack(code: str, langs_dir: Path | None = None) -> LanguagePack:
         raise PackError(f"pack {code!r}: could not load notes: {exc}") from exc
 
     style_path = notes_dir / "style.css"
-    style_css = style_path.read_text("utf-8") if style_path.exists() else ""
+    style_css = (
+        style_path.read_text("utf-8")
+        if style_path.exists()
+        else _DEFAULT_STYLE.read_text("utf-8")
+    )
 
     normalize = _load_normalize(directory / "filter.py", code)
     provider_builders = _load_providers(directory / "providers", code)
