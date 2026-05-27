@@ -27,6 +27,17 @@ def _note_def() -> NoteDefinition:
     )
 
 
+def _styleless_def() -> NoteDefinition:
+    # A definition that sets no css of its own — the case where the sink supplies
+    # a fallback (the catch-all model's styling, or the bundled default).
+    return NoteDefinition(
+        name="Noun (DE)",
+        field_map={"Word": "{{ word }}", "Article": "{{ gender }}"},
+        applies_to="noun",
+        cards=(Card("N1", "{{Article}} {{Word}}", "{{FrontSide}}"),),
+    )
+
+
 def _actions(httpx_mock) -> list[str]:
     return [json.loads(r.content)["action"] for r in httpx_mock.get_requests()]
 
@@ -129,6 +140,62 @@ def test_verify_creates_missing_model(httpx_mock):
     assert params["cardTemplates"] == [
         {"Name": "N1", "Front": "{{Article}} {{Word}}", "Back": "{{FrontSide}}"}
     ]
+
+
+def test_verify_styles_created_model_from_catch_all(httpx_mock):
+    # A definition with no css of its own: match the catch-all model's styling so
+    # new cards look like the user's existing Basic ones.
+    httpx_mock.add_response(url=URL, json={"result": ["Basic"], "error": None})  # modelNames
+    httpx_mock.add_response(  # modelStyling
+        url=URL, json={"result": {"css": ".card { color: green; }"}, "error": None}
+    )
+    httpx_mock.add_response(url=URL, json={"result": 1, "error": None})  # createModel
+
+    _sink().verify_note_types([_styleless_def()], default_css=".card {}", catch_all="Basic")
+
+    assert _actions(httpx_mock) == ["modelNames", "modelStyling", "createModel"]
+    styling = json.loads(httpx_mock.get_requests()[1].content)["params"]
+    assert styling["modelName"] == "Basic"
+    create = json.loads(httpx_mock.get_requests()[2].content)["params"]
+    assert create["css"] == ".card { color: green; }"
+
+
+def test_verify_falls_back_to_default_css_when_catch_all_absent(httpx_mock):
+    # The catch-all model isn't in Anki, so there is nothing to copy — no
+    # modelStyling call, and the bundled default is used.
+    httpx_mock.add_response(url=URL, json={"result": [], "error": None})  # modelNames
+    httpx_mock.add_response(url=URL, json={"result": 1, "error": None})  # createModel
+
+    _sink().verify_note_types([_styleless_def()], default_css=".card {}", catch_all="Basic")
+
+    assert _actions(httpx_mock) == ["modelNames", "createModel"]  # no modelStyling
+    create = json.loads(httpx_mock.get_requests()[1].content)["params"]
+    assert create["css"] == ".card {}"
+
+
+def test_verify_falls_back_to_default_css_when_styling_unreadable(httpx_mock):
+    # The catch-all exists but its styling response is malformed — fall back to
+    # the default rather than letting a bad shape through.
+    httpx_mock.add_response(url=URL, json={"result": ["Basic"], "error": None})  # modelNames
+    httpx_mock.add_response(url=URL, json={"result": {"nope": 1}, "error": None})  # modelStyling
+    httpx_mock.add_response(url=URL, json={"result": 1, "error": None})  # createModel
+
+    _sink().verify_note_types([_styleless_def()], default_css=".card {}", catch_all="Basic")
+
+    create = json.loads(httpx_mock.get_requests()[2].content)["params"]
+    assert create["css"] == ".card {}"
+
+
+def test_verify_definition_css_overrides_catch_all(httpx_mock):
+    # A definition with its own css keeps it; the catch-all is not even consulted.
+    httpx_mock.add_response(url=URL, json={"result": [], "error": None})  # modelNames
+    httpx_mock.add_response(url=URL, json={"result": 1, "error": None})  # createModel
+
+    _sink().verify_note_types([_note_def()], default_css=".card {}", catch_all="Basic")
+
+    assert _actions(httpx_mock) == ["modelNames", "createModel"]  # no modelStyling
+    create = json.loads(httpx_mock.get_requests()[1].content)["params"]
+    assert create["css"] == ".card { color: blue; }"
 
 
 def test_verify_accepts_exact_match_without_creating(httpx_mock):

@@ -22,11 +22,16 @@ File shape (see ``notes/noun_de.toml``)::
     qfmt = "..."
     afmt = "..."
 
-    css = "..."               # optional; omitted creates the note type unstyled
+    css = "..."               # optional; omitted falls back to the shared style
 
 The map values are Jinja; the card ``qfmt``/``afmt`` are Anki's own mustache and
 are never run through Jinja here. Both happen to use ``{{ }}`` — only the map is
 rendered.
+
+A definition that sets no ``css`` keeps it empty here; resolving the fallback —
+the catch-all model's live styling or the bundled ``notes/style.css`` — is the
+sink's job at create time, so card *appearance* can be tuned (here or in Anki)
+without touching a definition's fields or layout.
 """
 
 import tomllib
@@ -39,6 +44,7 @@ import jinja2
 from ankery.models import WordInfo
 
 _NOTES_DIR = Path(__file__).parent / "notes"
+_STYLE_PATH = _NOTES_DIR / "style.css"
 
 # A filler: WordInfo -> flat {field name: value}. Both NoteDefinition.render
 # (the file-driven, declarative path) and default_field_map (the procedural
@@ -101,6 +107,17 @@ class NoteDefinition:
             name: _env.from_string(template).render(**data)
             for name, template in self.field_map.items()
         }
+
+
+def default_css() -> str:
+    """The bundled fallback card stylesheet (``notes/style.css``).
+
+    Used for note types whose definition sets no ``css`` of its own, when the
+    sink can't read a live style off the catch-all model. Kept in its own file,
+    apart from the field maps and card layouts, so the look can be tuned on its
+    own.
+    """
+    return _STYLE_PATH.read_text("utf-8")
 
 
 def load_note_definitions(directory: Path | None = None) -> list[NoteDefinition]:

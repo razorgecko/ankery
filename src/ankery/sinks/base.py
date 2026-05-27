@@ -35,11 +35,21 @@ class AnkiSink(Protocol):
         """Create a note and return its Anki note id."""
         ...
 
-    def verify_note_types(self, definitions: Iterable[NoteDefinition]) -> None:
+    def verify_note_types(
+        self,
+        definitions: Iterable[NoteDefinition],
+        *,
+        default_css: str = "",
+        catch_all: str | None = None,
+    ) -> None:
         """Ensure each definition's note type exists in the target and matches.
 
         Create the model if absent; if present, require its field set and order
         to match exactly and raise SinkError otherwise — never silently mutate
         an existing model. Run once before writing notes.
+
+        A created model whose definition sets no ``css`` is styled to match the
+        ``catch_all`` model's own look when the target can report it, else
+        `default_css`. A definition with its own ``css`` keeps it.
         """
         ...

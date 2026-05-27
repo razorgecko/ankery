@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 
 from ankery.models import WordInfo
-from ankery.notedef import FieldMap, NoteDefinition, default_field_map
+from ankery.notedef import FieldMap, NoteDefinition, default_css, default_field_map
 from ankery.providers.base import ProviderError, WordProvider
 from ankery.sinks.base import AnkiSink
 
@@ -42,9 +42,16 @@ class DeckBuilder:
         Delegates the loaded note definitions to the sink (see
         AnkiSink.verify_note_types). The catch-all `note_type` carries no
         definition — it is a built-in like "Basic" we assume Anki already has —
-        so it is left out. Call once before adding words.
+        so it is left out of the definitions, but passed as the style to copy:
+        created note types match its look (or the bundled default if Anki can't
+        report it) unless their definition sets its own css. Call once before
+        adding words.
         """
-        self.sink.verify_note_types(self.note_definitions)
+        self.sink.verify_note_types(
+            self.note_definitions,
+            default_css=default_css(),
+            catch_all=self.note_type,
+        )
 
     def add_word(
         self,

@@ -47,7 +47,13 @@ class AnkiConnectSink:
             raise SinkError(f"addNote returned an unexpected result: {result!r}")
         return result
 
-    def verify_note_types(self, definitions: Iterable[NoteDefinition]) -> None:
+    def verify_note_types(
+        self,
+        definitions: Iterable[NoteDefinition],
+        *,
+        default_css: str = "",
+        catch_all: str | None = None,
+    ) -> None:
         """Provision or validate the note-type models the definitions describe.
 
         Create-only. A model that is absent is created from its definition
@@ -59,11 +65,17 @@ class AnkiConnectSink:
         a superset model whose extra field sorts first would silently break
         every write. Card templates and css are set only at creation; later GUI
         edits to them are the user's to keep. Safe to re-run.
+
+        A created model whose definition sets no css is styled to match the
+        `catch_all` model (e.g. "Basic") so new cards look like the user's
+        existing ones; if that model is absent or its styling can't be read, it
+        falls back to `default_css`. The fallback is resolved once.
         """
         existing = self._model_names()
+        fallback_css = self._catch_all_css(catch_all, default_css, existing)
         for note_def in definitions:
             if note_def.name not in existing:
-                self._create_model(note_def)
+                self._create_model(note_def, css=note_def.css or fallback_css)
                 continue
             actual = self._model_field_names(note_def.name)
             if actual != note_def.fields:
@@ -73,6 +85,25 @@ class AnkiConnectSink:
                     "Refusing to modify a note type that may already have notes; "
                     "reconcile the fields in Anki or rename the note type."
                 )
+
+    def _catch_all_css(
+        self, catch_all: str | None, default_css: str, existing: set[str]
+    ) -> str:
+        """The stylesheet for created models that carry no css of their own.
+
+        Prefer the live styling of the `catch_all` model so new note types match
+        the user's existing cards; fall back to `default_css` on any problem —
+        the model being absent, or a styling response we can't read.
+        """
+        if not catch_all or catch_all not in existing:
+            return default_css
+        try:
+            result = self._invoke("modelStyling", modelName=catch_all)
+        except SinkError:
+            return default_css
+        if isinstance(result, dict) and isinstance(result.get("css"), str):
+            return result["css"]
+        return default_css
 
     def _model_names(self) -> set[str]:
         result = self._invoke("modelNames")
@@ -88,12 +119,12 @@ class AnkiConnectSink:
             raise SinkError(f"modelFieldNames returned an unexpected result: {result!r}")
         return result
 
-    def _create_model(self, note_def: NoteDefinition) -> None:
+    def _create_model(self, note_def: NoteDefinition, *, css: str) -> None:
         self._invoke(
             "createModel",
             modelName=note_def.name,
             inOrderFields=note_def.fields,
-            css=note_def.css,
+            css=css,
             isCloze=False,
             cardTemplates=[
                 {"Name": card.name, "Front": card.qfmt, "Back": card.afmt}

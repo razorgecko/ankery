@@ -1,5 +1,10 @@
 from ankery.models import WordInfo
-from ankery.notedef import NoteDefinition, default_field_map, load_note_definitions
+from ankery.notedef import (
+    NoteDefinition,
+    default_css,
+    default_field_map,
+    load_note_definitions,
+)
 
 
 def _defs() -> dict[str, NoteDefinition]:
@@ -134,6 +139,20 @@ def test_applies_routes_by_part_of_speech():
     # An adjective matches neither, so it falls through to the catch-all.
     adj = WordInfo(word="schön", source="test", part_of_speech="adjective")
     assert not any(d.applies(adj) for d in defs.values())
+
+
+def test_default_css_is_the_bundled_stylesheet():
+    css = default_css()
+
+    # The shared fallback look, kept in notes/style.css apart from any field map.
+    assert ".card {" in css
+    assert "font-family: arial;" in css
+
+
+def test_bundled_definitions_carry_no_css_of_their_own():
+    # The per-POS notes leave styling to the shared default, so the sink can
+    # supply it (catch-all model or the bundle) without a definition overriding.
+    assert all(d.css == "" for d in _defs().values())
 
 
 def test_default_field_map_is_the_procedural_catch_all():
