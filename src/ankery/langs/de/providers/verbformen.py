@@ -7,6 +7,7 @@ Imports must be absolute — this file is loaded by path.
 """
 
 import re
+from urllib.parse import quote
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -48,36 +49,39 @@ class VerbformenProvider:
 
     def __init__(self, *, timeout: float = 15.0, target_language: str = "en") -> None:
         self._target_language = target_language
-        self._client = httpx.Client(
-            headers=_HEADERS, timeout=timeout, follow_redirects=True
-        )
+        self._timeout = timeout
 
     def fetch(self, word: str) -> WordInfo | None:
         target = self._target_language
-        if word[0].isupper():
-            html_text = self._get(f"/declension/nouns/{word}.htm")
-            if html_text is None:
-                return None
-            soup = BeautifulSoup(html_text, "html.parser")
-            return _parse_noun(word, soup, target, self.name)
-        else:
-            lemma = word
-            html_text = self._get(f"/conjugation/{word}.htm")
-            if html_text is None:
-                normalized = _normalize_verb_input(word)
-                if normalized != word:
-                    html_text = self._get(f"/conjugation/{normalized}.htm")
-                    lemma = normalized
-            if html_text is None:
-                return None
-            soup = BeautifulSoup(html_text, "html.parser")
-            return _parse_verb(lemma, soup, target, self.name)
+        # Scope the client to one lookup so connections are pooled across the
+        # requests it makes, then always closed — no leaked sockets.
+        with httpx.Client(
+            headers=_HEADERS, timeout=self._timeout, follow_redirects=True
+        ) as client:
+            if word[0].isupper():
+                html_text = self._get(client, f"/declension/nouns/{quote(word, safe='')}.htm")
+                if html_text is None:
+                    return None
+                soup = BeautifulSoup(html_text, "html.parser")
+                return _parse_noun(word, soup, target, self.name)
+            else:
+                lemma = word
+                html_text = self._get(client, f"/conjugation/{quote(word, safe='')}.htm")
+                if html_text is None:
+                    normalized = _normalize_verb_input(word)
+                    if normalized != word:
+                        html_text = self._get(client, f"/conjugation/{quote(normalized, safe='')}.htm")
+                        lemma = normalized
+                if html_text is None:
+                    return None
+                soup = BeautifulSoup(html_text, "html.parser")
+                return _parse_verb(lemma, soup, target, self.name)
 
-    def _get(self, path: str) -> str | None:
+    def _get(self, client: httpx.Client, path: str) -> str | None:
         url = f"{_BASE}{path}"
         headers = {"Accept-Language": _accept_language(self._target_language)}
         try:
-            r = self._client.get(url, headers=headers)
+            r = client.get(url, headers=headers)
         except httpx.HTTPError as exc:
             raise ProviderError(f"verbformen.com request failed: {exc}") from exc
         if r.status_code == 404:

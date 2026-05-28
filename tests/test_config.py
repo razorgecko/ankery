@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 
 from pathlib import Path
@@ -26,6 +28,7 @@ def _write(tmp_path, text: str):
 def _write_auth(tmp_path, text: str):
     path = tmp_path / "auth.toml"
     path.write_text(text)
+    path.chmod(0o600)  # default: locked down, so secret-file tests don't warn
     return path
 
 
@@ -363,7 +366,7 @@ def test_build_deck_builder_honors_provider_order():
 def test_pack_local_provider_gets_options_from_lang_toml():
     # verbformen's timeout comes from the de pack's [provider_options], not Config.
     builder = build_deck_builder(Config(providers=("verbformen",)))
-    assert _provider_named(builder, "verbformen")._client.timeout.read == 15.0
+    assert _provider_named(builder, "verbformen")._timeout == 15.0
 
 
 def test_llm_provider_gets_the_pack_rendered_prompt():
@@ -403,3 +406,56 @@ def test_empty_chain_with_packless_chain_is_an_error(tmp_path):
 
     with pytest.raises(ConfigError, match="no providers configured"):
         build_deck_builder(Config(source_language="yy", langs_dir=tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# Security warnings (warn, don't block)
+# ---------------------------------------------------------------------------
+
+
+def test_load_warns_on_world_readable_auth_file(tmp_path):
+    auth = _write_auth(tmp_path, 'llm_api_key = "sk-secret"\n')
+    auth.chmod(0o644)
+    with pytest.warns(UserWarning, match="accessible to group/others"):
+        Config.load(path=tmp_path / "absent.toml", auth_path=auth, environ={})
+
+
+def test_load_silent_when_auth_file_locked_down(tmp_path):
+    auth = _write_auth(tmp_path, 'llm_api_key = "sk-secret"\n')
+    auth.chmod(0o600)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning would raise
+        config = Config.load(path=tmp_path / "absent.toml", auth_path=auth, environ={})
+    assert config.llm_api_key == "sk-secret"
+
+
+def test_build_warns_on_api_key_over_plaintext_http_to_remote():
+    config = Config(
+        providers=("llm",),
+        llm_base_url="http://example.com:8080/v1",
+        llm_api_key="sk-secret",
+    )
+    with pytest.warns(UserWarning, match="plaintext http"):
+        build_deck_builder(config)
+
+
+def test_build_silent_for_api_key_over_http_to_localhost():
+    config = Config(
+        providers=("llm",),
+        llm_base_url="http://localhost:8080/v1",
+        llm_api_key="sk-secret",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        build_deck_builder(config)
+
+
+def test_build_silent_for_api_key_over_https():
+    config = Config(
+        providers=("llm",),
+        llm_base_url="https://example.com/v1",
+        llm_api_key="sk-secret",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        build_deck_builder(config)

@@ -259,6 +259,15 @@ def test_capitalisation_routes_to_noun_vs_verb_url(httpx_mock):
     assert requested == {NOUN_URL, VERB_URL}
 
 
+def test_word_with_special_chars_is_percent_encoded_in_url(httpx_mock):
+    # A slash in the word must not alter the URL path; it is percent-encoded.
+    url = "https://www.verbformen.com/declension/nouns/A%2FB.htm"
+    httpx_mock.add_response(url=url, status_code=404)
+
+    assert _provider().fetch("A/B") is None
+    assert str(httpx_mock.get_requests()[0].url) == url
+
+
 def test_404_is_a_clean_miss(httpx_mock):
     url = "https://www.verbformen.com/declension/nouns/Quux.htm"
     httpx_mock.add_response(url=url, status_code=404)

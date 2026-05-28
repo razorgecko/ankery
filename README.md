@@ -196,6 +196,11 @@ it, so a bundled language can be overridden entirely.
 A `notes/style.css` is optional: if a pack omits it, cards fall back to
 ankery's built-in default styling. Provide one to style this language's cards.
 
+> **A pack is code.** `filter.py` and `providers/*.py` are Python that ankery
+> imports and runs in its own process, with full access to your network and
+> files — there is no sandbox. Treat installing a pack exactly like installing
+> any program: only use packs you wrote or trust.
+
 ### Environment variables
 
 ankery reads only a few environment variables:

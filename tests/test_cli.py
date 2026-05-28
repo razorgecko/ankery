@@ -130,6 +130,27 @@ def test_multiple_words_one_failure_still_processes_all(patched, capsys):
     assert captured["builder"].calls == ["a", "b", "c"]
 
 
+def test_empty_or_whitespace_word_is_skipped_not_looked_up(patched, capsys):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+
+    code = cli.main(["   ", "Buch"])
+
+    assert code == 1  # the empty word marks the run as failed
+    assert "skipping empty word" in capsys.readouterr().err
+    assert captured["builder"].calls == ["Buch"]  # whitespace word never reached the builder
+
+
+def test_surrounding_whitespace_is_stripped_before_lookup(patched):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+
+    code = cli.main(["  Buch  "])
+
+    assert code == 0
+    assert captured["builder"].calls == ["Buch"]
+
+
 def test_flags_override_config(patched):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=1, word="Buch")})

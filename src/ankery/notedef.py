@@ -2,6 +2,7 @@
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 
 import jinja2
@@ -20,12 +21,15 @@ def _finalize(value: object) -> object:
     return "" if value is None else value
 
 
+# autoescape: field values flow from untrusted providers (LLM/scraper) into card
+# HTML, so escape them by default. Card structure lives in the Anki templates, not
+# here; a map that deliberately emits HTML can opt out per-value with `| safe`.
 _env = jinja2.Environment(
     trim_blocks=True,
     lstrip_blocks=True,
     undefined=jinja2.ChainableUndefined,  # missing feature keys render as ""
     finalize=_finalize,
-    autoescape=False,
+    autoescape=True,
 )
 
 
@@ -130,19 +134,24 @@ def default_field_map(info: WordInfo) -> dict[str, str]:
 
 
 def _back(info: WordInfo) -> str:
+    # The <br>/<hr>/<i> tags are our structure; provider-supplied values are
+    # escaped so they can't inject markup into the card.
     sections: list[str] = []
     if info.translations:
-        sections.append(", ".join(info.translations))
+        sections.append(escape(", ".join(info.translations)))
     if info.definitions:
-        sections.append("<br>".join(info.definitions))
+        sections.append("<br>".join(escape(d) for d in info.definitions))
     if info.features:
         sections.append(
-            "<br>".join(f"{key}: {value}" for key, value in info.features.items())
+            "<br>".join(
+                f"{escape(key)}: {escape(value)}" for key, value in info.features.items()
+            )
         )
     if info.examples:
         rendered = []
         for i, ex in enumerate(info.examples):
             gloss = info.example_translations[i] if i < len(info.example_translations) else ""
-            rendered.append(f"<i>{ex}</i> — {gloss}" if gloss else f"<i>{ex}</i>")
+            ex_html = f"<i>{escape(ex)}</i>"
+            rendered.append(f"{ex_html} — {escape(gloss)}" if gloss else ex_html)
         sections.append("<br>".join(rendered))
     return "<hr>".join(sections)

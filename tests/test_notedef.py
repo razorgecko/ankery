@@ -249,3 +249,48 @@ def test_default_field_map_is_the_neutral_catch_all():
     assert "book" in fields["Back"]
     assert "gender: das" in fields["Back"]
     assert "nominative_pl: Bücher" in fields["Back"]
+
+
+# ---------------------------------------------------------------------------
+# Escaping of untrusted provider data
+# ---------------------------------------------------------------------------
+
+
+def test_field_map_escapes_provider_html():
+    # Provider-supplied values can contain markup; a note map must escape it so
+    # it can't inject into the card. Card structure lives in templates, not here.
+    note = NoteDefinition(
+        name="X", field_map={"Front": "{{ word }}", "Back": "{{ translations[0] }}"}
+    )
+    info = WordInfo(word="<b>x</b>", source="test", translations=["<script>alert(1)</script>"])
+    fields = note.render(info)
+
+    assert fields["Front"] == "&lt;b&gt;x&lt;/b&gt;"
+    assert "<script>" not in fields["Back"]
+    assert "&lt;script&gt;" in fields["Back"]
+
+
+def test_field_map_safe_filter_opts_out_of_escaping():
+    # A pack that deliberately emits HTML from a value can use `| safe`.
+    note = NoteDefinition(name="X", field_map={"Back": "{{ definitions[0] | safe }}"})
+    info = WordInfo(word="x", source="test", definitions=["<i>emphasis</i>"])
+
+    assert note.render(info)["Back"] == "<i>emphasis</i>"
+
+
+def test_default_field_map_escapes_provider_html_but_keeps_structure():
+    info = WordInfo(
+        word="x",
+        source="test",
+        translations=["<script>alert(1)</script>"],
+        examples=["a <b>bold</b> sentence"],
+        example_translations=["a gloss"],
+    )
+    back = default_field_map(info)["Back"]
+
+    # Provider values are escaped...
+    assert "<script>" not in back
+    assert "&lt;script&gt;" in back
+    assert "<b>bold</b>" not in back
+    # ...but our own structural tags survive.
+    assert "<i>" in back and "<hr>" in back

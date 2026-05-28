@@ -106,7 +106,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     exit_code = 0
-    for word in args.words:
+    for raw_word in args.words:
+        word = raw_word.strip()
+        if not word:
+            print("skipping empty word", file=sys.stderr)
+            exit_code = 1
+            continue
         try:
             result = builder.add_word(word)
         except ProviderError as exc:

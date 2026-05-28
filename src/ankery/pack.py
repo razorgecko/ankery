@@ -1,5 +1,6 @@
 
 import importlib.util
+import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -127,7 +128,14 @@ def _load_module(path: Path, name: str) -> ModuleType:
     if spec is None or spec.loader is None:
         raise PackError(f"could not load module from {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Register before exec so pack code that imports itself, pickles, or inspects
+    # its own module resolves correctly instead of building a second copy.
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(name, None)
+        raise
     return module
 
 

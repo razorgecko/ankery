@@ -100,6 +100,26 @@ def test_error_then_clean_miss_still_reraises():
         _builder(providers).lookup("Buch")
 
 
+def test_unexpected_provider_exception_falls_through_to_next_provider():
+    # A provider bug (not a ProviderError) must not abort the chain: a later
+    # provider can still satisfy the lookup.
+    first = FakeProvider("first", error=AttributeError("scraper hit bad markup"))
+    second = FakeProvider("second", result=_info())
+    info = _builder([first, second]).lookup("Buch")
+
+    assert info.word == "Buch"
+    assert first.calls == 1
+
+
+def test_unexpected_provider_exception_is_wrapped_as_provider_error():
+    # On a total miss, the crash surfaces as a ProviderError naming the provider,
+    # with the original exception chained — never an uncaught AttributeError.
+    provider = FakeProvider("scraper", error=AttributeError("bad markup"))
+    with pytest.raises(ProviderError, match="provider 'scraper' crashed") as exc_info:
+        _builder([provider]).lookup("Buch")
+    assert isinstance(exc_info.value.__cause__, AttributeError)
+
+
 def test_normalize_hook_is_applied_to_the_result():
     # The pack's normalize hook runs on whatever a provider returns, before
     # routing. Here it uppercases the word to prove it is in the path.

@@ -82,6 +82,14 @@ class DeckBuilder:
             except ProviderError as exc:
                 last_error = exc
                 continue
+            except Exception as exc:
+                # A provider bug (e.g. a scraper hitting unexpected markup) must
+                # not abort the whole run: contain it like a ProviderError so the
+                # chain continues and it surfaces only if nothing else matches.
+                name = getattr(provider, "name", type(provider).__name__)
+                last_error = ProviderError(f"provider {name!r} crashed: {exc}")
+                last_error.__cause__ = exc
+                continue
             if info is not None:
                 return self._normalize(info)
         if last_error is not None:

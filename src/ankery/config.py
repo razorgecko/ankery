@@ -1,8 +1,11 @@
 import os
+import stat
 import tomllib
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ankery.manager import DeckBuilder
 from ankery.notedef import (
@@ -144,10 +147,39 @@ def _load_auth_file(path: Path) -> dict:
             f"{path}: only {', '.join(sorted(SECRET_KEYS))} belongs in auth.toml; "
             f"move {', '.join(sorted(unknown))} to config.toml."
         )
+    if raw:
+        _warn_if_world_readable(path)
     return raw
 
 
+def _warn_if_world_readable(path: Path) -> None:
+    """Warn if a secret-bearing file is readable by group or others (POSIX only)."""
+    if os.name != "posix":
+        return
+    try:
+        mode = path.stat().st_mode
+    except OSError:
+        return
+    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+        warnings.warn(
+            f"{path} holds a secret but is accessible to group/others; "
+            f"restrict it with `chmod 600 {path}`.",
+            stacklevel=2,
+        )
+
+
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
 def _build_llm(config: "Config", pack: LanguagePack) -> WordProvider:
+    if config.llm_api_key:
+        parts = urlsplit(config.llm_base_url)
+        if parts.scheme == "http" and parts.hostname not in _LOOPBACK_HOSTS:
+            warnings.warn(
+                f"sending the LLM API key over plaintext http to {parts.hostname}; "
+                "the token is exposed in transit — use https for remote endpoints.",
+                stacklevel=2,
+            )
     return LLMProvider(
         base_url=config.llm_base_url,
         model=config.llm_model,
