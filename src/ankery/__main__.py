@@ -1,5 +1,6 @@
 import argparse
 import sys
+import warnings
 from dataclasses import replace
 from pathlib import Path
 
@@ -87,7 +88,13 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     return replace(config, **overrides) if overrides else config
 
 
+def _show_warning(message, category, filename, lineno, file=None, line=None) -> None:
+    """CLI-friendly warning output: just the message, no file/line/source-line noise."""
+    print(f"ankery: warning: {message}", file=file or sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
+    warnings.showwarning = _show_warning
     args = build_parser().parse_args(argv)
     try:
         config = _config_from_args(args)
