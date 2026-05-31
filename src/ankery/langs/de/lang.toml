@@ -2,7 +2,7 @@
 #
 # Everything language-specific about German lives in this directory: this file
 # (grammar vocabulary + LLM guidance + provider preferences), the optional
-# filter.py (output normalization), the optional provider.py (the verbformen
+# filter.py (output normalization), the optional provider.py (the netzverb
 # scraper), and notes/ (card layouts). The engine names no language; it loads a
 # pack by code and wires itself from it.
 
@@ -11,12 +11,12 @@ name = "German"
 # Preferred provider chain, in fallback order. Names resolve first against this
 # pack's provider.py, then the engine's cross-language registry (currently just
 # "llm"). Overridable per run with --provider.
-providers = ["verbformen", "llm"]
+providers = ["netzverb", "llm"]
 
 # Options handed to this pack's providers when built. Keyed by provider name;
 # the builder in provider.py reads its own table. Keeps provider tunables in the
 # pack instead of leaking a German-specific knob into the engine's Config.
-[provider_options.verbformen]
+[provider_options.netzverb]
 timeout = 15.0
 
 # Features common to every part of speech: declared key -> what it means to the

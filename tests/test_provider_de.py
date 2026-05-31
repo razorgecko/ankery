@@ -1,4 +1,4 @@
-"""The German pack's verbformen provider (langs/de/providers/verbformen.py).
+"""The German pack's netzverb provider (langs/de/providers/netzverb.py).
 
 The provider is pack-local code loaded by path, so the test loads the module the
 same way the pack loader does and exercises the class and helpers directly. Its
@@ -20,13 +20,13 @@ NOUN_URL = "https://www.verbformen.com/declension/nouns/steckbrief/info/Haus.htm
 VERB_URL = "https://www.verbformen.com/conjugation/einkaufen.htm"
 
 _PROVIDER_PATH = (
-    Path(ankery.__file__).parent / "langs" / "de" / "providers" / "verbformen.py"
+    Path(ankery.__file__).parent / "langs" / "de" / "providers" / "netzverb.py"
 )
-_spec = importlib.util.spec_from_file_location("de_verbformen_under_test", _PROVIDER_PATH)
+_spec = importlib.util.spec_from_file_location("de_netzverb_under_test", _PROVIDER_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
-VerbformenProvider = _mod.VerbformenProvider
+NetzverbProvider = _mod.NetzverbProvider
 _accept_language = _mod._accept_language
 _normalize_verb_input = _mod._normalize_verb_input
 _separable = _mod._separable
@@ -37,8 +37,8 @@ def _fixture(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
 
 
-def _provider(target_language: str = "en") -> "VerbformenProvider":
-    return VerbformenProvider(target_language=target_language)
+def _provider(target_language: str = "en") -> "NetzverbProvider":
+    return NetzverbProvider(target_language=target_language)
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ def test_noun_fetch_returns_wordinfo(httpx_mock):
     assert info is not None
     assert info.word == "Haus"
     assert info.part_of_speech == "noun"
-    assert info.source == "verbformen"
+    assert info.source == "netzverb"
     assert info.source_language == "de"
     assert info.target_language == "en"
     assert info.features["gender"] == "das"

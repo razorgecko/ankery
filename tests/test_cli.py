@@ -272,9 +272,9 @@ def test_provider_flag_overrides_chain(patched):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
-    cli.main(["--provider", "verbformen,llm", "Buch"])
+    cli.main(["--provider", "netzverb,llm", "Buch"])
 
-    assert captured["config"].providers == ("verbformen", "llm")
+    assert captured["config"].providers == ("netzverb", "llm")
 
 
 def test_langs_dir_flag_sets_user_pack_dir(patched):

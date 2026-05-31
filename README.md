@@ -31,8 +31,10 @@ with `--provider`.
 
 - **llm** — asks an OpenAI-compatible language model for definitions, examples,
   and translations. Works for any language.
-- **verbformen** — scrapes [verbformen.com](https://www.verbformen.com) for
-  grammar details like gender, declension, and conjugation. German only.
+- **netzverb** — scrapes the Netzverb dictionary sites
+  ([verbformen.com](https://www.verbformen.com),
+  [verben.de](https://www.verben.de)) for grammar details like gender,
+  declension, and conjugation. German only.
 
 ## Requirements
 
@@ -62,7 +64,7 @@ ankery --source-lang <lang_code> <word>   # look the word up in this language
 ```
 
 The part of speech comes from whichever provider answers: a scraper may guess it
-from the word's form (verbformen reads German capitalisation), the LLM infers it.
+from the word's form (netzverb reads German capitalisation), the LLM infers it.
 When a word is ambiguous, a `:pos` suffix pins it, which both picks the
 right source to look up and routes to the matching card layout:
 

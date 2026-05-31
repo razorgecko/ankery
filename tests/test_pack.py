@@ -14,7 +14,7 @@ def test_bundled_de_pack_loads():
 
     assert pack.code == "de"
     assert pack.name == "German"
-    assert pack.providers == ("verbformen", "llm")
+    assert pack.providers == ("netzverb", "llm")
     assert set(pack.grammar) == {"noun", "verb", "adjective"}
     assert pack.notes and [n.name for n in pack.notes] == ["Noun (DE)", "Verb (DE)"]
     assert ".card" in pack.style_css
@@ -36,14 +36,14 @@ def test_de_filter_hook_is_loaded_and_active():
 
 def test_de_provider_builder_is_registered():
     pack = load_pack("de")
-    assert "verbformen" in pack.provider_builders
+    assert "netzverb" in pack.provider_builders
 
 
-def test_de_provider_options_carry_verbformen_timeout():
+def test_de_provider_options_carry_netzverb_timeout():
     # Provider tunables live in the pack (lang.toml [provider_options]), not the
     # engine's Config.
     pack = load_pack("de")
-    assert pack.provider_options["verbformen"]["timeout"] == 15.0
+    assert pack.provider_options["netzverb"]["timeout"] == 15.0
 
 
 def test_unknown_code_raises():

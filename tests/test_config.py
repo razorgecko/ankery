@@ -62,7 +62,7 @@ def test_from_env_ignores_non_secret_vars():
     env = {
         "ANKERY_LLM_URL": "https://api.groq.com/openai/v1",
         "ANKERY_DECK": "German::Verbs",
-        "ANKERY_PROVIDERS": "llm, verbformen",
+        "ANKERY_PROVIDERS": "llm, netzverb",
         "ANKERY_ALLOW_DUPLICATE": "true",
     }
     config = Config.from_env(env, base=base)
@@ -138,10 +138,10 @@ def test_load_reads_notes_dir_as_path(tmp_path):
 
 
 def test_load_reads_providers_list(tmp_path):
-    path = _write(tmp_path, 'providers = ["verbformen", "llm"]\n')
+    path = _write(tmp_path, 'providers = ["netzverb", "llm"]\n')
     config = Config.load(path=path, environ={})
 
-    assert config.providers == ("verbformen", "llm")  # list coerced to tuple
+    assert config.providers == ("netzverb", "llm")  # list coerced to tuple
 
 
 def test_load_env_does_not_override_non_secret_file_value(tmp_path):
@@ -354,19 +354,19 @@ def test_empty_chain_falls_back_to_the_packs_preferred_chain():
     # config.providers is () by default, so the pack's chain is used.
     builder = build_deck_builder(Config())
 
-    assert [p.name for p in builder.providers] == ["verbformen", "llm"]
+    assert [p.name for p in builder.providers] == ["netzverb", "llm"]
 
 
 def test_build_deck_builder_honors_provider_order():
-    builder = build_deck_builder(Config(providers=("llm", "verbformen")))
+    builder = build_deck_builder(Config(providers=("llm", "netzverb")))
 
-    assert [p.name for p in builder.providers] == ["llm", "verbformen"]
+    assert [p.name for p in builder.providers] == ["llm", "netzverb"]
 
 
 def test_pack_local_provider_gets_options_from_lang_toml():
-    # verbformen's timeout comes from the de pack's [provider_options], not Config.
-    builder = build_deck_builder(Config(providers=("verbformen",)))
-    assert _provider_named(builder, "verbformen")._timeout == 15.0
+    # netzverb's timeout comes from the de pack's [provider_options], not Config.
+    builder = build_deck_builder(Config(providers=("netzverb",)))
+    assert _provider_named(builder, "netzverb")._timeout == 15.0
 
 
 def test_llm_provider_gets_the_pack_rendered_prompt():

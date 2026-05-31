@@ -147,8 +147,8 @@ _ROUTES = {
 }
 
 
-class VerbformenProvider:
-    name = "verbformen"
+class NetzverbProvider:
+    name = "netzverb"
 
     def __init__(self, *, timeout: float = 15.0, target_language: str = "en") -> None:
         self._target_language = target_language
@@ -208,15 +208,15 @@ class VerbformenProvider:
         return r.text
 
 
-def _build(config, pack) -> VerbformenProvider:
-    options = pack.provider_options.get("verbformen", {})
-    return VerbformenProvider(
+def _build(config, pack) -> NetzverbProvider:
+    options = pack.provider_options.get("netzverb", {})
+    return NetzverbProvider(
         timeout=float(options.get("timeout", 15.0)),
         target_language=config.target_language,
     )
 
 
-PROVIDERS = {"verbformen": _build}
+PROVIDERS = {"netzverb": _build}
 
 
 
