@@ -61,6 +61,20 @@ ankery --deck MyDeck <word>      # choose the destination deck
 ankery --source-lang <lang_code> <word>   # look the word up in this language
 ```
 
+The part of speech comes from whichever provider answers: a scraper may guess it
+from the word's form (verbformen reads German capitalisation), the LLM infers it.
+When a word is ambiguous, a `:pos` suffix pins it, which both picks the
+right source to look up and routes to the matching card layout:
+
+```bash
+ankery Bank:noun      # not the verb sense
+ankery schnell:adj    # adjective, not adverb
+ankery laufen:v       # short forms work: n, v, adj, adv, prep, …
+```
+
+The hint is the part-of-speech name the pack declares (`noun`, `verb`,
+`adjective`, …); any unambiguous prefix is accepted.
+
 Run `ankery --help` to see all options.
 
 ## Configuration
@@ -197,9 +211,9 @@ A `notes/style.css` is optional: if a pack omits it, cards fall back to
 ankery's built-in default styling. Provide one to style this language's cards.
 
 > **A pack is code.** `filter.py` and `providers/*.py` are Python that ankery
-> imports and runs in its own process, with full access to your network and
-> files — there is no sandbox. Treat installing a pack exactly like installing
-> any program: only use packs you wrote or trust.
+> imports and runs in its own process, with full access to the local network and
+> filesystem — there is no sandbox. Treat installing a pack exactly like installing
+> any program: only packs written or otherwise trusted should be installed.
 
 ### Environment variables
 

@@ -36,6 +36,8 @@ _PRESENT_KEYS = (
     "present_1sg", "present_2sg", "present_3sg",
     "present_1pl", "present_2pl", "present_3pl",
 )
+# The only word classes verbformen.com exposes as pages this scraper can parse.
+_SCRAPABLE = {"noun", "verb"}
 # Used only as a 404 fallback to strip "zu" from separable-verb zu-infinitives.
 _SEPARABLE_PREFIXES = (
     "ab", "an", "auf", "aus", "bei", "ein", "empor", "entgegen", "fort", "vor",
@@ -51,14 +53,22 @@ class VerbformenProvider:
         self._target_language = target_language
         self._timeout = timeout
 
-    def fetch(self, word: str) -> WordInfo | None:
+    def fetch(self, word: str, pos_hint: str | None = None) -> WordInfo | None:
+        # verbformen.com only has noun and verb pages; for any other part of
+        # speech this provider has nothing, so miss cleanly and let the chain
+        # (the LLM) handle it instead of scraping the wrong page shape.
+        if pos_hint is not None and pos_hint not in _SCRAPABLE:
+            return None
         target = self._target_language
+        # An explicit hint picks the page directly; without one, German
+        # orthography is the prior — capitalised words are nouns.
+        want_noun = pos_hint == "noun" or (pos_hint is None and word[0].isupper())
         # Scope the client to one lookup so connections are pooled across the
         # requests it makes, then always closed — no leaked sockets.
         with httpx.Client(
             headers=_HEADERS, timeout=self._timeout, follow_redirects=True
         ) as client:
-            if word[0].isupper():
+            if want_noun:
                 html_text = self._get(client, f"/declension/nouns/{quote(word, safe='')}.htm")
                 if html_text is None:
                     return None

@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 
 import httpx
 from pydantic import ValidationError
@@ -17,7 +18,7 @@ class LLMProvider:
         self,
         base_url: str,
         model: str,
-        system_prompt: str,
+        system_prompt_for: Callable[[str | None], str],
         *,
         source_language: str,
         target_language: str,
@@ -27,18 +28,20 @@ class LLMProvider:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.system_prompt = system_prompt
+        # Rendered per fetch, not once at construction: a pos_hint trims the
+        # prompt to the hinted POS, so the system message depends on the call.
+        self.system_prompt_for = system_prompt_for
         self.source_language = source_language
         self.target_language = target_language
         self.timeout = timeout
         self.request_json_format = request_json_format
         self.api_key = api_key
 
-    def fetch(self, word: str) -> WordInfo | None:
+    def fetch(self, word: str, pos_hint: str | None = None) -> WordInfo | None:
         payload: dict = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": self.system_prompt},
+                {"role": "system", "content": self.system_prompt_for(pos_hint)},
                 {
                     "role": "user",
                     "content": build_user_prompt(
@@ -66,6 +69,13 @@ class LLMProvider:
             raise ProviderError(f"Unexpected LLM response shape: {exc}") from exc
 
         data = _parse_json_object(content)
+
+        # Under a pos_hint the system prompt offers the model an empty object as
+        # the way to reject a mistaken assertion (the word is not that POS). An
+        # empty/word-less object is that signal: a clean miss, not a hard error,
+        # so the chain moves on rather than fabricating a card for the wrong word.
+        if pos_hint and not data.get("word"):
+            return None
 
         # Always overwrite — never trust the model to set provenance fields.
         data["source"] = self.name

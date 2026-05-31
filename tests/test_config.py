@@ -371,7 +371,7 @@ def test_pack_local_provider_gets_options_from_lang_toml():
 
 def test_llm_provider_gets_the_pack_rendered_prompt():
     builder = build_deck_builder(Config(providers=("llm",)))
-    assert "German" in _provider_named(builder, "llm").system_prompt
+    assert "German" in _provider_named(builder, "llm").system_prompt_for(None)
 
 
 def test_build_deck_builder_rejects_unknown_provider():
@@ -394,7 +394,7 @@ def test_source_language_selects_a_user_pack_via_langs_dir(tmp_path):
     builder = build_deck_builder(Config(source_language="xx", langs_dir=tmp_path))
 
     assert [p.name for p in builder.providers] == ["llm"]
-    assert "Examplish" in _provider_named(builder, "llm").system_prompt
+    assert "Examplish" in _provider_named(builder, "llm").system_prompt_for(None)
 
 
 def test_empty_chain_with_packless_chain_is_an_error(tmp_path):

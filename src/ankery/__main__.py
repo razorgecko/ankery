@@ -1,12 +1,50 @@
 import argparse
 import sys
 import warnings
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
 from ankery.config import Config, ConfigError, build_deck_builder
 from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
+
+
+def split_pos_hint(raw: str) -> tuple[str, str | None]:
+    """Split a `word:pos` token into (word, raw_hint); no colon -> (word, None).
+
+    The part-of-speech hint is everything after the last colon, e.g. `schnell:adj`
+    or `Bank:noun`. A colon is glob-safe, so words need no shell quoting. The hint
+    is resolved against the pack's declared POS by prefix match (see
+    resolve_pos_hint).
+    """
+    word, sep, hint = raw.rpartition(":")
+    if not sep:
+        return raw.strip(), None
+    return word.strip(), hint.strip()
+
+
+def resolve_pos_hint(hint: str, pos_names: Sequence[str]) -> str:
+    """Resolve a POS hint to one canonical pack POS by exact-then-prefix match.
+
+    Raises ValueError if the hint is empty, matches nothing, or is an ambiguous
+    prefix of more than one declared POS.
+    """
+    if not hint:
+        raise ValueError("empty part-of-speech hint after colon")
+    lowered = hint.lower()
+    exact = [name for name in pos_names if name.lower() == lowered]
+    if exact:
+        return exact[0]
+    prefix = [name for name in pos_names if name.lower().startswith(lowered)]
+    if len(prefix) == 1:
+        return prefix[0]
+    known = ", ".join(sorted(pos_names))
+    if not prefix:
+        raise ValueError(f"unknown part of speech {hint!r}; this pack knows: {known}")
+    raise ValueError(
+        f"ambiguous part of speech {hint!r}; matches: {', '.join(sorted(prefix))}"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -114,13 +152,21 @@ def main(argv: list[str] | None = None) -> int:
 
     exit_code = 0
     for raw_word in args.words:
-        word = raw_word.strip()
+        word, raw_hint = split_pos_hint(raw_word)
         if not word:
             print("skipping empty word", file=sys.stderr)
             exit_code = 1
             continue
+        pos_hint: str | None = None
+        if raw_hint is not None:
+            try:
+                pos_hint = resolve_pos_hint(raw_hint, builder.pos_names)
+            except ValueError as exc:
+                print(f"{raw_word}: {exc}", file=sys.stderr)
+                exit_code = 1
+                continue
         try:
-            result = builder.add_word(word)
+            result = builder.add_word(word, pos_hint=pos_hint)
         except ProviderError as exc:
             print(f"{word}: lookup failed: {exc}", file=sys.stderr)
             exit_code = 1

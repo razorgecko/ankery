@@ -12,9 +12,11 @@ from ankery.sinks.base import SinkError
 class FakeBuilder:
     """Captures add_word calls and replays a scripted result per word."""
 
-    def __init__(self, results: dict[str, object]):
+    def __init__(self, results: dict[str, object], pos_names=("noun", "verb", "adjective")):
         self._results = results
         self.calls: list[str] = []
+        self.hint_calls: list[tuple[str, str | None]] = []
+        self.pos_names = list(pos_names)
         self.verified = False
         self.verify_error: Exception | None = None
 
@@ -23,8 +25,9 @@ class FakeBuilder:
             raise self.verify_error
         self.verified = True
 
-    def add_word(self, word):
+    def add_word(self, word, *, pos_hint=None):
         self.calls.append(word)
+        self.hint_calls.append((word, pos_hint))
         outcome = self._results[word]
         if isinstance(outcome, Exception):
             raise outcome
@@ -50,6 +53,78 @@ def patched(monkeypatch):
         return builder
 
     return captured, factory
+
+
+# ---------------------------------------------------------------------------
+# POS-hint parsing and resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("Buch", ("Buch", None)),
+        ("schnell:adj", ("schnell", "adj")),
+        ("  Haus : noun ", ("Haus", "noun")),
+        (":noun", ("", "noun")),
+        ("auf:", ("auf", "")),
+    ],
+)
+def test_split_pos_hint(raw, expected):
+    assert cli.split_pos_hint(raw) == expected
+
+
+def test_resolve_pos_hint_exact_and_prefix():
+    names = ["adjective", "adverb", "noun", "preposition", "verb"]
+    assert cli.resolve_pos_hint("noun", names) == "noun"  # exact
+    assert cli.resolve_pos_hint("v", names) == "verb"  # unique prefix
+    assert cli.resolve_pos_hint("adj", names) == "adjective"
+    assert cli.resolve_pos_hint("PREP", names) == "preposition"  # case-insensitive
+
+
+def test_resolve_pos_hint_rejects_unknown():
+    with pytest.raises(ValueError, match="unknown part of speech"):
+        cli.resolve_pos_hint("xyz", ["noun", "verb"])
+
+
+def test_resolve_pos_hint_rejects_ambiguous_prefix():
+    with pytest.raises(ValueError, match="ambiguous"):
+        cli.resolve_pos_hint("ad", ["adjective", "adverb"])
+
+
+def test_resolve_pos_hint_rejects_empty():
+    with pytest.raises(ValueError, match="empty"):
+        cli.resolve_pos_hint("", ["noun"])
+
+
+def test_colon_hint_is_resolved_and_passed_to_add_word(patched):
+    captured, set_results = patched
+    builder = set_results({"Bank": AddResult(note_id=7, word="Bank")})
+
+    code = cli.main(["Bank:n"])
+
+    assert code == 0
+    assert builder.hint_calls == [("Bank", "noun")]
+
+
+def test_unknown_hint_reports_and_skips_lookup(patched, capsys):
+    captured, set_results = patched
+    builder = set_results({})
+
+    code = cli.main(["schnell:xyz"])
+
+    assert code == 1
+    assert "unknown part of speech" in capsys.readouterr().err
+    assert builder.calls == []  # the word is never looked up
+
+
+def test_word_without_colon_passes_no_hint(patched):
+    captured, set_results = patched
+    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
+
+    cli.main(["Buch"])
+
+    assert builder.hint_calls == [("Buch", None)]
 
 
 def test_added_word_prints_note_id_and_exits_zero(patched, capsys):

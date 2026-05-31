@@ -14,9 +14,11 @@ class FakeProvider:
         self._result = result
         self._error = error
         self.calls = 0
+        self.last_pos_hint: str | None = None
 
-    def fetch(self, word: str) -> WordInfo | None:
+    def fetch(self, word: str, pos_hint: str | None = None) -> WordInfo | None:
         self.calls += 1
+        self.last_pos_hint = pos_hint
         if self._error is not None:
             raise self._error
         return self._result
@@ -37,6 +39,10 @@ class FakeSink:
 
 def _info(word: str = "Buch") -> WordInfo:
     return WordInfo(word=word, source="test")
+
+
+def _info_with_pos(pos: str, word: str = "Bank") -> WordInfo:
+    return WordInfo(word=word, source="test", part_of_speech=pos)
 
 
 def _builder(providers, sink=None, **kwargs) -> DeckBuilder:
@@ -72,6 +78,31 @@ def test_provider_error_falls_through_to_next_provider():
 
     assert info.word == "Buch"
     assert first.calls == 1
+
+
+def test_pos_hint_is_forwarded_to_each_provider():
+    first = FakeProvider("first", result=None)
+    second = FakeProvider("second", result=_info())
+    _builder([first, second]).lookup("Bank", pos_hint="noun")
+
+    assert first.last_pos_hint == "noun"
+    assert second.last_pos_hint == "noun"
+
+
+def test_pos_hint_overrides_the_providers_classification():
+    # The user's explicit hint is authoritative: it wins over whatever POS the
+    # provider stamped, so routing and the pack filter see the intended POS.
+    provider = FakeProvider("p", result=_info_with_pos("verb"))
+    info = _builder([provider]).lookup("Bank", pos_hint="noun")
+
+    assert info.part_of_speech == "noun"
+
+
+def test_no_pos_hint_leaves_the_providers_classification_intact():
+    provider = FakeProvider("p", result=_info_with_pos("verb"))
+    info = _builder([provider]).lookup("laufen")
+
+    assert info.part_of_speech == "verb"
 
 
 def test_all_clean_misses_returns_none():

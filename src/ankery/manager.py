@@ -29,6 +29,7 @@ class DeckBuilder:
         map_fields: FieldMap | None = None,
         note_definitions: Iterable[NoteDefinition] | None = None,
         tags: list[str] | None = None,
+        pos_names: Iterable[str] | None = None,
     ) -> None:
         self.providers = list(providers)
         self.sink = sink
@@ -39,6 +40,9 @@ class DeckBuilder:
         self.map_fields = map_fields or default_field_map
         self.note_definitions = list(note_definitions or [])
         self.tags = tags or []
+        # The pack's declared part-of-speech vocabulary; the CLI resolves a
+        # `word:pos` hint against it before calling add_word.
+        self.pos_names = list(pos_names or [])
 
     def verify_note_types(self) -> None:
         """Provision/validate note types; call once before adding words."""
@@ -48,13 +52,14 @@ class DeckBuilder:
             catch_all=self.note_type,
         )
 
-    def add_word(self, word: str) -> AddResult | None:
+    def add_word(self, word: str, *, pos_hint: str | None = None) -> AddResult | None:
         """Look up, build, and write a note; returns the result or None on a clean miss.
 
         The result's `word` is the form the provider resolved to, which may differ
         from the requested `word` (e.g. an inflection redirected to its lemma).
+        `pos_hint`, when given, forces the routing part of speech (see `lookup`).
         """
-        info = self.lookup(word)
+        info = self.lookup(word, pos_hint=pos_hint)
         if info is None:
             return None
         note_type, map_fields = self._route(info)
@@ -73,12 +78,18 @@ class DeckBuilder:
                 return note_def.name, note_def.render
         return self.note_type, self.map_fields
 
-    def lookup(self, word: str) -> WordInfo | None:
-        """Run the provider chain and normalize the result; re-raises last ProviderError on total miss."""
+    def lookup(self, word: str, *, pos_hint: str | None = None) -> WordInfo | None:
+        """Run the provider chain and normalize the result; re-raises last ProviderError on total miss.
+
+        When `pos_hint` is set the user has explicitly stated the word class, so it
+        is authoritative: the resolved info's `part_of_speech` is overwritten with it
+        before normalize runs, ensuring routing and the pack filter see the intended
+        POS even if a provider classified it differently.
+        """
         last_error: ProviderError | None = None
         for provider in self.providers:
             try:
-                info = provider.fetch(word)
+                info = provider.fetch(word, pos_hint=pos_hint)
             except ProviderError as exc:
                 last_error = exc
                 continue
@@ -91,6 +102,8 @@ class DeckBuilder:
                 last_error.__cause__ = exc
                 continue
             if info is not None:
+                if pos_hint is not None:
+                    info.part_of_speech = pos_hint
                 return self._normalize(info)
         if last_error is not None:
             raise last_error

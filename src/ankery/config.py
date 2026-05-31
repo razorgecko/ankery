@@ -4,6 +4,7 @@ import tomllib
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
+from functools import partial
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -183,7 +184,7 @@ def _build_llm(config: "Config", pack: LanguagePack) -> WordProvider:
     return LLMProvider(
         base_url=config.llm_base_url,
         model=config.llm_model,
-        system_prompt=render_system_prompt(pack),
+        system_prompt_for=partial(render_system_prompt, pack),
         source_language=pack.code,
         target_language=config.target_language,
         timeout=config.llm_timeout,
@@ -245,4 +246,5 @@ def build_deck_builder(config: Config) -> DeckBuilder:
         normalize=pack.normalize,
         note_definitions=notes,
         tags=list(config.tags),
+        pos_names=sorted(pack.grammar),
     )

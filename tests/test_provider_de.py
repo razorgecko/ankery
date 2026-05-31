@@ -350,3 +350,43 @@ def test_non_zu_miss_does_not_retry(httpx_mock):
 
     assert info is None
     assert len(httpx_mock.get_requests()) == 1
+
+
+# ---------------------------------------------------------------------------
+# Explicit part-of-speech hint
+# ---------------------------------------------------------------------------
+
+
+def test_pos_hint_for_unscrapable_pos_misses_without_a_request(httpx_mock):
+    # verbformen.com has only noun and verb pages. Given an adjective hint the
+    # provider must miss cleanly so the chain falls through to the LLM — and it
+    # must not waste an HTTP request guessing. (No mocked response is added; a
+    # request here would make pytest-httpx fail.)
+    assert _provider().fetch("schnell", pos_hint="adjective") is None
+    assert httpx_mock.get_requests() == []
+
+
+def test_noun_hint_forces_the_noun_page_for_a_lowercase_word(httpx_mock):
+    # Without a hint a lowercase word would be treated as a verb; the noun hint
+    # overrides the capitalisation prior and hits the declension page.
+    httpx_mock.add_response(
+        url="https://www.verbformen.com/declension/nouns/haus.htm",
+        text=_fixture("verbformen_noun_Haus.html"),
+    )
+
+    info = _provider().fetch("haus", pos_hint="noun")
+
+    assert info is not None
+    assert info.part_of_speech == "noun"
+
+
+def test_verb_hint_forces_the_conjugation_page_for_a_capitalised_word(httpx_mock):
+    httpx_mock.add_response(
+        url="https://www.verbformen.com/conjugation/Einkaufen.htm",
+        text=_fixture("verbformen_verb_einkaufen.html"),
+    )
+
+    info = _provider().fetch("Einkaufen", pos_hint="verb")
+
+    assert info is not None
+    assert info.part_of_speech == "verb"

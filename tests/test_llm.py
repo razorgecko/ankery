@@ -19,7 +19,9 @@ def _completion(content: str) -> dict:
 
 
 def _provider(**kwargs) -> LLMProvider:
-    kwargs.setdefault("system_prompt", SYSTEM)
+    # The provider renders the system prompt per fetch from a (pos_hint -> str)
+    # callable; the default ignores the hint and returns the constant SYSTEM.
+    kwargs.setdefault("system_prompt_for", lambda pos_hint=None: SYSTEM)
     kwargs.setdefault("source_language", "de")
     kwargs.setdefault("target_language", "en")
     return LLMProvider(base_url=BASE_URL, model="test-model", **kwargs)
@@ -42,6 +44,39 @@ def test_fetch_returns_wordinfo(httpx_mock):
     assert info.word == "Buch"
     assert info.features["gender"] == "das"
     assert info.features["nominative_pl"] == "Bücher"
+
+
+def test_hinted_fetch_misses_on_empty_object(httpx_mock):
+    # The user asserted a POS the word does not have; the model returns the
+    # empty-object miss signal. The provider must read that as a clean miss
+    # (None) so the chain moves on, not fabricate a card for the wrong word.
+    httpx_mock.add_response(url=CHAT_URL, json=_completion("{}"))
+
+    assert _provider().fetch("laufen", pos_hint="noun") is None
+
+
+def test_empty_object_without_hint_raises(httpx_mock):
+    # The miss signal is only honoured under a hint. Without one, a word-less
+    # object is just a malformed response and must fail loudly.
+    httpx_mock.add_response(url=CHAT_URL, json=_completion("{}"))
+
+    with pytest.raises(ProviderError):
+        _provider().fetch("laufen")
+
+
+def test_fetch_renders_system_prompt_with_the_pos_hint(httpx_mock):
+    # The hint reaches the renderer, not just the user prompt — so a hint can
+    # trim the system prompt to the named POS.
+    httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": "schnell"}'))
+
+    provider = _provider(
+        system_prompt_for=lambda pos_hint=None: f"hint={pos_hint}"
+    )
+    provider.fetch("schnell", pos_hint="adjective")
+
+    [request] = httpx_mock.get_requests()
+    system_message = json.loads(request.content)["messages"][0]["content"]
+    assert system_message == "hint=adjective"
 
 
 def test_fetch_does_not_normalize_forms(httpx_mock):
