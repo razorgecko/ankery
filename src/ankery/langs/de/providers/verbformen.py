@@ -1,12 +1,39 @@
-"""verbformen.com scraper for the German pack.
+"""Netzverb scraper for the German pack.
 
-Nouns (capital first letter): /declension/nouns/{Word}.htm
-Verbs (lowercase):            /conjugation/{word}.htm
+One company publishes the same word data across sibling sites with isomorphic
+markup (a one-letter CSS prefix tracks the host). For most parts of speech we
+scrape the **lightweight "Steckbrief" pages** — a compact ~10 KB summary (lemma,
+gender, audio, the key irregular forms, gloss, IPA, one example) instead of the
+full ~150 KB declension page, since the rule-governed case/declension grids add
+nothing the lemma plus a few stem-irregular forms do not. **Verbs are the
+exception:** the per-person present paradigm is not rule-derivable, so the verb
+route fetches the full ~180 KB conjugation page and parses its present-indicative
+table (the Steckbrief panel it also embeds still supplies gloss, IPA, example,
+and audio). This provider scrapes two hosts:
+
+  verbformen.com (prefix "v") — inflected words (gender, comparison, the verb's
+  conjugation), the verb on its full conjugation page, the rest on a
+  /steckbrief/info/ path:
+    noun       /declension/nouns/steckbrief/info/{Word}.htm   (capitalised)
+    verb       /conjugation/{word}.htm                        (lowercase, full page)
+    adjective  /declension/adjectives/steckbrief/info/{word}.htm
+    pronoun    /declension/pronouns/steckbrief/info/{word}.htm
+    article    /declension/articles/steckbrief/info/{word}.htm
+  verben.de (prefix "w") — uninflected words, under a /steckbrief-info/ path:
+    adverb       /adverbs/steckbrief-info/{word}.htm
+    preposition  /prepositions/steckbrief-info/{word}.htm
+    conjunction  /conjunctions/steckbrief-info/{word}.htm
+    particle     /particles/steckbrief-info/{word}.htm
+
+A `pos_hint` picks the route directly; without one only noun/verb are reachable,
+chosen by capitalisation. A hint for any POS no site here serves misses cleanly.
 
 Imports must be absolute — this file is loaded by path.
 """
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from urllib.parse import quote
 
 import httpx
@@ -15,7 +42,8 @@ from bs4 import BeautifulSoup, Tag
 from ankery.models import WordInfo
 from ankery.providers.base import ProviderError
 
-_BASE = "https://www.verbformen.com"
+_VERBFORMEN_BASE = "https://www.verbformen.com"
+_VERBEN_BASE = "https://www.verben.de"
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -24,26 +52,99 @@ _HEADERS = {
 }
 # Footnote superscript digits the site appends to forms (e.g. ⁵ ⁶)
 _SUPERSCRIPTS = str.maketrans("", "", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-_CASES = {
-    "Nominative": "nominative",
-    "Genitive": "genitive",
-    "Dative": "dative",
-    "Accusative": "accusative",
+# Each Steckbrief page carries a compact "Stammformen" line ("Hauses · Häuser")
+# listing a POS's lexically irregular forms — the ones not derivable from the
+# lemma by rule. This maps the line's middot-separated positions to feature keys
+# per POS; None skips a position (the lemma itself). A POS absent here (verb,
+# pronoun, article, and every uninflected verben.de word) reads nothing from the
+# line. The full noun case grid and the adjective declension grid are
+# deliberately not parsed: those endings are rule-governed, so only these
+# stem-irregular forms are kept. Verbs are not here at all — they use the full
+# conjugation page and read their forms from the present table and the
+# principal-parts line instead (see _conjugation).
+_KEY_FORMS = {
+    "noun":      ("genitive_sg", "nominative_pl"),
+    "adjective": (None, "comparative", "superlative"),
 }
-# Present-indicative table is the first table whose rows are exactly these six pronouns.
+# Subject pronouns keying the present-indicative table's rows, in citation order;
+# the table is the first one whose rows are exactly these six. Their forms fill
+# the corresponding feature keys (the per-person present paradigm).
 _PRONOUNS = ("ich", "du", "er", "wir", "ihr", "sie")
 _PRESENT_KEYS = (
     "present_1sg", "present_2sg", "present_3sg",
     "present_1pl", "present_2pl", "present_3pl",
 )
-# The only word classes verbformen.com exposes as pages this scraper can parse.
-_SCRAPABLE = {"noun", "verb"}
 # Used only as a 404 fallback to strip "zu" from separable-verb zu-infinitives.
 _SEPARABLE_PREFIXES = (
     "ab", "an", "auf", "aus", "bei", "ein", "empor", "entgegen", "fort", "vor",
     "weg", "zurück", "zusammen", "durch", "über", "unter", "wieder", "gegen",
     "hinter", "mit", "nach", "nieder", "statt", "um", "zu",
 )
+
+
+@dataclass(frozen=True)
+class Source:
+    """Where the parser finds each piece on one Netzverb site.
+
+    The same data is published across sibling sites with a one-letter prefix
+    that tracks the host (verbformen.com -> "v", verben.de -> "w"). `panel` and
+    `key_forms` carry that prefix; `lemma` differs per site (verbformen has an
+    article-bearing headword span; verben.de has only a bare headword block).
+    Translations, IPA, gloss, and the example live inside the panel and are
+    located uniformly, so they need no per-site selector.
+    """
+
+    panel: str       # id of the Steckbrief summary panel
+    key_forms: str   # CSS selector for the compact Stammformen line whose parts
+                     # are a POS's irregular forms (see _KEY_FORMS)
+    lemma: str       # selector (relative to the panel) for the headword element;
+                     # on verbformen it also bears the gender article and audio
+
+
+# verbformen.com: inflected pages — article-bearing headword span (lemma +
+# gender + audio in one node).
+VERBFORMEN = Source(panel="vStckKrz", key_forms="p.vStm", lemma="span.vGrnd")
+
+# verben.de: uninflected pages — no headword span; the lemma is the leading
+# headword block, and there is no gender, audio, or Stammformen line.
+VERBEN = Source(panel="wStckKrz", key_forms="p.wStm", lemma="div.rCntr.rClear")
+
+
+def _normalize_verb_input(word: str) -> str:
+    """Strip inserted "zu" from a separable zu-infinitive: umzusetzen -> umsetzen.
+    Used as the verb route's 404 fallback (see _Route.fallback)."""
+    for prefix in _SEPARABLE_PREFIXES:
+        if word.startswith(prefix + "zu") and len(word) > len(prefix) + 2:
+            return prefix + word[len(prefix) + 2 :]
+    return word
+
+
+@dataclass(frozen=True)
+class _Route:
+    """How to fetch and parse one part of speech: which host, the path template
+    (`{word}` is percent-encoded in), the Source profile for that page, and an
+    optional input normalizer retried once on a 404 (separable zu-infinitives)."""
+
+    base: str
+    path: str
+    source: Source
+    fallback: Callable[[str], str] | None = None
+
+
+# POS -> route. The key set is exactly the parts of speech this provider can
+# scrape; a hint outside it is a clean miss. The verb route carries a fallback
+# for the zu-infinitive 404 retry; otherwise every POS flows through one parser.
+_ROUTES = {
+    "noun":        _Route(_VERBFORMEN_BASE, "/declension/nouns/steckbrief/info/{word}.htm", VERBFORMEN),
+    "verb":        _Route(_VERBFORMEN_BASE, "/conjugation/{word}.htm", VERBFORMEN, fallback=_normalize_verb_input),
+    "adjective":   _Route(_VERBFORMEN_BASE, "/declension/adjectives/steckbrief/info/{word}.htm", VERBFORMEN),
+    "pronoun":     _Route(_VERBFORMEN_BASE, "/declension/pronouns/steckbrief/info/{word}.htm", VERBFORMEN),
+    "article":     _Route(_VERBFORMEN_BASE, "/declension/articles/steckbrief/info/{word}.htm", VERBFORMEN),
+    "adverb":      _Route(_VERBEN_BASE, "/adverbs/steckbrief-info/{word}.htm", VERBEN),
+    "preposition": _Route(_VERBEN_BASE, "/prepositions/steckbrief-info/{word}.htm", VERBEN),
+    "conjunction": _Route(_VERBEN_BASE, "/conjunctions/steckbrief-info/{word}.htm", VERBEN),
+    "particle":    _Route(_VERBEN_BASE, "/particles/steckbrief-info/{word}.htm", VERBEN),
+}
 
 
 class VerbformenProvider:
@@ -54,52 +155,56 @@ class VerbformenProvider:
         self._timeout = timeout
 
     def fetch(self, word: str, pos_hint: str | None = None) -> WordInfo | None:
-        # verbformen.com only has noun and verb pages; for any other part of
-        # speech this provider has nothing, so miss cleanly and let the chain
-        # (the LLM) handle it instead of scraping the wrong page shape.
-        if pos_hint is not None and pos_hint not in _SCRAPABLE:
+        pos = self._resolve_pos(word, pos_hint)
+        # A hint for a POS no site here serves (or any POS at all when none of
+        # the no-hint priors apply): miss cleanly so the chain (the LLM) handles
+        # it instead of scraping the wrong page shape.
+        if pos is None:
             return None
-        target = self._target_language
-        # An explicit hint picks the page directly; without one, German
-        # orthography is the prior — capitalised words are nouns.
-        want_noun = pos_hint == "noun" or (pos_hint is None and word[0].isupper())
+        route = _ROUTES[pos]
         # Scope the client to one lookup so connections are pooled across the
         # requests it makes, then always closed — no leaked sockets.
         with httpx.Client(
             headers=_HEADERS, timeout=self._timeout, follow_redirects=True
         ) as client:
-            if want_noun:
-                html_text = self._get(client, f"/declension/nouns/{quote(word, safe='')}.htm")
-                if html_text is None:
-                    return None
-                soup = BeautifulSoup(html_text, "html.parser")
-                return _parse_noun(word, soup, target, self.name)
-            else:
-                lemma = word
-                html_text = self._get(client, f"/conjugation/{quote(word, safe='')}.htm")
-                if html_text is None:
-                    normalized = _normalize_verb_input(word)
-                    if normalized != word:
-                        html_text = self._get(client, f"/conjugation/{quote(normalized, safe='')}.htm")
-                        lemma = normalized
-                if html_text is None:
-                    return None
-                soup = BeautifulSoup(html_text, "html.parser")
-                return _parse_verb(lemma, soup, target, self.name)
+            lemma, html_text = self._load(client, route, word)
+            if html_text is None:
+                return None
+            soup = BeautifulSoup(html_text, "html.parser")
+            return _parse(lemma, soup, route, self._target_language, self.name, pos)
 
-    def _get(self, client: httpx.Client, path: str) -> str | None:
-        url = f"{_BASE}{path}"
+    def _load(
+        self, client: httpx.Client, route: "_Route", word: str
+    ) -> tuple[str, str | None]:
+        # Fetch the word as given; on a 404 a route may normalize the input and
+        # retry once (separable zu-infinitives: umzusetzen 404s, umsetzen resolves).
+        # Returns the lemma actually fetched alongside the body (None body = miss).
+        html = self._get(client, route, word)
+        if html is None and route.fallback is not None:
+            retry = route.fallback(word)
+            if retry != word:
+                return retry, self._get(client, route, retry)
+        return word, html
+
+    def _resolve_pos(self, word: str, pos_hint: str | None) -> str | None:
+        # An explicit hint picks the route directly (None if no site serves it).
+        if pos_hint is not None:
+            return pos_hint if pos_hint in _ROUTES else None
+        # Without a hint only noun/verb are reachable; German orthography is the
+        # prior — capitalised words are nouns, the rest verbs.
+        return "noun" if word[:1].isupper() else "verb"
+
+    def _get(self, client: httpx.Client, route: "_Route", word: str) -> str | None:
+        url = f"{route.base}{route.path.format(word=quote(word, safe=''))}"
         headers = {"Accept-Language": _accept_language(self._target_language)}
         try:
             r = client.get(url, headers=headers)
         except httpx.HTTPError as exc:
-            raise ProviderError(f"verbformen.com request failed: {exc}") from exc
+            raise ProviderError(f"request to {url} failed: {exc}") from exc
         if r.status_code == 404:
             return None
         if r.status_code != 200:
-            raise ProviderError(
-                f"verbformen.com returned HTTP {r.status_code} for {url}"
-            )
+            raise ProviderError(f"{url} returned HTTP {r.status_code}")
         return r.text
 
 
@@ -115,55 +220,69 @@ PROVIDERS = {"verbformen": _build}
 
 
 
-def _parse_noun(
-    word: str, soup: BeautifulSoup, target_language: str, source: str
-) -> WordInfo | None:
-    krz = soup.find(id="vStckKrz")
-    steckbrief = _steckbrief_panel(krz)
-    examples, example_translations = _example(steckbrief)
-    features = _declension_tables(soup)
-    gender = _gender(krz)
-    if gender:
-        features["gender"] = gender
-    ipa = _pronunciation(steckbrief)
-    if ipa:
-        features["ipa"] = ipa
-    info = WordInfo(
-        word=_headword(krz, fallback=word),
-        part_of_speech="noun",
-        translations=_translations(soup, target_language),
-        audio_url=_audio_url(krz),
-        definitions=_definition(steckbrief),
-        examples=examples,
-        example_translations=example_translations,
-        features=features,
-        source=source,
-        source_language="de",
-        target_language=target_language,
-    )
-    if not info.translations and not info.definitions:
-        return None
-    return info
+@dataclass(frozen=True)
+class _ParseCtx:
+    """The page's shared anchors, located once and handed to the POS feature
+    contributor so it can reach whatever it needs without re-finding them: the
+    raw soup (the verb contributor scans it for the present-indicative table and
+    principal-parts line), the Source profile, the Steckbrief panel, and the
+    lemma element (its prefix middot gives separability)."""
+
+    soup: BeautifulSoup
+    src: Source
+    steckbrief: Tag | None
+    lemma_el: Tag | None
 
 
-def _parse_verb(
-    word: str, soup: BeautifulSoup, target_language: str, source: str
+def _verb_extras(features: dict[str, str], ctx: _ParseCtx) -> None:
+    """Verb-only features beyond the universal gender/IPA. The verb route fetches
+    the full conjugation page, so _conjugation reads the whole present paradigm
+    (present_1sg..present_3pl) from the present-indicative table plus preterite
+    and perfect from the principal-parts line. The auxiliary is then derived from
+    the perfect form and separability from the lemma's prefix middot."""
+    features.update(_conjugation(ctx.soup))
+    _put(features, "auxiliary", _auxiliary(features.get("perfect", "")))
+    _put(features, "separable", _bool_str(_separable(ctx.lemma_el)))
+
+
+# POS -> extra feature contributor beyond key_forms/gender/IPA. A POS absent here
+# carries only those universal features. Contributors take the parse context, so
+# new per-POS extraction (a conjugation table, a declension grid) is registered
+# here rather than branched into the parser.
+_FEATURE_EXTRAS: dict[str, Callable[[dict[str, str], _ParseCtx], None]] = {
+    "verb": _verb_extras,
+}
+
+
+def _parse(
+    word: str, soup: BeautifulSoup, route: "_Route", target_language: str,
+    source: str, pos: str,
 ) -> WordInfo | None:
-    krz = soup.find(id="vStckKrz")
+    """Parse one page into a WordInfo, for every POS — the Steckbrief summary
+    panel is read identically whether it stands alone (most POS) or is embedded
+    in the verb's full conjugation page. The POS-specific parts degrade away on
+    their own: a POS with no _KEY_FORMS entry yields no irregular forms, a lemma
+    with no leading article yields no gender, and a POS with no _FEATURE_EXTRAS
+    contributor adds nothing further — so the same body serves an inflected noun,
+    a verb, and a bare adverb without a branch."""
+    src = route.source
+    krz = soup.find(id=src.panel)
     steckbrief = _steckbrief_panel(krz)
+    lemma_el = krz.select_one(src.lemma) if krz else None
     examples, example_translations = _example(steckbrief)
-    features = _conjugation(soup)
-    separable = _separable(soup)
-    if separable is not None:
-        features["separable"] = "true" if separable else "false"
-    ipa = _pronunciation(steckbrief)
-    if ipa:
-        features["ipa"] = ipa
+
+    features = _key_forms(soup, src, pos)
+    _put(features, "gender", _gender(lemma_el))
+    _put(features, "ipa", _pronunciation(steckbrief))
+    extra = _FEATURE_EXTRAS.get(pos)
+    if extra is not None:
+        extra(features, _ParseCtx(soup, src, steckbrief, lemma_el))
+
     info = WordInfo(
-        word=_headword(krz, fallback=word),
-        part_of_speech="verb",
-        translations=_translations(soup, target_language),
-        audio_url=_audio_url(krz),
+        word=_lemma(lemma_el, fallback=word),
+        part_of_speech=pos,
+        translations=_translations(steckbrief, target_language),
+        audio_url=_audio_url(lemma_el),
         definitions=_definition(steckbrief),
         examples=examples,
         example_translations=example_translations,
@@ -191,25 +310,48 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().translate(_SUPERSCRIPTS)
 
 
+def _put(features: dict[str, str], key: str, value: str | None) -> None:
+    """Add a feature only when present; None and the empty string are dropped."""
+    if value:
+        features[key] = value
+
+
+def _bool_str(value: bool | None) -> str | None:
+    """Render a tri-state boolean feature: None stays absent, else "true"/"false".
+    The result is a truthy string, so _put keeps "false" rather than dropping it."""
+    return None if value is None else ("true" if value else "false")
+
+
+def _one(text: str) -> list[str]:
+    """[text] for a non-empty string, [] otherwise — the single-item list shape
+    examples and translations use."""
+    return [text] if text else []
+
+
 def _steckbrief_panel(krz):
-    """The inner summary panel (IPA, definition, example); None when absent."""
+    """The inner content block holding translations, IPA, definition, and the
+    example. verbformen wraps these in a collapsible onclick <div>; verben.de
+    places them directly in the panel. Isolating the verbformen block keeps
+    _definition from picking up the <i> endings inside the Stammformen line.
+    None when the panel is absent."""
     if krz is None:
         return None
-    span = krz.select_one("span[lang]")
-    if span is not None:
-        p = span.find_parent("p")
-        if p is not None:
-            return p.parent
-    return krz
+    inner = krz.find("div", onclick=True)
+    return inner if inner is not None else krz
 
 
 
-def _translations(soup: BeautifulSoup, lang: str) -> list[str]:
-    # dl.vNrn holds all languages as <dd lang="xx">; read from here to support any target.
-    dd = soup.select_one(f'dl.vNrn dd[lang="{lang}"]')
-    if dd is None:
+def _translations(steckbrief, lang: str) -> list[str]:
+    # The negotiated language's gloss is the panel's single `span[lang="xx"]`
+    # (the Steckbrief page carries only the Accept-Language-negotiated language,
+    # unlike the full page's multi-language list). Nested sense <span>s have no
+    # lang attribute, so reading the outer span keeps them.
+    if steckbrief is None:
         return []
-    text = _normalize(dd.get_text())
+    span = steckbrief.select_one(f'span[lang="{lang}"]')
+    if span is None:
+        return []
+    text = _normalize(span.get_text())
     return [t.strip() for t in text.split(",") if t.strip() and "..." not in t]
 
 
@@ -227,7 +369,7 @@ def _pronunciation(steckbrief) -> str | None:
 def _definition(steckbrief) -> list[str]:
     if steckbrief is None:
         return []
-    i = steckbrief.find("i")  # the lone <i> in the panel holds the definition
+    i = steckbrief.find("i")  # the lone <i> in the content block holds the definition
     if i is None:
         return []
     text = _normalize(i.get_text())
@@ -235,26 +377,25 @@ def _definition(steckbrief) -> list[str]:
 
 
 def _example(steckbrief) -> tuple[list[str], list[str]]:
-    """Return ([german_sentence], [translation]); a flag <img> separates the two halves."""
+    """Return ([german_sentence], [translation]); a flag <img> separates the two
+    halves. No flag => the German half only; no example paragraph => ([], [])."""
     if steckbrief is None:
         return [], []
-    for p in steckbrief.find_all("p"):
-        if not _normalize(p.get_text()).startswith("»"):
-            continue
-        flag = p.find("img")
-        if flag is None:
-            german = _clean_example(_node_text(p.children))
-            return ([german] if german else []), []
-        before, after, seen = [], [], False
-        for child in p.children:
-            if child is flag:
-                seen = True
-                continue
-            (after if seen else before).append(child)
-        german = _clean_example(_node_text(before))
-        translation = _normalize(_node_text(after))
-        return ([german] if german else []), ([translation] if translation else [])
-    return [], []
+    p = next(
+        (p for p in steckbrief.find_all("p")
+         if _normalize(p.get_text()).startswith("»")),
+        None,
+    )
+    if p is None:
+        return [], []
+    children = list(p.children)
+    flag = p.find("img")
+    if flag is None:
+        return _one(_clean_example(_node_text(children))), []
+    cut = children.index(flag)
+    german = _clean_example(_node_text(children[:cut]))
+    translation = _normalize(_node_text(children[cut + 1:]))
+    return _one(german), _one(translation)
 
 
 def _node_text(nodes) -> str:
@@ -267,75 +408,73 @@ def _clean_example(text: str) -> str:
     return text.lstrip("»").strip()
 
 
-def _audio_url(krz) -> str | None:
-    if krz is None:
+def _audio_url(lemma_el) -> str | None:
+    # The pronunciation mp3 is a link inside the lemma element; sites without
+    # one (lemma_el is None, or no child link) yield no audio.
+    if lemma_el is None:
         return None
-    a = krz.select_one("span.vGrnd a[href]")
+    a = lemma_el.select_one("a[href]")
     if a is None:
         return None
     href = a["href"]
     return href if href.endswith(".mp3") else None
 
 
-def _normalize_verb_input(word: str) -> str:
-    """Strip inserted "zu" from a separable zu-infinitive: umzusetzen -> umsetzen."""
-    for prefix in _SEPARABLE_PREFIXES:
-        if word.startswith(prefix + "zu") and len(word) > len(prefix) + 2:
-            return prefix + word[len(prefix) + 2 :]
-    return word
-
-
-def _headword(krz, *, fallback: str) -> str:
-    """Canonical lemma from span.vGrnd; strips article and separable-verb middot."""
-    if krz is None:
+def _lemma(lemma_el, *, fallback: str) -> str:
+    """Canonical lemma from the lemma element; strips article and separable-verb
+    middot. Sites without one (lemma_el is None) use the fallback. The stripping
+    is a no-op on bare single-token lemmas, so it is safe to always apply."""
+    if lemma_el is None:
         return fallback
-    span = krz.select_one("span.vGrnd")
-    if span is None:
-        return fallback
-    text = _normalize(span.get_text()).replace("·", "")
-    head, _, rest = text.partition(" ")
-    if head in ("der", "die", "das"):
+    text = _normalize(lemma_el.get_text()).replace("·", "")
+    first, _, rest = text.partition(" ")
+    if first in ("der", "die", "das"):
         text = rest
     return text.strip() or fallback
 
 
-def _gender(krz) -> str | None:
-    if krz is None:
+def _gender(lemma_el) -> str | None:
+    # Genus is the leading definite article of the lemma element; lemmas without
+    # one (verbs, and every uninflected POS) yield no gender.
+    if lemma_el is None:
         return None
-    span = krz.select_one("span.vGrnd")
-    if span is None:
-        return None
-    parts = _normalize(span.get_text()).split()
+    parts = _normalize(lemma_el.get_text()).split()
     if parts and parts[0] in ("der", "die", "das"):
         return parts[0]
     return None
 
 
-def _separable(soup: BeautifulSoup) -> bool | None:
-    # Attribute line ("A1 · regular · haben · separable") is the <p> before #vStckInf.
-    div = soup.find(id="vStckInf")
-    if div is None:
+def _separable(lemma_el) -> bool | None:
+    """A separable verb's verbformen Grundform carries a middot at the prefix
+    boundary (ein·kaufen); an inseparable one does not (verkaufen). None when the
+    lemma element is absent."""
+    if lemma_el is None:
         return None
-    p = div.find_previous_sibling("p")
-    if p is None:
-        return None
-    tokens = {t.strip().lower() for t in p.get_text().split("·")}
-    if "separable" in tokens:
-        return True
-    if "inseparable" in tokens:
-        return False
+    return "·" in lemma_el.get_text()
+
+
+def _auxiliary(perfect: str) -> str | None:
+    """The perfect-tense auxiliary, read off the perfect form's leading word
+    ("hat eingekauft" -> haben, "ist gefahren" -> sein). None when the perfect
+    form is missing or starts with neither auxiliary."""
+    first = perfect.split()[0].lower() if perfect else ""
+    if first in ("ist", "sind", "sein", "war"):
+        return "sein"
+    if first in ("hat", "haben", "habe", "hast", "habt", "hatte"):
+        return "haben"
     return None
 
 
 def _conjugation(soup: BeautifulSoup) -> dict[str, str]:
-    """Extract present paradigm, preterite, perfect, and auxiliary from the page."""
+    """The verb's forms from the full conjugation page: the present-indicative
+    paradigm (present_1sg..present_3pl) from the pronoun table, plus preterite and
+    perfect from the principal-parts line ("kauft ein · kaufte ein · hat
+    eingekauft"). The present 3sg the line also carries is already in the table,
+    so only positions 2 and 3 are read; the leading audio link contributes no
+    text."""
     result: dict[str, str] = {}
-
     for key, form in zip(_PRESENT_KEYS, _present_paradigm(soup)):
-        if form:
-            result[key] = form
-
-    # Principal parts: "kauft ein · kaufte ein · hat eingekauft"
+        _put(result, key, form)
     p = soup.find(id="stammformen")
     if p is not None:
         parts = [s.strip() for s in _normalize(p.get_text()).split("·") if s.strip()]
@@ -343,16 +482,17 @@ def _conjugation(soup: BeautifulSoup) -> dict[str, str]:
             result["preterite"] = parts[1]
         if len(parts) >= 3:
             result["perfect"] = parts[2]
-
-    aux = _auxiliary(soup)
-    if aux:
-        result["auxiliary"] = aux
-
     return result
 
 
 def _present_paradigm(soup: BeautifulSoup) -> list[str]:
-    """Six present-indicative forms from the first table whose rows are exactly _PRONOUNS."""
+    """The six present-indicative forms in _PRONOUNS order, from the first table
+    whose rows are exactly the six subject pronouns (the language-keyed
+    translation table above it is skipped, and subjunctive/preterite tables come
+    after). Each row's remaining cells are joined into one form (the conjugated
+    stem plus, for separable verbs, the split prefix: "kauft" + "ein"), and the
+    site's parenthesised optional "-e" ("kauf(e)") is kept as the written form.
+    [] when no such table is found."""
     for table in soup.find_all("table"):
         forms: dict[str, str] = {}
         for tr in table.find_all("tr"):
@@ -370,39 +510,19 @@ def _present_paradigm(soup: BeautifulSoup) -> list[str]:
     return []
 
 
-def _auxiliary(soup: BeautifulSoup) -> str | None:
-    # Same attribute line as _separable ("A1 · regular · haben · separable").
-    div = soup.find(id="vStckInf")
-    if div is None:
-        return None
-    p = div.find_previous_sibling("p")
+def _key_forms(soup: BeautifulSoup, src: Source, pos: str) -> dict[str, str]:
+    """Map the Stammformen line's parts to feature keys for this POS (see
+    _KEY_FORMS). "-" is the site's marker for a form the word lacks (no plural,
+    no comparison) and is skipped, as is any position whose key is None."""
+    keys = _KEY_FORMS.get(pos)
+    if keys is None:
+        return {}
+    p = soup.select_one(src.key_forms)
     if p is None:
-        return None
-    tokens = {t.strip().lower() for t in p.get_text().split("·")}
-    for aux in ("haben", "sein"):
-        if aux in tokens:
-            return aux
-    return None
-
-
-def _declension_tables(soup: BeautifulSoup) -> dict[str, str]:
-    """Parse singular and plural declension tables; keys are {case}_{number} (e.g. genitive_sg)."""
-    decl = [t for t in soup.find_all("table") if t.find("th", class_="vKs")]
-
-    result: dict[str, str] = {}
-    for table, number in zip(decl[:2], ("sg", "pl")):
-        for tr in table.find_all("tr"):
-            th = tr.find("th", class_="vKs")
-            if th is None:
-                continue
-            case = _CASES.get(th.get("title"))
-            if case is None:
-                continue
-            tds = tr.find_all("td")
-            if len(tds) < 2:
-                continue
-            form = _normalize(tds[1].get_text().split("/")[0])  # skip article cell (tds[0])
-            if form:
-                result[f"{case}_{number}"] = form
-
-    return result
+        return {}
+    parts = [s.strip() for s in _normalize(p.get_text()).split("·")]
+    return {
+        key: part
+        for key, part in zip(keys, parts)
+        if key and part and part != "-"
+    }
