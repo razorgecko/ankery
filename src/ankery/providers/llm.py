@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from ankery.models import WordInfo
 from ankery.prompts import build_user_prompt
 from ankery.providers.base import ProviderError
+from ankery.providers.retry import request_with_retry
 
 
 class LLMProvider:
@@ -58,7 +59,13 @@ class LLMProvider:
 
         url = f"{self.base_url}/chat/completions"
         try:
-            response = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
+            # 429 (rate limited) is transient: retry it transparently, honouring
+            # the server's Retry-After, before raise_for_status escalates the rest.
+            response = request_with_retry(
+                lambda: httpx.post(
+                    url, json=payload, headers=headers, timeout=self.timeout
+                )
+            )
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise ProviderError(f"LLM request to {url} failed: {exc}") from exc

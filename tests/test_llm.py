@@ -179,6 +179,21 @@ def test_http_error_raises_provider_error(httpx_mock):
         _provider().fetch("Buch")
 
 
+def test_fetch_retries_on_429(httpx_mock, monkeypatch):
+    # A 429 is the server asking us to back off, not a refusal: the provider must
+    # retry and succeed rather than surface a ProviderError. Patch sleep so the
+    # backoff between attempts doesn't slow the test.
+    monkeypatch.setattr("ankery.providers.retry.time.sleep", lambda _: None)
+    httpx_mock.add_response(url=CHAT_URL, status_code=429)
+    httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": "Buch"}'))
+
+    info = _provider().fetch("Buch")
+
+    assert info is not None
+    assert info.word == "Buch"
+    assert len(httpx_mock.get_requests()) == 2
+
+
 def test_non_json_content_raises_provider_error(httpx_mock):
     httpx_mock.add_response(url=CHAT_URL, json=_completion("not json at all"))
 

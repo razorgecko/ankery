@@ -40,6 +40,7 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from ankery.models import WordInfo
+from ankery.providers.retry import request_with_retry
 from ankery.providers.base import ProviderError
 
 _VERBFORMEN_BASE = "https://www.verbformen.com"
@@ -198,7 +199,9 @@ class NetzverbProvider:
         url = f"{route.base}{route.path.format(word=quote(word, safe=''))}"
         headers = {"Accept-Language": _accept_language(self._target_language)}
         try:
-            r = client.get(url, headers=headers)
+            # 429 (rate limited) is transient — the site is asking us to slow
+            # down, not refusing the word; retry it before treating the response.
+            r = request_with_retry(lambda: client.get(url, headers=headers))
         except httpx.HTTPError as exc:
             raise ProviderError(f"request to {url} failed: {exc}") from exc
         if r.status_code == 404:
