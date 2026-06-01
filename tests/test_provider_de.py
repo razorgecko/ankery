@@ -435,21 +435,26 @@ def test_adjective_keeps_only_comparison_forms(httpx_mock):
 def test_pronoun_and_article_carry_no_inflection_features(httpx_mock):
     # Their declension is a closed paradigm we deliberately do not scrape; the
     # card gets gloss-level data (translations/definition) and nothing keyed off
-    # the Stammformen line, which for these POS has no _KEY_FORMS entry.
+    # the Stammformen line, which for these POS has no _KEY_FORMS entry. The
+    # article here is "der": gender is a noun-only feature, but "der" is itself a
+    # definite article, so a blind leading-article read would stamp gender="der"
+    # on it and the default note would render a broken noun-shaped "der · Pl.
+    # Gen. " line. Gender extraction is gated to nouns, so an article reads none.
     httpx_mock.add_response(
         url="https://www.verbformen.com/declension/pronouns/steckbrief/info/er.htm",
         text=_fixture("verbformen_pronoun_er.html"),
     )
     httpx_mock.add_response(
-        url="https://www.verbformen.com/declension/articles/steckbrief/info/ein.htm",
-        text=_fixture("verbformen_article_ein.html"),
+        url="https://www.verbformen.com/declension/articles/steckbrief/info/der.htm",
+        text=_fixture("verbformen_article_der.html"),
     )
 
     pronoun = _provider().fetch("er", pos_hint="pronoun")
-    article = _provider().fetch("ein", pos_hint="article")
+    article = _provider().fetch("der", pos_hint="article")
 
     assert pronoun is not None and pronoun.part_of_speech == "pronoun"
     assert article is not None and article.part_of_speech == "article"
+    assert "gender" not in article.features
     for info in (pronoun, article):
         assert set(info.features) <= {"ipa"}  # gloss-level only, no inflection
 
