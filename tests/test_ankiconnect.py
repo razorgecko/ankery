@@ -19,7 +19,7 @@ def _fields() -> dict[str, str]:
 
 def _note_def() -> NoteDefinition:
     return NoteDefinition(
-        name="Noun (DE)",
+        name="Ankery DE: Noun",
         field_map={"Word": "{{ word }}", "Article": "{{ gender }}"},
         applies_to="noun",
         cards=(Card("N1", "{{Article}} {{Word}}", "{{FrontSide}}"),),
@@ -31,7 +31,7 @@ def _styleless_def() -> NoteDefinition:
     # A definition that sets no css of its own — the case where the sink supplies
     # a fallback (the catch-all model's styling, or the bundled default).
     return NoteDefinition(
-        name="Noun (DE)",
+        name="Ankery DE: Noun",
         field_map={"Word": "{{ word }}", "Article": "{{ gender }}"},
         applies_to="noun",
         cards=(Card("N1", "{{Article}} {{Word}}", "{{FrontSide}}"),),
@@ -133,7 +133,7 @@ def test_verify_creates_missing_model(httpx_mock):
     requests = httpx_mock.get_requests()
     assert _actions(httpx_mock) == ["modelNames", "createModel"]
     params = json.loads(requests[1].content)["params"]
-    assert params["modelName"] == "Noun (DE)"
+    assert params["modelName"] == "Ankery DE: Noun"
     assert params["inOrderFields"] == ["Word", "Article"]  # Anki field order
     assert params["isCloze"] is False
     assert params["css"] == ".card { color: blue; }"
@@ -199,7 +199,7 @@ def test_verify_definition_css_overrides_catch_all(httpx_mock):
 
 
 def test_verify_accepts_exact_match_without_creating(httpx_mock):
-    httpx_mock.add_response(url=URL, json={"result": ["Noun (DE)"], "error": None})
+    httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
     httpx_mock.add_response(url=URL, json={"result": ["Word", "Article"], "error": None})
 
     _sink().verify_note_types([_note_def()])  # no raise
@@ -208,7 +208,7 @@ def test_verify_accepts_exact_match_without_creating(httpx_mock):
 
 
 def test_verify_rejects_different_fields(httpx_mock):
-    httpx_mock.add_response(url=URL, json={"result": ["Noun (DE)"], "error": None})
+    httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
     httpx_mock.add_response(url=URL, json={"result": ["Word", "Plural"], "error": None})
 
     with pytest.raises(SinkError, match="different fields"):
@@ -217,7 +217,7 @@ def test_verify_rejects_different_fields(httpx_mock):
 
 def test_verify_rejects_superset_model(httpx_mock):
     # Existing model has our fields plus an extra one — rejected, not accepted.
-    httpx_mock.add_response(url=URL, json={"result": ["Noun (DE)"], "error": None})
+    httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
     httpx_mock.add_response(
         url=URL, json={"result": ["Word", "Article", "Notes"], "error": None}
     )
@@ -228,7 +228,7 @@ def test_verify_rejects_superset_model(httpx_mock):
 
 def test_verify_rejects_field_order_difference(httpx_mock):
     # Same field names, wrong order — the first field drives duplicate detection.
-    httpx_mock.add_response(url=URL, json={"result": ["Noun (DE)"], "error": None})
+    httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
     httpx_mock.add_response(url=URL, json={"result": ["Article", "Word"], "error": None})
 
     with pytest.raises(SinkError, match="different fields"):

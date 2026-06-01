@@ -72,10 +72,16 @@ class DeckBuilder:
         return AddResult(note_id=note_id, word=info.word)
 
     def _route(self, info: WordInfo) -> tuple[str, FieldMap]:
-        """First note definition whose `applies` matches wins; else the catch-all."""
+        """First note whose `applies` matches wins; else the pack default note (a
+        note with `applies_to = "*"`); else the language-neutral catch-all."""
+        default: NoteDefinition | None = None
         for note_def in self.note_definitions:
             if note_def.applies(info):
                 return note_def.name, note_def.render
+            if note_def.is_default:
+                default = note_def
+        if default is not None:
+            return default.name, default.render
         return self.note_type, self.map_fields
 
     def lookup(self, word: str, *, pos_hint: str | None = None) -> WordInfo | None:

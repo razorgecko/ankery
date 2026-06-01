@@ -15,8 +15,16 @@ def test_bundled_de_pack_loads():
     assert pack.code == "de"
     assert pack.name == "German"
     assert pack.providers == ("netzverb", "llm")
-    assert set(pack.grammar) == {"noun", "verb", "adjective"}
-    assert pack.notes and [n.name for n in pack.notes] == ["Noun (DE)", "Verb (DE)"]
+    assert set(pack.grammar) == {
+        "noun", "verb", "adjective", "adverb", "preposition",
+        "pronoun", "article", "conjunction", "particle",
+    }
+    # Stem order: default_de, noun_de, verb_de. "Ankery DE: Word" is the pack's
+    # catch-all default note (applies_to "*"); adjective/adverb/preposition have
+    # no bespoke note and route to it.
+    assert pack.notes and [n.name for n in pack.notes] == [
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+    ]
     assert ".card" in pack.style_css
 
 

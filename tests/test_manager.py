@@ -212,7 +212,7 @@ def test_custom_field_map_is_used():
 def test_matching_note_definition_picks_its_note_type_and_map():
     sink = FakeSink()
     note_def = NoteDefinition(
-        name="Verb (DE)", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
+        name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
     )
     builder = _builder(
         [FakeProvider("p", result=WordInfo(word="sehen", source="t", part_of_speech="verb"))],
@@ -222,14 +222,14 @@ def test_matching_note_definition_picks_its_note_type_and_map():
 
     builder.add_word("sehen")
 
-    assert sink.calls[0]["note_type"] == "Verb (DE)"
+    assert sink.calls[0]["note_type"] == "Ankery DE: Verb"
     assert sink.calls[0]["fields"] == {"Infinitive": "sehen"}
 
 
 def test_word_matching_no_note_definition_falls_back_to_default_note_type():
     sink = FakeSink()
     note_def = NoteDefinition(
-        name="Verb (DE)", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
+        name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
     )
     builder = _builder(
         [FakeProvider("p", result=WordInfo(word="schön", source="t", part_of_speech="adjective"))],
@@ -242,6 +242,51 @@ def test_word_matching_no_note_definition_falls_back_to_default_note_type():
 
     assert sink.calls[0]["note_type"] == "Basic"
     assert "Front" in sink.calls[0]["fields"]
+
+
+def test_unmatched_pos_routes_to_the_pack_default_note_over_the_catch_all():
+    # A pack default note (applies_to "*") takes precedence over the language-
+    # neutral catch-all for any POS no bespoke note claims.
+    sink = FakeSink()
+    verb = NoteDefinition(
+        name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
+    )
+    default = NoteDefinition(
+        name="Ankery DE: Word", field_map={"Word": "{{ word }}"}, applies_to="*"
+    )
+    builder = _builder(
+        [FakeProvider("p", result=WordInfo(word="mit", source="t", part_of_speech="preposition"))],
+        sink,
+        note_type="Basic",
+        note_definitions=[default, verb],
+    )
+
+    builder.add_word("mit")
+
+    assert sink.calls[0]["note_type"] == "Ankery DE: Word"
+    assert sink.calls[0]["fields"] == {"Word": "mit"}
+
+
+def test_bespoke_pos_note_wins_over_the_pack_default_note():
+    # The default note is fallback-only: a POS with its own note still gets it,
+    # regardless of the default note's position in the list.
+    sink = FakeSink()
+    default = NoteDefinition(
+        name="Ankery DE: Word", field_map={"Word": "{{ word }}"}, applies_to="*"
+    )
+    verb = NoteDefinition(
+        name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
+    )
+    builder = _builder(
+        [FakeProvider("p", result=WordInfo(word="sehen", source="t", part_of_speech="verb"))],
+        sink,
+        note_definitions=[default, verb],
+    )
+
+    builder.add_word("sehen")
+
+    assert sink.calls[0]["note_type"] == "Ankery DE: Verb"
+    assert sink.calls[0]["fields"] == {"Infinitive": "sehen"}
 
 
 def test_default_field_map_is_language_neutral():

@@ -180,7 +180,7 @@ def test_sink_error_reports_and_exits_nonzero(patched, capsys):
 def test_note_type_verification_failure_exits_before_words(patched, capsys):
     captured, set_results = patched
     builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
-    builder.verify_error = SinkError("note type 'Noun (DE)' already exists")
+    builder.verify_error = SinkError("note type 'Ankery DE: Noun' already exists")
 
     code = cli.main(["Buch"])
 

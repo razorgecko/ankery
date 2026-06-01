@@ -314,7 +314,9 @@ def test_build_deck_builder_wires_provider_and_sink():
 def test_build_deck_builder_loads_the_packs_notes_and_style():
     builder = build_deck_builder(Config())  # default source_language "de"
 
-    assert [d.name for d in builder.note_definitions] == ["Noun (DE)", "Verb (DE)"]
+    assert [d.name for d in builder.note_definitions] == [
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+    ]
     assert ".card" in builder.style_css
 
 
@@ -327,20 +329,22 @@ def _write_note(directory: Path, stem: str, name: str, applies_to: str | None):
 
 
 def test_notes_dir_merges_over_the_packs_notes_by_pos(tmp_path):
-    # A generic noun layout replaces the pack's "Noun (DE)" for nouns; a new POS
+    # A generic noun layout replaces the pack's "Ankery DE: Noun" for nouns; a new POS
     # (adjective) is added; the pack's verb is left in place.
     _write_note(tmp_path, "noun", "Simple Noun", "noun")
     _write_note(tmp_path, "adj", "Simple Adjective", "adjective")
     builder = build_deck_builder(Config(notes_dir=tmp_path))
 
     names = [d.name for d in builder.note_definitions]
-    assert names == ["Simple Noun", "Verb (DE)", "Simple Adjective"]
+    assert names == ["Ankery DE: Word", "Simple Noun", "Ankery DE: Verb", "Simple Adjective"]
 
 
 def test_notes_dir_unset_leaves_the_packs_notes_alone():
     builder = build_deck_builder(Config())  # notes_dir is None by default
 
-    assert [d.name for d in builder.note_definitions] == ["Noun (DE)", "Verb (DE)"]
+    assert [d.name for d in builder.note_definitions] == [
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+    ]
 
 
 def test_notes_dir_with_duplicate_pos_surfaces_as_config_error(tmp_path):

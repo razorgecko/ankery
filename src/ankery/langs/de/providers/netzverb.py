@@ -264,9 +264,9 @@ def _parse(
     """Parse one page into a WordInfo, for every POS — the Steckbrief summary
     panel is read identically whether it stands alone (most POS) or is embedded
     in the verb's full conjugation page. The POS-specific parts degrade away on
-    their own: a POS with no _KEY_FORMS entry yields no irregular forms, a lemma
-    with no leading article yields no gender, and a POS with no _FEATURE_EXTRAS
-    contributor adds nothing further — so the same body serves an inflected noun,
+    their own: a POS with no _KEY_FORMS entry yields no irregular forms, a
+    non-noun reads no gender, and a POS with no _FEATURE_EXTRAS contributor adds
+    nothing further — so the same body serves an inflected noun,
     a verb, and a bare adverb without a branch."""
     src = route.source
     krz = soup.find(id=src.panel)
@@ -275,7 +275,12 @@ def _parse(
     examples, example_translations = _example(steckbrief)
 
     features = _key_forms(soup, src, pos)
-    _put(features, "gender", _gender(lemma_el))
+    # Gender is a noun-only lexical property (only [pos.noun] declares it in
+    # lang.toml). Articles and demonstrative pronouns are themselves der/die/das,
+    # so a blind leading-article read would stamp gender="der" on them and feed a
+    # broken noun-shaped grammar line into the default note — gate it to nouns.
+    if pos == "noun":
+        _put(features, "gender", _gender(lemma_el))
     _put(features, "ipa", _pronunciation(steckbrief))
     extra = _FEATURE_EXTRAS.get(pos)
     if extra is not None:

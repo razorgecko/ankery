@@ -11,6 +11,11 @@ from ankery.models import WordInfo
 
 FieldMap = Callable[[WordInfo], dict[str, str]]
 
+# A note whose `applies_to` is this serves as the pack's catch-all fallback: it
+# matches no specific part of speech, but routing falls back to it (before the
+# language-neutral catch-all) for any word no bespoke note claims.
+DEFAULT_APPLIES_TO = "*"
+
 
 class NoteDefinitionError(Exception):
     """Raised when a note definition can't be found or parsed."""
@@ -55,9 +60,14 @@ class NoteDefinition:
     def fields(self) -> list[str]:
         return list(self.field_map)
 
+    @property
+    def is_default(self) -> bool:
+        """Whether this note is the pack's catch-all fallback (`applies_to = "*"`)."""
+        return self.applies_to == DEFAULT_APPLIES_TO
+
     def applies(self, info: WordInfo) -> bool:
-        if self.applies_to is None:
-            return False
+        if self.applies_to is None or self.is_default:
+            return False  # the default note is fallback-only, never a POS match
         return (info.part_of_speech or "").strip().lower() == self.applies_to
 
     def render(self, info: WordInfo) -> dict[str, str]:
@@ -91,10 +101,15 @@ def _reject_duplicate_pos(by_path: list[tuple[Path, NoteDefinition]]) -> None:
         if pos is None:
             continue
         if pos in seen:
+            what = (
+                "the pack default note"
+                if definition.is_default
+                else f"part of speech {pos!r}"
+            )
             raise NoteDefinitionError(
-                f"{seen[pos].name} and {path.name} both serve part of speech "
-                f"{pos!r} in {path.parent}; a part of speech may be served by at "
-                "most one note definition per directory."
+                f"{seen[pos].name} and {path.name} both serve {what} in "
+                f"{path.parent}; it may be served by at most one note definition "
+                "per directory."
             )
         seen[pos] = path
 

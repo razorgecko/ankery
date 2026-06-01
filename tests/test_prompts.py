@@ -8,7 +8,10 @@ def test_renders_pos_vocabulary_as_the_classification_set():
     prompt = render_system_prompt(load_pack("de"))
 
     # The declared POS are offered as the closed classification vocabulary.
-    assert "exactly one of: adjective, noun, verb" in prompt
+    assert (
+        "exactly one of: adjective, adverb, article, conjunction, noun, "
+        "particle, preposition, pronoun, verb" in prompt
+    )
 
 
 def test_renders_per_pos_feature_keys_and_meanings():
@@ -50,7 +53,10 @@ def test_pos_hint_trims_the_prompt_to_the_named_pos():
 def test_unknown_pos_hint_falls_back_to_full_vocabulary():
     prompt = render_system_prompt(load_pack("de"), pos_hint="bogus")
 
-    assert "exactly one of: adjective, noun, verb" in prompt
+    assert (
+        "exactly one of: adjective, adverb, article, conjunction, noun, "
+        "particle, preposition, pronoun, verb" in prompt
+    )
 
 
 def test_user_prompt_carries_word_and_language_pair():

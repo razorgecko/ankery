@@ -58,7 +58,73 @@ auxiliary = "perfect-tense auxiliary, haben or sein"
 separable = "\"true\" if the verb has a separable prefix, else \"false\""
 
 [pos.adjective]
-citation = "the base (positive) form"
+citation = "the base (positive) form, uninflected (no declension ending)"
 [pos.adjective.features]
-comparative = "comparative form"
-superlative = "superlative form"
+comparative = "comparative form (bare)"
+superlative = "superlative form, with am, e.g. am schnellsten"
+
+# `guidance` and the feature meanings below are rendered into the LLM prompt
+# (prompts.py), so they read as instructions to the model, not as notes to a
+# maintainer. The rationale — German uses the bare adjective as its manner
+# adverb, so a manner-adverb card would only duplicate the adjective — lives
+# here in this comment, which the prompt never sees.
+[pos.adverb]
+citation = "the adverb in its base form"
+guidance = [
+    "Classify as adverb only a lexical adverb with no adjective form: temporal (heute, oft), local (hier, dort), degree (sehr, ziemlich), modal/sentence (leider, deshalb, ja).",
+    "If the word is the bare adjective used adverbially (schnell, gut, langsam), classify it as an adjective, not an adverb.",
+    "Fill comparative/superlative only for the few gradable adverbs (gern/lieber, bald/eher); omit them otherwise.",
+]
+[pos.adverb.features]
+comparative = "comparative form; omit unless the adverb is gradable"
+superlative = "superlative form; omit unless the adverb is gradable"
+
+[pos.preposition]
+citation = "the preposition"
+[pos.preposition.features]
+governs_case = "the case it governs: accusative, dative, genitive, or accusative/dative for two-way (Wechsel) prepositions"
+
+# The four function-word classes below (pronoun, article, conjunction, particle)
+# round out netzverb's scrapable POS set so routing and classification line up
+# with what the provider can serve. They are deliberately feature-light: the
+# netzverb scraper extracts no special grammar for them (only gloss/IPA/example),
+# and their declension/inflection is either rule-governed or not card-worthy, so
+# the citation + boundary guidance carry the weight. The guidance exists chiefly
+# to keep the LLM from bleeding these classes into the open ones next door —
+# pronoun vs article, particle vs adverb, conjunction vs conjunctional adverb —
+# since all nine POS now compete in one classification set.
+
+[pos.pronoun]
+citation = "the nominative base form, e.g. ich, er, sie, mein, dieser, welcher, wer"
+guidance = [
+    "Classify as pronoun a word that REPLACES a noun phrase rather than standing beside a noun: personal (ich, du, er, wir), reflexive (mich, sich), demonstrative (dieser, jener), relative (welcher, was), interrogative (wer, was, welcher, wessen), or indefinite (man, jemand, niemand, etwas, nichts, alles).",
+    "The words der, die, das, ein, eine, kein are articles, not pronouns — classify those as article, even though der/die/das can also act as relative or demonstrative pronouns in context.",
+    "A possessive standing alone (meiner, deins) is a pronoun; the bare possessive lemma used before a noun (mein, dein, sein) is an article.",
+]
+
+[pos.article]
+citation = "the masculine nominative singular base form, e.g. der, ein, kein, mein"
+guidance = [
+    "Classify as article only a determiner that marks a noun's definiteness or possession and stands directly before the noun: the definite der/die/das, the indefinite ein/eine, the negative kein/keine, and the possessive articles mein/dein/sein/ihr/unser/euer.",
+    "Give the bare nominative lemma; do not spell out the full case/gender declension.",
+    "A word that replaces the noun instead of accompanying it is a pronoun, not an article.",
+]
+
+[pos.conjunction]
+citation = "the conjunction, uninflected"
+guidance = [
+    "A conjunction joins words, phrases, or clauses. Coordinating conjunctions (und, oder, aber, denn, sondern, sowie) join elements of equal rank and do not change word order; subordinating conjunctions (dass, weil, wenn, ob, obwohl, als, damit, während) introduce a subordinate clause and send the finite verb to the clause-final position.",
+    "Conjunctional adverbs (deshalb, trotzdem, außerdem, dann, jedoch) link sentences but occupy the first sentence position and are followed by the finite verb — classify those as adverbs, not conjunctions.",
+]
+
+# Particle is the easiest class to over-apply: German calls many small words
+# Partikeln colloquially, but here it means the residual uninflected words that
+# are NOT adverbs, conjunctions, or prepositions. The Vorfeld test in the second
+# bullet is the sharp line against adverbs and is the one the model most needs.
+[pos.particle]
+citation = "the particle in its base form, uninflected and without comparison"
+guidance = [
+    "Classify as particle an uninflected word with no standalone sentence role: modal/flavouring particles that colour the speaker's attitude (doch, mal, ja, halt, eben, schon, wohl, eigentlich) and focus particles that highlight a phrase (auch, nur, sogar, selbst, gerade).",
+    "Distinguish from adverbs by the Vorfeld test: an adverb answers wie/wann/wo and can stand alone as the first element before the finite verb (Heute kommt er); a particle cannot occupy that slot on its own. If the word can, it is an adverb, not a particle.",
+    "Do not classify a coordinating/subordinating linker (a conjunction) or a case-governing word (a preposition) as a particle, even though both are uninflected.",
+]

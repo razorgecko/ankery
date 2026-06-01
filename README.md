@@ -180,7 +180,8 @@ qfmt = "{{Word}}"
 afmt = "{{FrontSide}}<hr id=answer>{{Translation}}<br><br>{{Example}}"
 ```
 
-A word whose part of speech matches no layout falls back to the catch-all
+A word whose part of speech matches no layout falls back to the pack's default
+layout if it defines one (`applies_to = "*"`), and otherwise to the catch-all
 `note_type` (`Basic` by default). The card `qfmt`/`afmt` are Anki's own template
 syntax, not Jinja — only the `[map]` values are rendered here.
 

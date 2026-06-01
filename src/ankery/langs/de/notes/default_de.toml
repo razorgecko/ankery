@@ -1,0 +1,31 @@
+name = "Ankery DE: Word"
+id = 1986815830
+applies_to = "*"   # the German pack's catch-all: any POS without its own note
+
+# This is the pack default note: routing falls back to it for every POS that has
+# no bespoke note of its own (adjective, adverb, preposition; noun and verb keep
+# their own). The field set is fixed and small on purpose — enriching the card
+# later means editing the Jinja below, never adding a field, which would break an
+# existing Anki model under verify_note_types' create-only contract.
+#
+# Grammar bundles whatever the word's POS declared in ../lang.toml [pos.*]. The
+# branches are mutually exclusive (a word is one POS), so at most one renders and
+# no separators are needed; the gender branch also covers noun, harmlessly unused
+# while noun keeps its bespoke note. Word leads so Anki keys duplicate detection
+# on it. PartOfSpeech is exposed only so the production card can label the prompt.
+[map]
+Word         = "{{ word }}"
+Translation  = "{{ translations | join(', ') }}"
+Grammar      = "{% if features.comparative %}Steigerung: {{ features.comparative }} / {{ features.superlative }}{% elif features.governs_case %}+ {{ features.governs_case }}{% elif features.gender %}{{ features.gender }} · Pl. {{ features.nominative_pl }} · Gen. {{ features.genitive_sg }}{% endif %}"
+Example      = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
+PartOfSpeech = "{{ part_of_speech }}"
+
+[[cards]]
+name = "W1 Recognition"
+qfmt = "{{Word}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Translation}}{{#Grammar}}<br><br>{{Grammar}}{{/Grammar}}{{#Example}}<br><br>{{Example}}{{/Example}}"
+
+[[cards]]
+name = "W2 Production"
+qfmt = "{{Translation}} ({{PartOfSpeech}})"
+afmt = "{{FrontSide}}<hr id=answer>{{Word}}"

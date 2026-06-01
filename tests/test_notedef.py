@@ -56,16 +56,16 @@ def _verb() -> WordInfo:
 def test_bundled_definitions_load_with_names_id_and_field_order():
     defs = _defs()
 
-    noun = defs["Noun (DE)"]
+    noun = defs["Ankery DE: Noun"]
     assert noun.model_id == 1986815750
     assert noun.applies_to == "noun"
     # Word leads: Anki keys duplicate detection on the first field.
     assert noun.fields[0] == "Word"
-    assert defs["Verb (DE)"].applies_to == "verb"
+    assert defs["Ankery DE: Verb"].applies_to == "verb"
 
 
 def test_noun_render_fills_the_noun_model_fields():
-    fields = _defs()["Noun (DE)"].render(_noun())
+    fields = _defs()["Ankery DE: Noun"].render(_noun())
 
     assert fields == {
         "Article": "das",
@@ -86,14 +86,14 @@ def test_render_copies_forms_verbatim_no_stripping():
         part_of_speech="noun",
         features={"gender": "das", "nominative_pl": "die Häuser", "genitive_sg": "des Hauses"},
     )
-    fields = _defs()["Noun (DE)"].render(info)
+    fields = _defs()["Ankery DE: Noun"].render(info)
 
     assert fields["Plural"] == "die Häuser"
     assert fields["GenitiveSg"] == "des Hauses"
 
 
 def test_verb_render_fills_present_forms_as_separate_fields():
-    fields = _defs()["Verb (DE)"].render(_verb())
+    fields = _defs()["Ankery DE: Verb"].render(_verb())
 
     assert fields["Infinitive"] == "sehen"
     assert fields["Aux"] == "haben"
@@ -114,7 +114,7 @@ def test_verb_render_uses_empty_string_for_missing_present_forms():
         word="x", source="test", part_of_speech="verb",
         features={"present_1sg": "bin", "present_3sg": "ist"},
     )
-    fields = _defs()["Verb (DE)"].render(info)
+    fields = _defs()["Ankery DE: Verb"].render(info)
 
     assert fields["Present1sg"] == "bin"
     assert fields["Present3sg"] == "ist"
@@ -126,7 +126,7 @@ def test_render_tolerates_absent_data_without_literal_none():
     # Optional WordInfo fields are None, not absent; they must render "" not the
     # string "None", and missing feature keys must render "".
     bare = WordInfo(word="Ding", source="test", part_of_speech="noun")
-    fields = _defs()["Noun (DE)"].render(bare)
+    fields = _defs()["Ankery DE: Noun"].render(bare)
 
     assert fields == {
         "Word": "Ding",
@@ -141,12 +141,40 @@ def test_render_tolerates_absent_data_without_literal_none():
 def test_applies_routes_by_part_of_speech():
     defs = _defs()
 
-    assert defs["Noun (DE)"].applies(_noun())
-    assert not defs["Noun (DE)"].applies(_verb())
-    assert defs["Verb (DE)"].applies(_verb())
-    # An adjective matches neither, so it falls through to the catch-all.
+    assert defs["Ankery DE: Noun"].applies(_noun())
+    assert not defs["Ankery DE: Noun"].applies(_verb())
+    assert defs["Ankery DE: Verb"].applies(_verb())
+    # An adjective matches no bespoke note (none `applies`), so it routes to the
+    # pack default note "Ankery DE: Word" — which is itself fallback-only (`applies` is
+    # always False; routing selects it via is_default, see test_manager).
     adj = WordInfo(word="schön", source="test", part_of_speech="adjective")
     assert not any(d.applies(adj) for d in defs.values())
+    assert defs["Ankery DE: Word"].is_default
+    assert not defs["Ankery DE: Word"].applies(adj)
+    assert not defs["Ankery DE: Noun"].is_default
+
+
+def test_default_note_renders_bundled_grammar_per_pos():
+    d = _defs()["Ankery DE: Word"]
+
+    prep = WordInfo(
+        word="mit", source="test", part_of_speech="preposition",
+        translations=["with"], features={"governs_case": "dative"},
+    )
+    assert d.render(prep)["Grammar"] == "+ dative"
+    assert d.render(prep)["Translation"] == "with"
+    assert d.render(prep)["PartOfSpeech"] == "preposition"
+
+    adj = WordInfo(
+        word="schnell", source="test", part_of_speech="adjective",
+        features={"comparative": "schneller", "superlative": "am schnellsten"},
+    )
+    assert d.render(adj)["Grammar"] == "Steigerung: schneller / am schnellsten"
+
+    # A POS with none of the bundled features (e.g. a non-gradable adverb) yields
+    # an empty Grammar; the card hides the block via its {{#Grammar}} section.
+    adv = WordInfo(word="heute", source="test", part_of_speech="adverb", translations=["today"])
+    assert d.render(adv)["Grammar"] == ""
 
 
 def test_bundled_definitions_carry_no_css_of_their_own():
@@ -157,8 +185,10 @@ def test_bundled_definitions_carry_no_css_of_their_own():
 
 
 def test_load_notes_orders_by_stem_for_routing_precedence():
-    # Stem order is routing order: noun_de before verb_de.
-    assert [d.name for d in load_notes_from_dir(DE_NOTES)] == ["Noun (DE)", "Verb (DE)"]
+    # Stem order is routing order: default_de, noun_de, verb_de.
+    assert [d.name for d in load_notes_from_dir(DE_NOTES)] == [
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+    ]
 
 
 def test_missing_directory_yields_no_definitions(tmp_path):
@@ -188,6 +218,14 @@ def test_two_notes_serving_one_pos_in_a_directory_raise(tmp_path):
         load_notes_from_dir(tmp_path)
 
 
+def test_two_default_notes_in_a_directory_raise(tmp_path):
+    # At most one pack default note per directory; the clash names it as such.
+    _write_note(tmp_path, "a_default", "Default A", "*")
+    _write_note(tmp_path, "b_default", "Default B", "*")
+    with pytest.raises(NoteDefinitionError, match="both serve the pack default note"):
+        load_notes_from_dir(tmp_path)
+
+
 def test_notes_without_applies_to_do_not_collide(tmp_path):
     # A note with no applies_to matches nothing, so two of them are not a clash.
     _write_note(tmp_path, "a", "Catchall A", None)
@@ -200,36 +238,36 @@ def _note(name: str, applies_to: str | None) -> NoteDefinition:
 
 
 def test_merge_override_replaces_same_pos_in_place():
-    base = [_note("Noun (DE)", "noun"), _note("Verb (DE)", "verb")]
+    base = [_note("Ankery DE: Noun", "noun"), _note("Ankery DE: Verb", "verb")]
     override = [_note("Simple Noun", "noun")]
 
     merged = merge_note_definitions(base, override)
 
     # The override's noun takes the base noun's slot; the verb is untouched.
-    assert [d.name for d in merged] == ["Simple Noun", "Verb (DE)"]
+    assert [d.name for d in merged] == ["Simple Noun", "Ankery DE: Verb"]
 
 
 def test_merge_appends_a_new_pos():
-    base = [_note("Noun (DE)", "noun")]
+    base = [_note("Ankery DE: Noun", "noun")]
     override = [_note("Adjective", "adjective")]
 
     merged = merge_note_definitions(base, override)
 
-    assert [d.name for d in merged] == ["Noun (DE)", "Adjective"]
+    assert [d.name for d in merged] == ["Ankery DE: Noun", "Adjective"]
 
 
 def test_merge_carries_through_none_keyed_notes_without_replacing():
-    base = [_note("Noun (DE)", "noun")]
+    base = [_note("Ankery DE: Noun", "noun")]
     override = [_note("Loose", None)]
 
     merged = merge_note_definitions(base, override)
 
     # A None-keyed override note keys on nothing: it appends, replaces no base.
-    assert [d.name for d in merged] == ["Noun (DE)", "Loose"]
+    assert [d.name for d in merged] == ["Ankery DE: Noun", "Loose"]
 
 
 def test_merge_empty_override_returns_the_base_unchanged():
-    base = [_note("Noun (DE)", "noun"), _note("Verb (DE)", "verb")]
+    base = [_note("Ankery DE: Noun", "noun"), _note("Ankery DE: Verb", "verb")]
 
     assert merge_note_definitions(base, []) == base
 
