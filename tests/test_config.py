@@ -123,11 +123,11 @@ def test_load_reads_file_values(tmp_path):
     assert config.tags == ("auto", "de")  # list coerced to tuple
 
 
-def test_load_reads_langs_dir_as_path(tmp_path):
-    path = _write(tmp_path, 'langs_dir = "/srv/packs"\n')
+def test_load_reads_packs_dir_as_path(tmp_path):
+    path = _write(tmp_path, 'packs_dir = "/srv/packs"\n')
     config = Config.load(path=path, environ={})
 
-    assert config.langs_dir == Path("/srv/packs")  # string coerced to Path
+    assert config.packs_dir == Path("/srv/packs")  # string coerced to Path
 
 
 def test_load_reads_notes_dir_as_path(tmp_path):
@@ -384,18 +384,18 @@ def test_build_deck_builder_rejects_unknown_provider():
 
 
 def test_build_deck_builder_rejects_unknown_source_language():
-    with pytest.raises(ConfigError, match="no language pack for 'zz'"):
+    with pytest.raises(ConfigError, match="no pack for 'zz'"):
         build_deck_builder(Config(source_language="zz"))
 
 
-def test_source_language_selects_a_user_pack_via_langs_dir(tmp_path):
+def test_source_language_selects_a_user_pack_via_packs_dir(tmp_path):
     pack_dir = tmp_path / "xx"
     (pack_dir / "notes").mkdir(parents=True)
-    (pack_dir / "lang.toml").write_text(
+    (pack_dir / "pack.toml").write_text(
         'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
         "utf-8",
     )
-    builder = build_deck_builder(Config(source_language="xx", langs_dir=tmp_path))
+    builder = build_deck_builder(Config(source_language="xx", packs_dir=tmp_path))
 
     assert [p.name for p in builder.providers] == ["llm"]
     assert "Examplish" in _provider_named(builder, "llm").system_prompt_for(None)
@@ -406,12 +406,12 @@ def test_empty_chain_with_packless_chain_is_an_error(tmp_path):
     # nothing to build.
     pack_dir = tmp_path / "yy"
     (pack_dir / "notes").mkdir(parents=True)
-    (pack_dir / "lang.toml").write_text(
+    (pack_dir / "pack.toml").write_text(
         'name = "Y"\nproviders = []\n[category]\nname = "pos"\n[pos.noun]\n', "utf-8"
     )
 
     with pytest.raises(ConfigError, match="no providers configured"):
-        build_deck_builder(Config(source_language="yy", langs_dir=tmp_path))
+        build_deck_builder(Config(source_language="yy", packs_dir=tmp_path))
 
 
 # ---------------------------------------------------------------------------

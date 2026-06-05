@@ -1,4 +1,4 @@
-"""The German pack's netzverb provider (langs/de/providers/netzverb.py).
+"""The German pack's netzverb provider (packs/de/providers/netzverb.py).
 
 The provider is pack-local code loaded by path, so the test loads the module the
 same way the pack loader does and exercises the class and helpers directly. Its
@@ -20,7 +20,7 @@ NOUN_URL = "https://www.verbformen.com/declension/nouns/steckbrief/info/Haus.htm
 VERB_URL = "https://www.verbformen.com/conjugation/einkaufen.htm"
 
 _PROVIDER_PATH = (
-    Path(ankery.__file__).parent / "langs" / "de" / "providers" / "netzverb.py"
+    Path(ankery.__file__).parent / "packs" / "de" / "providers" / "netzverb.py"
 )
 _spec = importlib.util.spec_from_file_location("de_netzverb_under_test", _PROVIDER_PATH)
 _mod = importlib.util.module_from_spec(_spec)

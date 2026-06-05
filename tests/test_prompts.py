@@ -27,7 +27,7 @@ def test_renders_common_features_and_guidance():
 
     assert "Common feature keys" in prompt
     assert "ipa:" in prompt
-    # Per-category guidance prose from lang.toml is included.
+    # Per-category guidance prose from pack.toml is included.
     assert "Fill all six present-tense forms" in prompt
 
 

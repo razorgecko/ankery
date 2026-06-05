@@ -277,7 +277,7 @@ def _parse(
 
     features = _key_forms(soup, src, pos)
     # Gender is a noun-only lexical property (only [pos.noun] declares it in
-    # lang.toml). Articles and demonstrative pronouns are themselves der/die/das,
+    # pack.toml). Articles and demonstrative pronouns are themselves der/die/das,
     # so a blind leading-article read would stamp gender="der" on them and feed a
     # broken noun-shaped grammar line into the default note — gate it to nouns.
     if pos == "noun":

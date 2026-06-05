@@ -10,7 +10,7 @@ from types import ModuleType
 from ankery.models import WordInfo
 from ankery.notedef import NoteDefinition, load_notes_from_dir
 
-_BUNDLED_LANGS = Path(__file__).parent / "langs"
+_BUNDLED_PACKS = Path(__file__).parent / "packs"
 _DEFAULT_STYLE = Path(__file__).parent / "default_style.css"
 
 # Typed loosely to avoid an import cycle with config.py.
@@ -31,7 +31,7 @@ class CategorySpec:
 
 
 @dataclass(frozen=True)
-class LanguagePack:
+class Pack:
     code: str
     name: str
     common_features: dict[str, str]
@@ -51,10 +51,10 @@ def _identity(info: WordInfo) -> WordInfo:
     return info
 
 
-def load_pack(code: str, langs_dir: Path | None = None) -> LanguagePack:
-    """Load the pack for `code`; user pack at `langs_dir/<code>/` overrides the bundled one."""
-    directory = _resolve_dir(code, langs_dir)
-    raw = _read_lang_toml(directory / "lang.toml")
+def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
+    """Load the pack for `code`; user pack at `packs_dir/<code>/` overrides the bundled one."""
+    directory = _resolve_dir(code, packs_dir)
+    raw = _read_pack_toml(directory / "pack.toml")
 
     category_label, categories = _parse_categories(raw, directory)
     notes_dir = directory / "notes"
@@ -73,7 +73,7 @@ def load_pack(code: str, langs_dir: Path | None = None) -> LanguagePack:
     normalize = _load_normalize(directory / "filter.py", code)
     provider_builders = _load_providers(directory / "providers", code)
 
-    return LanguagePack(
+    return Pack(
         code=code,
         name=raw.get("name", code),
         common_features=dict(raw.get("features", {})),
@@ -88,23 +88,23 @@ def load_pack(code: str, langs_dir: Path | None = None) -> LanguagePack:
     )
 
 
-def _resolve_dir(code: str, langs_dir: Path | None) -> Path:
-    if langs_dir is not None:
-        candidate = langs_dir / code
-        if (candidate / "lang.toml").exists():
+def _resolve_dir(code: str, packs_dir: Path | None) -> Path:
+    if packs_dir is not None:
+        candidate = packs_dir / code
+        if (candidate / "pack.toml").exists():
             return candidate
-    bundled = _BUNDLED_LANGS / code
-    if (bundled / "lang.toml").exists():
+    bundled = _BUNDLED_PACKS / code
+    if (bundled / "pack.toml").exists():
         return bundled
-    searched = [str(_BUNDLED_LANGS / code)]
-    if langs_dir is not None:
-        searched.insert(0, str(langs_dir / code))
+    searched = [str(_BUNDLED_PACKS / code)]
+    if packs_dir is not None:
+        searched.insert(0, str(packs_dir / code))
     raise PackError(
-        f"no language pack for {code!r}; looked in: {', '.join(searched)}."
+        f"no pack for {code!r}; looked in: {', '.join(searched)}."
     )
 
 
-def _read_lang_toml(path: Path) -> dict:
+def _read_pack_toml(path: Path) -> dict:
     try:
         with path.open("rb") as fh:
             return tomllib.load(fh)
@@ -118,14 +118,14 @@ def _parse_categories(raw: dict, directory: Path) -> tuple[str, dict[str, Catego
     declaration = raw.get("category")
     if not declaration or "name" not in declaration:
         raise PackError(
-            f"pack at {directory}: lang.toml declares no [category] name."
+            f"pack at {directory}: pack.toml declares no [category] name."
         )
     name = declaration["name"]
     label = declaration.get("label", name)
     table = raw.get(name, {})
     if not table:
         raise PackError(
-            f"pack at {directory}: lang.toml has no [{name}.*] category sections."
+            f"pack at {directory}: pack.toml has no [{name}.*] category sections."
         )
     categories: dict[str, CategorySpec] = {}
     for value, spec in table.items():

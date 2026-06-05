@@ -1,7 +1,7 @@
 """The German pack's filter.py normalize hook, loaded through the pack loader.
 
 Normalization is no longer an engine module — it is per-pack code the loader
-imports from langs/<code>/filter.py and the manager applies to every provider's
+imports from packs/<code>/filter.py and the manager applies to every provider's
 output. These tests exercise the real hook the loader returns.
 """
 

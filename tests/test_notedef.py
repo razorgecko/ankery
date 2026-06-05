@@ -14,7 +14,7 @@ from ankery.notedef import (
 
 # The bundled German pack's note definitions live here now (not a top-level
 # notes/ dir merged by config).
-DE_NOTES = Path(ankery.__file__).parent / "langs" / "de" / "notes"
+DE_NOTES = Path(ankery.__file__).parent / "packs" / "de" / "notes"
 
 
 def _defs() -> dict[str, NoteDefinition]:

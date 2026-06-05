@@ -8,7 +8,7 @@ applies_to = "*"   # the German pack's catch-all: any POS without its own note
 # later means editing the Jinja below, never adding a field, which would break an
 # existing Anki model under verify_note_types' create-only contract.
 #
-# Grammar bundles whatever the word's POS declared in ../lang.toml [pos.*]. The
+# Grammar bundles whatever the word's POS declared in ../pack.toml [pos.*]. The
 # branches are mutually exclusive (a word is one POS), so at most one renders and
 # no separators are needed; the gender branch also covers noun, harmlessly unused
 # while noun keeps its bespoke note. Word leads so Anki keys duplicate detection

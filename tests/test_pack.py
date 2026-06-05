@@ -49,14 +49,14 @@ def test_de_provider_builder_is_registered():
 
 
 def test_de_provider_options_carry_netzverb_timeout():
-    # Provider tunables live in the pack (lang.toml [provider_options]), not the
+    # Provider tunables live in the pack (pack.toml [provider_options]), not the
     # engine's Config.
     pack = load_pack("de")
     assert pack.provider_options["netzverb"]["timeout"] == 15.0
 
 
 def test_unknown_code_raises():
-    with pytest.raises(PackError, match="no language pack for 'zz'"):
+    with pytest.raises(PackError, match="no pack for 'zz'"):
         load_pack("zz")
 
 
@@ -68,7 +68,7 @@ def test_unknown_code_raises():
 def _write_pack(root, code, lang_toml: str) -> None:
     pack_dir = root / code
     (pack_dir / "notes").mkdir(parents=True)
-    (pack_dir / "lang.toml").write_text(lang_toml, "utf-8")
+    (pack_dir / "pack.toml").write_text(lang_toml, "utf-8")
 
 
 def test_user_pack_overrides_bundled_by_code(tmp_path):
@@ -77,7 +77,7 @@ def test_user_pack_overrides_bundled_by_code(tmp_path):
         "de",
         'name = "German (custom)"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\n[pos.noun.features]\ngender = "the article"\n',
     )
-    pack = load_pack("de", langs_dir=tmp_path)
+    pack = load_pack("de", packs_dir=tmp_path)
 
     assert pack.name == "German (custom)"  # the user pack wins over the bundled one
     assert pack.providers == ("llm",)
@@ -89,7 +89,7 @@ def test_brand_new_user_pack_loads_with_no_engine_change(tmp_path):
         "xx",
         'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\ncitation = "the lemma"\n[pos.noun.features]\nplural = "plural form"\n',
     )
-    pack = load_pack("xx", langs_dir=tmp_path)
+    pack = load_pack("xx", packs_dir=tmp_path)
 
     assert pack.name == "Examplish"
     assert pack.categories["noun"].features == {"plural": "plural form"}
@@ -102,13 +102,13 @@ def test_brand_new_user_pack_loads_with_no_engine_change(tmp_path):
 def test_lang_toml_without_category_declaration_raises(tmp_path):
     _write_pack(tmp_path, "yy", 'name = "Y"\nproviders = ["llm"]\n')
     with pytest.raises(PackError, match="no \\[category\\] name"):
-        load_pack("yy", langs_dir=tmp_path)
+        load_pack("yy", packs_dir=tmp_path)
 
 
 def test_category_naming_an_absent_table_raises(tmp_path):
     _write_pack(tmp_path, "yy", 'name = "Y"\nproviders = ["llm"]\n[category]\nname = "pos"\n')
     with pytest.raises(PackError, match="no \\[pos.\\*\\] category sections"):
-        load_pack("yy", langs_dir=tmp_path)
+        load_pack("yy", packs_dir=tmp_path)
 
 
 def test_pack_chooses_its_own_category_name(tmp_path):
@@ -120,7 +120,7 @@ def test_pack_chooses_its_own_category_name(tmp_path):
         'name = "Chemistry"\nproviders = ["llm"]\n[category]\nname = "kind"\n'
         'label = "kind of entity"\n[kind.element]\ncitation = "the element symbol"\n',
     )
-    pack = load_pack("chem", langs_dir=tmp_path)
+    pack = load_pack("chem", packs_dir=tmp_path)
 
     assert pack.category_label == "kind of entity"
     assert set(pack.categories) == {"element"}
@@ -135,4 +135,4 @@ def test_provider_name_collision_across_modules_raises(tmp_path):
     (providers / "b.py").write_text(builder, "utf-8")
 
     with pytest.raises(PackError, match="registered by more than one"):
-        load_pack("zz", langs_dir=tmp_path)
+        load_pack("zz", packs_dir=tmp_path)

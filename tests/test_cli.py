@@ -277,13 +277,13 @@ def test_provider_flag_overrides_chain(patched):
     assert captured["config"].providers == ("netzverb", "llm")
 
 
-def test_langs_dir_flag_sets_user_pack_dir(patched):
+def test_packs_dir_flag_sets_user_pack_dir(patched):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
-    cli.main(["--langs-dir", "/srv/packs", "Buch"])
+    cli.main(["--packs-dir", "/srv/packs", "Buch"])
 
-    assert captured["config"].langs_dir == Path("/srv/packs")
+    assert captured["config"].packs_dir == Path("/srv/packs")
 
 
 def test_notes_dir_flag_sets_notes_dir(patched):
@@ -313,14 +313,14 @@ def test_pack_error_at_wiring_reports_and_exits_two(patched, monkeypatch, capsys
     captured, set_results = patched
 
     def boom(config):
-        raise ConfigError("no language pack for 'zz'")
+        raise ConfigError("no pack for 'zz'")
 
     monkeypatch.setattr(cli, "build_deck_builder", boom)
 
     code = cli.main(["Buch"])
 
     assert code == 2
-    assert "config error: no language pack for 'zz'" in capsys.readouterr().err
+    assert "config error: no pack for 'zz'" in capsys.readouterr().err
 
 
 def _capture_load_path(monkeypatch) -> dict:

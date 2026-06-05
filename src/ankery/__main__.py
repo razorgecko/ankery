@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--target-lang", help="language to translate into")
     parser.add_argument(
-        "--langs-dir", help="user pack directory; a pack here overrides the bundled one"
+        "--packs-dir", help="user pack directory; a pack here overrides the bundled one"
     )
     parser.add_argument(
         "--notes-dir",
@@ -106,8 +106,8 @@ def _config_from_args(args: argparse.Namespace) -> Config:
         overrides["target_language"] = args.target_lang
     if args.note_type is not None:
         overrides["note_type"] = args.note_type
-    if args.langs_dir is not None:
-        overrides["langs_dir"] = Path(args.langs_dir).expanduser()
+    if args.packs_dir is not None:
+        overrides["packs_dir"] = Path(args.packs_dir).expanduser()
     if args.notes_dir is not None:
         overrides["notes_dir"] = Path(args.notes_dir).expanduser()
     if args.llm_url is not None:

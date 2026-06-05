@@ -14,7 +14,7 @@ from ankery.notedef import (
     load_notes_from_dir,
     merge_note_definitions,
 )
-from ankery.pack import LanguagePack, PackError, load_pack
+from ankery.pack import Pack, PackError, load_pack
 from ankery.prompts import render_system_prompt
 from ankery.providers.base import WordProvider
 from ankery.providers.llm import LLMProvider
@@ -64,7 +64,7 @@ class Config:
 
     source_language: str = "de"
     target_language: str = "en"
-    langs_dir: Path | None = None
+    packs_dir: Path | None = None
 
     @classmethod
     def load(
@@ -133,7 +133,7 @@ def _load_config_file(path: Path) -> dict:
     for key in ("llm_timeout", "anki_timeout"):
         if key in raw:
             raw[key] = float(raw[key])
-    for key in ("langs_dir", "notes_dir"):
+    for key in ("packs_dir", "notes_dir"):
         if isinstance(raw.get(key), str):
             raw[key] = Path(raw[key]).expanduser()
     return raw
@@ -172,7 +172,7 @@ def _warn_if_world_readable(path: Path) -> None:
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
-def _build_llm(config: "Config", pack: LanguagePack) -> WordProvider:
+def _build_llm(config: "Config", pack: Pack) -> WordProvider:
     if config.llm_api_key:
         parts = urlsplit(config.llm_base_url)
         if parts.scheme == "http" and parts.hostname not in _LOOPBACK_HOSTS:
@@ -194,7 +194,7 @@ def _build_llm(config: "Config", pack: LanguagePack) -> WordProvider:
     )
 
 
-ProviderBuilder = Callable[["Config", LanguagePack], WordProvider]
+ProviderBuilder = Callable[["Config", Pack], WordProvider]
 
 PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
     "llm": _build_llm,
@@ -204,7 +204,7 @@ PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
 def build_deck_builder(config: Config) -> DeckBuilder:
     """Resolve the pack from `source_language` and wire providers, notes, sink, and builder."""
     try:
-        pack = load_pack(config.source_language, config.langs_dir)
+        pack = load_pack(config.source_language, config.packs_dir)
     except PackError as exc:
         raise ConfigError(str(exc)) from exc
 

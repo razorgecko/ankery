@@ -1,7 +1,7 @@
-from ankery.pack import LanguagePack
+from ankery.pack import Pack
 
 
-def render_system_prompt(pack: LanguagePack, category_hint: str | None = None) -> str:
+def render_system_prompt(pack: Pack, category_hint: str | None = None) -> str:
     names = sorted(pack.categories)
     # The pack's human label for its routing dimension (e.g. "part of speech").
     # It is the JSON key the model fills; the provider maps it onto WordInfo's

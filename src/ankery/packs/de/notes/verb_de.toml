@@ -4,7 +4,7 @@ applies_to = "verb"
 
 # The six present forms are separate fields; the "ich .. / du .." layout lives in
 # the card templates below, not in the map. Keys read from features (declared in
-# ../lang.toml [pos.verb]).
+# ../pack.toml [pos.verb]).
 [map]
 Infinitive  = "{{ word }}"
 Translation = "{{ translations | join(', ') }}"

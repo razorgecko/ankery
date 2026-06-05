@@ -119,7 +119,7 @@ The LLM API key is the one setting that is **not** allowed here (see
 | `providers` | `--provider` | per language | Lookup sources, tried in fallback order. Empty uses the default chain for the chosen language. The flag takes a comma-separated list. |
 | `source_language` | `--source-lang` | `"de"` | Language of the words being looked up. |
 | `target_language` | `--target-lang` | `"en"` | Language to translate into. |
-| `langs_dir` | `--langs-dir` | — | Directory of custom language definitions; one here overrides a built-in of the same code. |
+| `packs_dir` | `--packs-dir` | — | Directory of custom packs; one here overrides a built-in of the same code. |
 | `note_type` | `--note-type` | `"Basic"` | Catch-all card layout for words with no dedicated layout. |
 | `tags` | — | `[]` | Tags added to every created note. |
 | `allow_duplicate` | `--allow-duplicate` | `false` | Add a note even if Anki considers it a duplicate. |
@@ -189,17 +189,17 @@ syntax, not Jinja — only the `[map]` values are rendered here.
 
 A language is a **pack** — a directory named by its language code that holds the language's grammar, layouts, and lookup sources.
 ankery ships with packs of its own, and more can be added without touching the program:
-point `langs_dir` at a directory and drop a pack inside it, named by code (e.g. `fr/` for French).
+point `packs_dir` at a directory and drop a pack inside it, named by code (e.g. `fr/` for French).
 
 ```toml
 # config.toml
-langs_dir = "~/.config/ankery/langs"
+packs_dir = "~/.config/ankery/packs"
 ```
 
 ```
-~/.config/ankery/langs/
+~/.config/ankery/packs/
   fr/
-    lang.toml      grammar terms, lookup guidance, and the provider chain
+    pack.toml      grammar terms, lookup guidance, and the provider chain
     notes/         card layouts for this language (one *.toml per type)
       style.css    OPTIONAL: card styling for this language
     filter.py      OPTIONAL: clean up looked-up results

@@ -5,7 +5,7 @@ applies_to = "noun"
 # Field order is the order of these keys. Word leads because Anki keys duplicate
 # detection on the first field; leading with Article would flag every same-gender
 # noun as a duplicate. The map reads the feature keys the pack declares for nouns
-# (see ../lang.toml [pos.noun]); an undeclared/absent key renders empty.
+# (see ../pack.toml [pos.noun]); an undeclared/absent key renders empty.
 [map]
 Word        = "{{ word }}"
 Article     = "{{ features.gender }}"
