@@ -12,7 +12,7 @@ from ankery.models import WordInfo
 FieldMap = Callable[[WordInfo], dict[str, str]]
 
 # A note whose `applies_to` is this serves as the pack's catch-all fallback: it
-# matches no specific part of speech, but routing falls back to it (before the
+# matches no specific category, but routing falls back to it (before the
 # language-neutral catch-all) for any word no bespoke note claims.
 DEFAULT_APPLIES_TO = "*"
 
@@ -22,7 +22,7 @@ class NoteDefinitionError(Exception):
 
 
 def _finalize(value: object) -> object:
-    # Without this, present-but-None fields (part_of_speech, audio_url, …) render as "None".
+    # Without this, present-but-None fields (category, audio_url, …) render as "None".
     return "" if value is None else value
 
 
@@ -67,8 +67,8 @@ class NoteDefinition:
 
     def applies(self, info: WordInfo) -> bool:
         if self.applies_to is None or self.is_default:
-            return False  # the default note is fallback-only, never a POS match
-        return (info.part_of_speech or "").strip().lower() == self.applies_to
+            return False  # the default note is fallback-only, never a category match
+        return (info.category or "").strip().lower() == self.applies_to
 
     def render(self, info: WordInfo) -> dict[str, str]:
         """Render each field's Jinja template against `info`."""
@@ -89,39 +89,39 @@ def load_notes_from_dir(directory: Path) -> list[NoteDefinition]:
             by_path.append((path, _parse(tomllib.loads(path.read_text("utf-8")))))
         except (tomllib.TOMLDecodeError, KeyError, OSError) as exc:
             raise NoteDefinitionError(f"{path}: {exc}") from exc
-    _reject_duplicate_pos(by_path)
+    _reject_duplicate_category(by_path)
     return [definition for _, definition in by_path]
 
 
-def _reject_duplicate_pos(by_path: list[tuple[Path, NoteDefinition]]) -> None:
-    """Raise if two definitions serve the same part of speech."""
+def _reject_duplicate_category(by_path: list[tuple[Path, NoteDefinition]]) -> None:
+    """Raise if two definitions serve the same category."""
     seen: dict[str, Path] = {}
     for path, definition in by_path:
-        pos = definition.applies_to
-        if pos is None:
+        category = definition.applies_to
+        if category is None:
             continue
-        if pos in seen:
+        if category in seen:
             what = (
                 "the pack default note"
                 if definition.is_default
-                else f"part of speech {pos!r}"
+                else f"category {category!r}"
             )
             raise NoteDefinitionError(
-                f"{seen[pos].name} and {path.name} both serve {what} in "
+                f"{seen[category].name} and {path.name} both serve {what} in "
                 f"{path.parent}; it may be served by at most one note definition "
                 "per directory."
             )
-        seen[pos] = path
+        seen[category] = path
 
 
 def merge_note_definitions(
     base: list[NoteDefinition], override: list[NoteDefinition]
 ) -> list[NoteDefinition]:
-    """Layer `override` over `base` by POS: matching POS replaces in place, new POS appends."""
-    override_by_pos = {
+    """Layer `override` over `base` by category: matching category replaces in place, new appends."""
+    override_by_category = {
         d.applies_to: d for d in override if d.applies_to is not None
     }
-    merged = [override_by_pos.get(d.applies_to, d) for d in base]
+    merged = [override_by_category.get(d.applies_to, d) for d in base]
     placed = {d.applies_to for d in base if d.applies_to is not None}
     merged += [
         d for d in override if d.applies_to is None or d.applies_to not in placed

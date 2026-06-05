@@ -23,8 +23,8 @@ class PackError(Exception):
 
 
 @dataclass(frozen=True)
-class POSGrammar:
-    pos: str
+class CategorySpec:
+    value: str  # a routing category value, e.g. "noun"
     citation: str | None
     guidance: tuple[str, ...]
     features: dict[str, str]  # key -> meaning, handed to the LLM and read by notes
@@ -35,7 +35,10 @@ class LanguagePack:
     code: str
     name: str
     common_features: dict[str, str]
-    grammar: dict[str, POSGrammar]
+    # The human label for the routing dimension (e.g. "part of speech"), used in
+    # the LLM prompt; the per-value vocabulary lives in `categories`.
+    category_label: str
+    categories: dict[str, CategorySpec]
     providers: tuple[str, ...]
     provider_options: dict[str, dict]
     provider_builders: dict[str, ProviderBuilder]
@@ -53,7 +56,7 @@ def load_pack(code: str, langs_dir: Path | None = None) -> LanguagePack:
     directory = _resolve_dir(code, langs_dir)
     raw = _read_lang_toml(directory / "lang.toml")
 
-    grammar = _parse_grammar(raw, directory)
+    category_label, categories = _parse_categories(raw, directory)
     notes_dir = directory / "notes"
     try:
         notes = load_notes_from_dir(notes_dir)
@@ -74,7 +77,8 @@ def load_pack(code: str, langs_dir: Path | None = None) -> LanguagePack:
         code=code,
         name=raw.get("name", code),
         common_features=dict(raw.get("features", {})),
-        grammar=grammar,
+        category_label=category_label,
+        categories=categories,
         providers=tuple(raw.get("providers", ("llm",))),
         provider_options={k: dict(v) for k, v in raw.get("provider_options", {}).items()},
         provider_builders=provider_builders,
@@ -108,19 +112,30 @@ def _read_lang_toml(path: Path) -> dict:
         raise PackError(f"could not read {path}: {exc}") from exc
 
 
-def _parse_grammar(raw: dict, directory: Path) -> dict[str, POSGrammar]:
-    pos_table = raw.get("pos", {})
-    if not pos_table:
-        raise PackError(f"pack at {directory}: lang.toml declares no [pos.*] sections.")
-    grammar: dict[str, POSGrammar] = {}
-    for pos, spec in pos_table.items():
-        grammar[pos] = POSGrammar(
-            pos=pos,
+def _parse_categories(raw: dict, directory: Path) -> tuple[str, dict[str, CategorySpec]]:
+    """Resolve the pack's routing dimension: read [category] for the name of the
+    table that enumerates the category values, then parse that table."""
+    declaration = raw.get("category")
+    if not declaration or "name" not in declaration:
+        raise PackError(
+            f"pack at {directory}: lang.toml declares no [category] name."
+        )
+    name = declaration["name"]
+    label = declaration.get("label", name)
+    table = raw.get(name, {})
+    if not table:
+        raise PackError(
+            f"pack at {directory}: lang.toml has no [{name}.*] category sections."
+        )
+    categories: dict[str, CategorySpec] = {}
+    for value, spec in table.items():
+        categories[value] = CategorySpec(
+            value=value,
             citation=spec.get("citation"),
             guidance=tuple(spec.get("guidance", ())),
             features=dict(spec.get("features", {})),
         )
-    return grammar
+    return label, categories
 
 
 def _load_module(path: Path, name: str) -> ModuleType:

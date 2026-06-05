@@ -12,11 +12,11 @@ from ankery.sinks.base import SinkError
 class FakeBuilder:
     """Captures add_word calls and replays a scripted result per word."""
 
-    def __init__(self, results: dict[str, object], pos_names=("noun", "verb", "adjective")):
+    def __init__(self, results: dict[str, object], category_names=("noun", "verb", "adjective")):
         self._results = results
         self.calls: list[str] = []
         self.hint_calls: list[tuple[str, str | None]] = []
-        self.pos_names = list(pos_names)
+        self.category_names = list(category_names)
         self.verified = False
         self.verify_error: Exception | None = None
 
@@ -25,9 +25,9 @@ class FakeBuilder:
             raise self.verify_error
         self.verified = True
 
-    def add_word(self, word, *, pos_hint=None):
+    def add_word(self, word, *, category_hint=None):
         self.calls.append(word)
-        self.hint_calls.append((word, pos_hint))
+        self.hint_calls.append((word, category_hint))
         outcome = self._results[word]
         if isinstance(outcome, Exception):
             raise outcome
@@ -56,7 +56,7 @@ def patched(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# POS-hint parsing and resolution
+# Category-hint parsing and resolution
 # ---------------------------------------------------------------------------
 
 
@@ -70,31 +70,31 @@ def patched(monkeypatch):
         ("auf:", ("auf", "")),
     ],
 )
-def test_split_pos_hint(raw, expected):
-    assert cli.split_pos_hint(raw) == expected
+def test_split_category_hint(raw, expected):
+    assert cli.split_category_hint(raw) == expected
 
 
-def test_resolve_pos_hint_exact_and_prefix():
+def test_resolve_category_hint_exact_and_prefix():
     names = ["adjective", "adverb", "noun", "preposition", "verb"]
-    assert cli.resolve_pos_hint("noun", names) == "noun"  # exact
-    assert cli.resolve_pos_hint("v", names) == "verb"  # unique prefix
-    assert cli.resolve_pos_hint("adj", names) == "adjective"
-    assert cli.resolve_pos_hint("PREP", names) == "preposition"  # case-insensitive
+    assert cli.resolve_category_hint("noun", names) == "noun"  # exact
+    assert cli.resolve_category_hint("v", names) == "verb"  # unique prefix
+    assert cli.resolve_category_hint("adj", names) == "adjective"
+    assert cli.resolve_category_hint("PREP", names) == "preposition"  # case-insensitive
 
 
-def test_resolve_pos_hint_rejects_unknown():
-    with pytest.raises(ValueError, match="unknown part of speech"):
-        cli.resolve_pos_hint("xyz", ["noun", "verb"])
+def test_resolve_category_hint_rejects_unknown():
+    with pytest.raises(ValueError, match="unknown category"):
+        cli.resolve_category_hint("xyz", ["noun", "verb"])
 
 
-def test_resolve_pos_hint_rejects_ambiguous_prefix():
+def test_resolve_category_hint_rejects_ambiguous_prefix():
     with pytest.raises(ValueError, match="ambiguous"):
-        cli.resolve_pos_hint("ad", ["adjective", "adverb"])
+        cli.resolve_category_hint("ad", ["adjective", "adverb"])
 
 
-def test_resolve_pos_hint_rejects_empty():
+def test_resolve_category_hint_rejects_empty():
     with pytest.raises(ValueError, match="empty"):
-        cli.resolve_pos_hint("", ["noun"])
+        cli.resolve_category_hint("", ["noun"])
 
 
 def test_colon_hint_is_resolved_and_passed_to_add_word(patched):
@@ -114,7 +114,7 @@ def test_unknown_hint_reports_and_skips_lookup(patched, capsys):
     code = cli.main(["schnell:xyz"])
 
     assert code == 1
-    assert "unknown part of speech" in capsys.readouterr().err
+    assert "unknown category" in capsys.readouterr().err
     assert builder.calls == []  # the word is never looked up
 
 

@@ -328,9 +328,9 @@ def _write_note(directory: Path, stem: str, name: str, applies_to: str | None):
     )
 
 
-def test_notes_dir_merges_over_the_packs_notes_by_pos(tmp_path):
-    # A generic noun layout replaces the pack's "Ankery DE: Noun" for nouns; a new POS
-    # (adjective) is added; the pack's verb is left in place.
+def test_notes_dir_merges_over_the_packs_notes_by_category(tmp_path):
+    # A generic noun layout replaces the pack's "Ankery DE: Noun" for nouns; a new
+    # category (adjective) is added; the pack's verb is left in place.
     _write_note(tmp_path, "noun", "Simple Noun", "noun")
     _write_note(tmp_path, "adj", "Simple Adjective", "adjective")
     builder = build_deck_builder(Config(notes_dir=tmp_path))
@@ -347,10 +347,10 @@ def test_notes_dir_unset_leaves_the_packs_notes_alone():
     ]
 
 
-def test_notes_dir_with_duplicate_pos_surfaces_as_config_error(tmp_path):
+def test_notes_dir_with_duplicate_category_surfaces_as_config_error(tmp_path):
     _write_note(tmp_path, "a_noun", "Noun A", "noun")
     _write_note(tmp_path, "b_noun", "Noun B", "noun")
-    with pytest.raises(ConfigError, match="both serve part of speech 'noun'"):
+    with pytest.raises(ConfigError, match="both serve category 'noun'"):
         build_deck_builder(Config(notes_dir=tmp_path))
 
 
@@ -392,7 +392,7 @@ def test_source_language_selects_a_user_pack_via_langs_dir(tmp_path):
     pack_dir = tmp_path / "xx"
     (pack_dir / "notes").mkdir(parents=True)
     (pack_dir / "lang.toml").write_text(
-        'name = "Examplish"\nproviders = ["llm"]\n[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
+        'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
         "utf-8",
     )
     builder = build_deck_builder(Config(source_language="xx", langs_dir=tmp_path))
@@ -406,7 +406,9 @@ def test_empty_chain_with_packless_chain_is_an_error(tmp_path):
     # nothing to build.
     pack_dir = tmp_path / "yy"
     (pack_dir / "notes").mkdir(parents=True)
-    (pack_dir / "lang.toml").write_text('name = "Y"\nproviders = []\n[pos.noun]\n', "utf-8")
+    (pack_dir / "lang.toml").write_text(
+        'name = "Y"\nproviders = []\n[category]\nname = "pos"\n[pos.noun]\n', "utf-8"
+    )
 
     with pytest.raises(ConfigError, match="no providers configured"):
         build_deck_builder(Config(source_language="yy", langs_dir=tmp_path))

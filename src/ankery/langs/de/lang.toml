@@ -13,6 +13,17 @@ name = "German"
 # "llm"). Overridable per run with --provider.
 providers = ["netzverb", "llm"]
 
+# The pack's routing dimension. `name` is the table below that enumerates the
+# category values (here [pos.*]) and is the closed vocabulary the LLM classifies
+# into; `label` is the human phrase the LLM prompt uses for it (and the JSON key
+# the model fills, mapped onto WordInfo's generic `category`). For German the
+# categories are parts of speech; another pack might use `name = "kind"` with a
+# [kind.*] table instead. Must follow the bare top-level keys above (a TOML table
+# header captures every key after it).
+[category]
+name = "pos"
+label = "part of speech"
+
 # Options handed to this pack's providers when built. Keyed by provider name;
 # the builder in provider.py reads its own table. Keeps provider tunables in the
 # pack instead of leaking a German-specific knob into the engine's Config.
@@ -28,7 +39,8 @@ ipa = "IPA transcription of the pronunciation, e.g. /haʊs/; omit if unsure"
 # Per-POS grammar. `citation` defines the lemma form, `guidance` is extra prose
 # for the LLM, and each `features` table declares the keys for that POS with the
 # meaning handed to the LLM and read back by the notes. The set of [pos.*]
-# sections is also the closed vocabulary the LLM classifies `part_of_speech` into.
+# sections is also the closed vocabulary the LLM classifies the category into
+# (declared as [category] above).
 
 [pos.noun]
 citation = "nominative singular; the bare lemma with no article"

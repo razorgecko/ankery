@@ -25,8 +25,9 @@ and audio). This provider scrapes two hosts:
     conjunction  /conjunctions/steckbrief-info/{word}.htm
     particle     /particles/steckbrief-info/{word}.htm
 
-A `pos_hint` picks the route directly; without one only noun/verb are reachable,
-chosen by capitalisation. A hint for any POS no site here serves misses cleanly.
+A `category_hint` picks the route directly; without one only noun/verb are
+reachable, chosen by capitalisation. A hint for any POS no site here serves
+misses cleanly.
 
 Imports must be absolute — this file is loaded by path.
 """
@@ -155,8 +156,8 @@ class NetzverbProvider:
         self._target_language = target_language
         self._timeout = timeout
 
-    def fetch(self, word: str, pos_hint: str | None = None) -> WordInfo | None:
-        pos = self._resolve_pos(word, pos_hint)
+    def fetch(self, word: str, category_hint: str | None = None) -> WordInfo | None:
+        pos = self._resolve_pos(word, category_hint)
         # A hint for a POS no site here serves (or any POS at all when none of
         # the no-hint priors apply): miss cleanly so the chain (the LLM) handles
         # it instead of scraping the wrong page shape.
@@ -187,10 +188,10 @@ class NetzverbProvider:
                 return retry, self._get(client, route, retry)
         return word, html
 
-    def _resolve_pos(self, word: str, pos_hint: str | None) -> str | None:
+    def _resolve_pos(self, word: str, category_hint: str | None) -> str | None:
         # An explicit hint picks the route directly (None if no site serves it).
-        if pos_hint is not None:
-            return pos_hint if pos_hint in _ROUTES else None
+        if category_hint is not None:
+            return category_hint if category_hint in _ROUTES else None
         # Without a hint only noun/verb are reachable; German orthography is the
         # prior — capitalised words are nouns, the rest verbs.
         return "noun" if word[:1].isupper() else "verb"
@@ -288,7 +289,7 @@ def _parse(
 
     info = WordInfo(
         word=_lemma(lemma_el, fallback=word),
-        part_of_speech=pos,
+        category=pos,
         translations=_translations(steckbrief, target_language),
         audio_url=_audio_url(lemma_el),
         definitions=_definition(steckbrief),

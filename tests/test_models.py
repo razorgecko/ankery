@@ -15,7 +15,7 @@ def test_list_fields_default_empty():
     assert info.definitions == []
     assert info.examples == []
     assert info.translations == []
-    assert info.part_of_speech is None
+    assert info.category is None
 
 
 def test_optional_fields_default():
@@ -33,7 +33,7 @@ def test_features_carry_arbitrary_language_keys():
         word="Buch",
         source_language="de",
         target_language="en",
-        part_of_speech="noun",
+        category="noun",
         features={"gender": "das", "genitive_sg": "Buches", "nominative_pl": "Bücher"},
         source="local_llm",
     )
@@ -66,12 +66,12 @@ def test_full_payload():
         definitions=["to move fast", "to operate"],
         examples=["I run daily."],
         translations=["correr"],
-        part_of_speech="verb",
+        category="verb",
         features={"ipa": "/rʌn/"},
         source="local_llm",
     )
     assert info.definitions == ["to move fast", "to operate"]
-    assert info.part_of_speech == "verb"
+    assert info.category == "verb"
     assert info.features["ipa"] == "/rʌn/"
 
 

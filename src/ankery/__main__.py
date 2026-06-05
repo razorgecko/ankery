@@ -10,13 +10,13 @@ from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
 
 
-def split_pos_hint(raw: str) -> tuple[str, str | None]:
-    """Split a `word:pos` token into (word, raw_hint); no colon -> (word, None).
+def split_category_hint(raw: str) -> tuple[str, str | None]:
+    """Split a `word:cat` token into (word, raw_hint); no colon -> (word, None).
 
-    The part-of-speech hint is everything after the last colon, e.g. `schnell:adj`
+    The category hint is everything after the last colon, e.g. `schnell:adj`
     or `Bank:noun`. A colon is glob-safe, so words need no shell quoting. The hint
-    is resolved against the pack's declared POS by prefix match (see
-    resolve_pos_hint).
+    is resolved against the pack's declared categories by prefix match (see
+    resolve_category_hint).
     """
     word, sep, hint = raw.rpartition(":")
     if not sep:
@@ -24,26 +24,26 @@ def split_pos_hint(raw: str) -> tuple[str, str | None]:
     return word.strip(), hint.strip()
 
 
-def resolve_pos_hint(hint: str, pos_names: Sequence[str]) -> str:
-    """Resolve a POS hint to one canonical pack POS by exact-then-prefix match.
+def resolve_category_hint(hint: str, category_names: Sequence[str]) -> str:
+    """Resolve a category hint to one canonical pack category by exact-then-prefix match.
 
     Raises ValueError if the hint is empty, matches nothing, or is an ambiguous
-    prefix of more than one declared POS.
+    prefix of more than one declared category.
     """
     if not hint:
-        raise ValueError("empty part-of-speech hint after colon")
+        raise ValueError("empty category hint after colon")
     lowered = hint.lower()
-    exact = [name for name in pos_names if name.lower() == lowered]
+    exact = [name for name in category_names if name.lower() == lowered]
     if exact:
         return exact[0]
-    prefix = [name for name in pos_names if name.lower().startswith(lowered)]
+    prefix = [name for name in category_names if name.lower().startswith(lowered)]
     if len(prefix) == 1:
         return prefix[0]
-    known = ", ".join(sorted(pos_names))
+    known = ", ".join(sorted(category_names))
     if not prefix:
-        raise ValueError(f"unknown part of speech {hint!r}; this pack knows: {known}")
+        raise ValueError(f"unknown category {hint!r}; this pack knows: {known}")
     raise ValueError(
-        f"ambiguous part of speech {hint!r}; matches: {', '.join(sorted(prefix))}"
+        f"ambiguous category {hint!r}; matches: {', '.join(sorted(prefix))}"
     )
 
 
@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--notes-dir",
         help="directory of extra note layouts (*.toml) merged over the pack's "
-        "notes by part of speech",
+        "notes by category",
     )
     parser.add_argument("--note-type", help="Anki note type")
     parser.add_argument("--llm-url", help="OpenAI-compatible base URL for the LLM provider")
@@ -152,21 +152,21 @@ def main(argv: list[str] | None = None) -> int:
 
     exit_code = 0
     for raw_word in args.words:
-        word, raw_hint = split_pos_hint(raw_word)
+        word, raw_hint = split_category_hint(raw_word)
         if not word:
             print("skipping empty word", file=sys.stderr)
             exit_code = 1
             continue
-        pos_hint: str | None = None
+        category_hint: str | None = None
         if raw_hint is not None:
             try:
-                pos_hint = resolve_pos_hint(raw_hint, builder.pos_names)
+                category_hint = resolve_category_hint(raw_hint, builder.category_names)
             except ValueError as exc:
                 print(f"{raw_word}: {exc}", file=sys.stderr)
                 exit_code = 1
                 continue
         try:
-            result = builder.add_word(word, pos_hint=pos_hint)
+            result = builder.add_word(word, category_hint=category_hint)
         except ProviderError as exc:
             print(f"{word}: lookup failed: {exc}", file=sys.stderr)
             exit_code = 1

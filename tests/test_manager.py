@@ -14,11 +14,11 @@ class FakeProvider:
         self._result = result
         self._error = error
         self.calls = 0
-        self.last_pos_hint: str | None = None
+        self.last_category_hint: str | None = None
 
-    def fetch(self, word: str, pos_hint: str | None = None) -> WordInfo | None:
+    def fetch(self, word: str, category_hint: str | None = None) -> WordInfo | None:
         self.calls += 1
-        self.last_pos_hint = pos_hint
+        self.last_category_hint = category_hint
         if self._error is not None:
             raise self._error
         return self._result
@@ -41,8 +41,8 @@ def _info(word: str = "Buch") -> WordInfo:
     return WordInfo(word=word, source="test")
 
 
-def _info_with_pos(pos: str, word: str = "Bank") -> WordInfo:
-    return WordInfo(word=word, source="test", part_of_speech=pos)
+def _info_with_category(category: str, word: str = "Bank") -> WordInfo:
+    return WordInfo(word=word, source="test", category=category)
 
 
 def _builder(providers, sink=None, **kwargs) -> DeckBuilder:
@@ -80,29 +80,29 @@ def test_provider_error_falls_through_to_next_provider():
     assert first.calls == 1
 
 
-def test_pos_hint_is_forwarded_to_each_provider():
+def test_category_hint_is_forwarded_to_each_provider():
     first = FakeProvider("first", result=None)
     second = FakeProvider("second", result=_info())
-    _builder([first, second]).lookup("Bank", pos_hint="noun")
+    _builder([first, second]).lookup("Bank", category_hint="noun")
 
-    assert first.last_pos_hint == "noun"
-    assert second.last_pos_hint == "noun"
-
-
-def test_pos_hint_overrides_the_providers_classification():
-    # The user's explicit hint is authoritative: it wins over whatever POS the
-    # provider stamped, so routing and the pack filter see the intended POS.
-    provider = FakeProvider("p", result=_info_with_pos("verb"))
-    info = _builder([provider]).lookup("Bank", pos_hint="noun")
-
-    assert info.part_of_speech == "noun"
+    assert first.last_category_hint == "noun"
+    assert second.last_category_hint == "noun"
 
 
-def test_no_pos_hint_leaves_the_providers_classification_intact():
-    provider = FakeProvider("p", result=_info_with_pos("verb"))
+def test_category_hint_overrides_the_providers_classification():
+    # The user's explicit hint is authoritative: it wins over whatever category the
+    # provider stamped, so routing and the pack filter see the intended category.
+    provider = FakeProvider("p", result=_info_with_category("verb"))
+    info = _builder([provider]).lookup("Bank", category_hint="noun")
+
+    assert info.category == "noun"
+
+
+def test_no_category_hint_leaves_the_providers_classification_intact():
+    provider = FakeProvider("p", result=_info_with_category("verb"))
     info = _builder([provider]).lookup("laufen")
 
-    assert info.part_of_speech == "verb"
+    assert info.category == "verb"
 
 
 def test_all_clean_misses_returns_none():
@@ -215,7 +215,7 @@ def test_matching_note_definition_picks_its_note_type_and_map():
         name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
     )
     builder = _builder(
-        [FakeProvider("p", result=WordInfo(word="sehen", source="t", part_of_speech="verb"))],
+        [FakeProvider("p", result=WordInfo(word="sehen", source="t", category="verb"))],
         sink,
         note_definitions=[note_def],
     )
@@ -232,7 +232,7 @@ def test_word_matching_no_note_definition_falls_back_to_default_note_type():
         name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
     )
     builder = _builder(
-        [FakeProvider("p", result=WordInfo(word="schön", source="t", part_of_speech="adjective"))],
+        [FakeProvider("p", result=WordInfo(word="schön", source="t", category="adjective"))],
         sink,
         note_type="Basic",
         note_definitions=[note_def],
@@ -244,9 +244,9 @@ def test_word_matching_no_note_definition_falls_back_to_default_note_type():
     assert "Front" in sink.calls[0]["fields"]
 
 
-def test_unmatched_pos_routes_to_the_pack_default_note_over_the_catch_all():
+def test_unmatched_category_routes_to_the_pack_default_note_over_the_catch_all():
     # A pack default note (applies_to "*") takes precedence over the language-
-    # neutral catch-all for any POS no bespoke note claims.
+    # neutral catch-all for any category no bespoke note claims.
     sink = FakeSink()
     verb = NoteDefinition(
         name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
@@ -255,7 +255,7 @@ def test_unmatched_pos_routes_to_the_pack_default_note_over_the_catch_all():
         name="Ankery DE: Word", field_map={"Word": "{{ word }}"}, applies_to="*"
     )
     builder = _builder(
-        [FakeProvider("p", result=WordInfo(word="mit", source="t", part_of_speech="preposition"))],
+        [FakeProvider("p", result=WordInfo(word="mit", source="t", category="preposition"))],
         sink,
         note_type="Basic",
         note_definitions=[default, verb],
@@ -267,8 +267,8 @@ def test_unmatched_pos_routes_to_the_pack_default_note_over_the_catch_all():
     assert sink.calls[0]["fields"] == {"Word": "mit"}
 
 
-def test_bespoke_pos_note_wins_over_the_pack_default_note():
-    # The default note is fallback-only: a POS with its own note still gets it,
+def test_bespoke_category_note_wins_over_the_pack_default_note():
+    # The default note is fallback-only: a category with its own note still gets it,
     # regardless of the default note's position in the list.
     sink = FakeSink()
     default = NoteDefinition(
@@ -278,7 +278,7 @@ def test_bespoke_pos_note_wins_over_the_pack_default_note():
         name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
     )
     builder = _builder(
-        [FakeProvider("p", result=WordInfo(word="sehen", source="t", part_of_speech="verb"))],
+        [FakeProvider("p", result=WordInfo(word="sehen", source="t", category="verb"))],
         sink,
         note_definitions=[default, verb],
     )

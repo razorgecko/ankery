@@ -18,7 +18,7 @@ Word         = "{{ word }}"
 Translation  = "{{ translations | join(', ') }}"
 Grammar      = "{% if features.comparative %}Steigerung: {{ features.comparative }} / {{ features.superlative }}{% elif features.governs_case %}+ {{ features.governs_case }}{% elif features.gender %}{{ features.gender }} · Pl. {{ features.nominative_pl }} · Gen. {{ features.genitive_sg }}{% endif %}"
 Example      = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
-PartOfSpeech = "{{ part_of_speech }}"
+PartOfSpeech = "{{ category }}"
 
 [[cards]]
 name = "W1 Recognition"

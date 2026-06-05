@@ -12,7 +12,7 @@ normalize = load_pack("de").normalize
 
 
 def _noun(features: dict[str, str]) -> WordInfo:
-    return WordInfo(word="Haus", source="test", part_of_speech="noun", features=features)
+    return WordInfo(word="Haus", source="test", category="noun", features=features)
 
 
 def test_strips_leading_definite_article_from_forms():

@@ -53,7 +53,7 @@ def test_noun_fetch_returns_wordinfo(httpx_mock):
 
     assert info is not None
     assert info.word == "Haus"
-    assert info.part_of_speech == "noun"
+    assert info.category == "noun"
     assert info.source == "netzverb"
     assert info.source_language == "de"
     assert info.target_language == "en"
@@ -120,7 +120,7 @@ def test_verb_fetch_returns_wordinfo(httpx_mock):
 
     assert info is not None
     assert info.word == "einkaufen"
-    assert info.part_of_speech == "verb"
+    assert info.category == "verb"
     assert info.features["separable"] == "true"
     assert info.features["ipa"] == "/ˈaɪ̯nˌkaʊ̯fən/"
     assert info.translations[0] == "buy"
@@ -372,13 +372,13 @@ def test_non_zu_miss_does_not_retry(httpx_mock):
 # ---------------------------------------------------------------------------
 
 
-def test_pos_hint_for_unscrapable_pos_misses_without_a_request(httpx_mock):
+def test_category_hint_for_unscrapable_pos_misses_without_a_request(httpx_mock):
     # The two Netzverb sites serve a fixed set of parts of speech. Given a hint
     # for one outside that set (interjection has no page on either site) the
     # provider must miss cleanly so the chain falls through to the LLM — and it
     # must not waste an HTTP request guessing. (No mocked response is added; a
     # request here would make pytest-httpx fail.)
-    assert _provider().fetch("hallo", pos_hint="interjection") is None
+    assert _provider().fetch("hallo", category_hint="interjection") is None
     assert httpx_mock.get_requests() == []
 
 
@@ -390,10 +390,10 @@ def test_noun_hint_forces_the_noun_page_for_a_lowercase_word(httpx_mock):
         text=_fixture("verbformen_noun_Haus.html"),
     )
 
-    info = _provider().fetch("haus", pos_hint="noun")
+    info = _provider().fetch("haus", category_hint="noun")
 
     assert info is not None
-    assert info.part_of_speech == "noun"
+    assert info.category == "noun"
 
 
 def test_verb_hint_forces_the_conjugation_page_for_a_capitalised_word(httpx_mock):
@@ -402,10 +402,10 @@ def test_verb_hint_forces_the_conjugation_page_for_a_capitalised_word(httpx_mock
         text=_fixture("verbformen_verb_einkaufen.html"),
     )
 
-    info = _provider().fetch("Einkaufen", pos_hint="verb")
+    info = _provider().fetch("Einkaufen", category_hint="verb")
 
     assert info is not None
-    assert info.part_of_speech == "verb"
+    assert info.category == "verb"
 
 
 # ---------------------------------------------------------------------------
@@ -422,11 +422,11 @@ def test_adjective_keeps_only_comparison_forms(httpx_mock):
         text=_fixture("verbformen_adjective_hoch.html"),
     )
 
-    info = _provider().fetch("hoch", pos_hint="adjective")
+    info = _provider().fetch("hoch", category_hint="adjective")
 
     assert info is not None
     assert info.word == "hoch"
-    assert info.part_of_speech == "adjective"
+    assert info.category == "adjective"
     assert info.features["comparative"] == "höher"
     assert info.features["superlative"] == "am höchsten"
     assert info.audio_url and info.audio_url.endswith(".mp3")
@@ -449,11 +449,11 @@ def test_pronoun_and_article_carry_no_inflection_features(httpx_mock):
         text=_fixture("verbformen_article_der.html"),
     )
 
-    pronoun = _provider().fetch("er", pos_hint="pronoun")
-    article = _provider().fetch("der", pos_hint="article")
+    pronoun = _provider().fetch("er", category_hint="pronoun")
+    article = _provider().fetch("der", category_hint="article")
 
-    assert pronoun is not None and pronoun.part_of_speech == "pronoun"
-    assert article is not None and article.part_of_speech == "article"
+    assert pronoun is not None and pronoun.category == "pronoun"
+    assert article is not None and article.category == "article"
     assert "gender" not in article.features
     for info in (pronoun, article):
         assert set(info.features) <= {"ipa"}  # gloss-level only, no inflection
@@ -467,11 +467,11 @@ def test_verben_de_uninflected_pos_route_to_verben_host(httpx_mock):
         text=_fixture("verben_preposition_mit.html"),
     )
 
-    info = _provider().fetch("mit", pos_hint="preposition")
+    info = _provider().fetch("mit", category_hint="preposition")
 
     assert info is not None
     assert info.word == "mit"
-    assert info.part_of_speech == "preposition"
+    assert info.category == "preposition"
     assert "with" in info.translations
     assert info.audio_url is None  # verben.de pages carry no headword audio
     assert str(httpx_mock.get_requests()[0].url) == "https://www.verben.de/prepositions/steckbrief-info/mit.htm"

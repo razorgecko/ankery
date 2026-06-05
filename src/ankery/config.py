@@ -59,7 +59,7 @@ class Config:
     note_type: str = "Basic"
     tags: tuple[str, ...] = ()
 
-    # Extra note layouts merged over the pack's by POS; language-agnostic layouts live here.
+    # Extra note layouts merged over the pack's by category; language-agnostic layouts live here.
     notes_dir: Path | None = None
 
     source_language: str = "de"
@@ -187,6 +187,7 @@ def _build_llm(config: "Config", pack: LanguagePack) -> WordProvider:
         system_prompt_for=partial(render_system_prompt, pack),
         source_language=pack.code,
         target_language=config.target_language,
+        category_key=pack.category_label,
         timeout=config.llm_timeout,
         request_json_format=config.llm_request_json_format,
         api_key=config.llm_api_key,
@@ -246,5 +247,5 @@ def build_deck_builder(config: Config) -> DeckBuilder:
         normalize=pack.normalize,
         note_definitions=notes,
         tags=list(config.tags),
-        pos_names=sorted(pack.grammar),
+        category_names=sorted(pack.categories),
     )

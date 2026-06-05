@@ -19,11 +19,14 @@ def _completion(content: str) -> dict:
 
 
 def _provider(**kwargs) -> LLMProvider:
-    # The provider renders the system prompt per fetch from a (pos_hint -> str)
+    # The provider renders the system prompt per fetch from a (category_hint -> str)
     # callable; the default ignores the hint and returns the constant SYSTEM.
-    kwargs.setdefault("system_prompt_for", lambda pos_hint=None: SYSTEM)
+    kwargs.setdefault("system_prompt_for", lambda category_hint=None: SYSTEM)
     kwargs.setdefault("source_language", "de")
     kwargs.setdefault("target_language", "en")
+    # The pack's category label is the JSON key the model fills; the provider
+    # maps it onto WordInfo.category. The German pack labels it "part of speech".
+    kwargs.setdefault("category_key", "part of speech")
     return LLMProvider(base_url=BASE_URL, model="test-model", **kwargs)
 
 
@@ -31,7 +34,7 @@ def test_fetch_returns_wordinfo(httpx_mock):
     word_json = json.dumps(
         {
             "word": "Buch",
-            "part_of_speech": "noun",
+            "part of speech": "noun",
             "definitions": ["gebundene Seiten zum Lesen"],
             "features": {"gender": "das", "genitive_sg": "Buches", "nominative_pl": "Bücher"},
         }
@@ -42,17 +45,19 @@ def test_fetch_returns_wordinfo(httpx_mock):
 
     assert info is not None
     assert info.word == "Buch"
+    # The model filled the pack's label key; the provider mapped it onto `category`.
+    assert info.category == "noun"
     assert info.features["gender"] == "das"
     assert info.features["nominative_pl"] == "Bücher"
 
 
 def test_hinted_fetch_misses_on_empty_object(httpx_mock):
-    # The user asserted a POS the word does not have; the model returns the
+    # The user asserted a category the word does not have; the model returns the
     # empty-object miss signal. The provider must read that as a clean miss
     # (None) so the chain moves on, not fabricate a card for the wrong word.
     httpx_mock.add_response(url=CHAT_URL, json=_completion("{}"))
 
-    assert _provider().fetch("laufen", pos_hint="noun") is None
+    assert _provider().fetch("laufen", category_hint="noun") is None
 
 
 def test_empty_object_without_hint_raises(httpx_mock):
@@ -64,15 +69,15 @@ def test_empty_object_without_hint_raises(httpx_mock):
         _provider().fetch("laufen")
 
 
-def test_fetch_renders_system_prompt_with_the_pos_hint(httpx_mock):
+def test_fetch_renders_system_prompt_with_the_category_hint(httpx_mock):
     # The hint reaches the renderer, not just the user prompt — so a hint can
-    # trim the system prompt to the named POS.
+    # trim the system prompt to the named category.
     httpx_mock.add_response(url=CHAT_URL, json=_completion('{"word": "schnell"}'))
 
     provider = _provider(
-        system_prompt_for=lambda pos_hint=None: f"hint={pos_hint}"
+        system_prompt_for=lambda category_hint=None: f"hint={category_hint}"
     )
-    provider.fetch("schnell", pos_hint="adjective")
+    provider.fetch("schnell", category_hint="adjective")
 
     [request] = httpx_mock.get_requests()
     system_message = json.loads(request.content)["messages"][0]["content"]
