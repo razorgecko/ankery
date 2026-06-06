@@ -51,7 +51,7 @@ def test_prompt_templates_are_shipped():
     # The prompt terminus must exist on disk and be loadable.
     assert defaults.SYSTEM_TEMPLATE_PATH.is_file()
     assert defaults.USER_TEMPLATE_PATH.is_file()
-    assert "{{ name }}" in defaults.default_system_template()
+    assert "{{ source_language }}" in defaults.default_system_template()
     assert "{{ word }}" in defaults.default_user_template()
 
 

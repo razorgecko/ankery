@@ -36,13 +36,20 @@ _env = jinja2.Environment(
 )
 
 
-def _system_context(pack: Pack, category_hint: str | None) -> tuple[dict, bool]:
+def _system_context(
+    pack: Pack, category_hint: str | None, target_language: str
+) -> tuple[dict, bool]:
     """Build the template variable surface and the hinted flag.
 
     A hint that names a declared category narrows the classification set to that
     one value (the user has told us what the word is, so the other category
     sections are noise) and flips `hinted`. An unrecognised hint falls back to the
     full vocabulary, unhinted.
+
+    Both languages are exposed as display names so a template author spells the
+    pair the same way: `source_language` is the pack's own authoritative `name`,
+    `target_language` is threaded in already resolved. `name` stays meaning just
+    "pack name" (it happens to equal the source language for a language pack).
     """
     names = sorted(pack.categories)
     hinted = category_hint in pack.categories
@@ -55,6 +62,8 @@ def _system_context(pack: Pack, category_hint: str | None) -> tuple[dict, bool]:
         # CategorySpec objects expose .value/.citation/.guidance/.features.
         "categories": [pack.categories[value] for value in names],
         "common_features": pack.common_features,
+        "source_language": pack.name,
+        "target_language": target_language,
         "hinted": hinted,
         "hint": category_hint if hinted else None,
     }
@@ -70,15 +79,21 @@ def _escape_hatch(hint: str) -> str:
 
 
 def render_system_prompt(
-    pack: Pack, category_hint: str | None = None, *, template: str | None = None
+    pack: Pack,
+    category_hint: str | None = None,
+    *,
+    target_language: str,
+    template: str | None = None,
 ) -> str:
     """Render the system prompt for `pack`, optionally narrowed to `category_hint`.
 
+    `target_language` is a display name; the source language comes from the pack's
+    own `name` (exposed to the template as `source_language` for symmetry).
     `template` overrides the bundled chrome (the pack/operator layers supply it);
     the builder logic — set collapse and the forced escape hatch — is invariant
-    across whichever layer supplied the template.
+    across whichever layer supplied it.
     """
-    context, hinted = _system_context(pack, category_hint)
+    context, hinted = _system_context(pack, category_hint, target_language)
     text = template if template is not None else default_system_template()
     # Strip the trailing newline a line-based template leaves so output matches a
     # hand-joined prompt; the escape hatch (under a hint) is appended afterwards so
@@ -89,24 +104,8 @@ def render_system_prompt(
     return rendered
 
 
-def build_user_prompt(
-    word: str,
-    source_language: str,
-    target_language: str,
-    *,
-    template: str | None = None,
-) -> str:
-    """Render the user turn: the request itself. A category hint is handled wholly
-    in the system prompt, so the user turn never mentions the category. Both
-    languages are passed as display names: the source from the pack's authoritative
-    `name`, the target resolved from its code by the caller."""
+def build_user_prompt(word: str, *, template: str | None = None) -> str:
+    """Render the user turn: just the word. The language pair and any category hint
+    live in the system prompt, so the user turn carries only the word itself."""
     text = template if template is not None else default_user_template()
-    return (
-        _env.from_string(text)
-        .render(
-            word=word,
-            source_language=source_language,
-            target_language=target_language,
-        )
-        .rstrip("\n")
-    )
+    return _env.from_string(text).render(word=word).rstrip("\n")

@@ -15,6 +15,7 @@ from ankery.notedef import (
     load_notes_from_dir,
     merge_note_definitions,
 )
+from ankery.languages import language_name
 from ankery.pack import Pack, PackError, load_pack
 from ankery.prompts import render_system_prompt
 from ankery.providers.base import WordProvider
@@ -189,7 +190,11 @@ def _build_llm(config: "Config", pack: Pack) -> WordProvider:
     return LLMProvider(
         base_url=config.llm_base_url,
         model=config.llm_model,
-        system_prompt_for=partial(render_system_prompt, pack),
+        system_prompt_for=partial(
+            render_system_prompt,
+            pack,
+            target_language=language_name(config.target_language),
+        ),
         source_language=pack.code,
         target_language=config.target_language,
         category_key=pack.category_label,

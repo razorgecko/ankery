@@ -4,7 +4,6 @@ from collections.abc import Callable
 import httpx
 from pydantic import ValidationError
 
-from ankery.languages import language_name
 from ankery.models import WordInfo
 from ankery.prompts import build_user_prompt
 from ankery.providers.base import ProviderError
@@ -38,8 +37,8 @@ class LLMProvider:
         # prompt asks the model to fill a JSON key by this name; we map it onto
         # WordInfo's generic `category` before validation.
         self.category_key = category_key
-        # Canonical codes, stamped onto WordInfo. The user turn names both languages,
-        # each resolved to a display name from its code at render time.
+        # Canonical codes, stamped onto WordInfo. The language pair is named in the
+        # system prompt (rendered by `system_prompt_for`), not here.
         self.source_language = source_language
         self.target_language = target_language
         self.timeout = timeout
@@ -51,14 +50,7 @@ class LLMProvider:
             "model": self.model,
             "messages": [
                 {"role": "system", "content": self.system_prompt_for(category_hint)},
-                {
-                    "role": "user",
-                    "content": build_user_prompt(
-                        word,
-                        language_name(self.source_language),
-                        language_name(self.target_language),
-                    ),
-                },
+                {"role": "user", "content": build_user_prompt(word)},
             ],
             "temperature": 0,
         }

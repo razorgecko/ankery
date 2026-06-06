@@ -1,8 +1,8 @@
 """Language code <-> English-name resolution.
 
 A deliberately small, hand-rolled table — not a standards-complete one. The engine
-needs a name only to read better in the LLM prompt ("Source language: German"
-beats "de"); the canonical value flowing through the system is always the code.
+needs a name only to read better in the LLM prompt ("written in German" beats
+"written in de"); the canonical value flowing through the system is always the code.
 
 Two directions, two callers:
 
@@ -14,10 +14,10 @@ Two directions, two callers:
   unchanged (lowercased) — crucially so this table never gates which packs may
   load. A pack for a language we don't list here must still resolve by its code.
 
-The system prompt names the source language from the pack's own `name`
-(authoritative) rather than this table. The user turn resolves both languages
-through `language_name` for a uniform display; for any pack whose `name` matches
-its code's entry here the two agree.
+Only the **target** language is resolved through this table, in `config.py`, and
+inlined into the system prompt. The **source** language is named by the pack's own
+`name` (authoritative), so it never touches this table; for any pack whose `name`
+matches its code's entry here the two agree.
 """
 
 # Curated: the languages someone is plausibly translating to/from. Extend freely;
