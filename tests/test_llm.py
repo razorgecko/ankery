@@ -138,7 +138,10 @@ def test_request_payload_carries_prompt_and_model(httpx_mock):
     roles = {m["role"]: m["content"] for m in body["messages"]}
     assert roles["system"] == SYSTEM
     assert "Word: Buch" in roles["user"]
-    assert "Source language: de" in roles["user"]
+    # The user turn names both languages as display names resolved from their codes;
+    # WordInfo still carries the codes.
+    assert "Source language: German" in roles["user"]
+    assert "Target language: English" in roles["user"]
 
 
 def test_no_response_format_when_disabled(httpx_mock):

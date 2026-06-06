@@ -97,7 +97,9 @@ def build_user_prompt(
     template: str | None = None,
 ) -> str:
     """Render the user turn: the request itself. A category hint is handled wholly
-    in the system prompt, so the user turn never mentions the category."""
+    in the system prompt, so the user turn never mentions the category. Both
+    languages are passed as display names: the source from the pack's authoritative
+    `name`, the target resolved from its code by the caller."""
     text = template if template is not None else default_user_template()
     return (
         _env.from_string(text)

@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ankery.config import Config, ConfigError, build_deck_builder
+from ankery.languages import language_code
 from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
 
@@ -71,9 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--deck", help="destination deck")
     parser.add_argument(
-        "--source-lang", help="language pack to load (e.g. de), keyed by code"
+        "--source-lang",
+        help="language pack to load (e.g. de or german), keyed by code",
     )
-    parser.add_argument("--target-lang", help="language to translate into")
+    parser.add_argument(
+        "--target-lang", help="language to translate into (e.g. en or english)"
+    )
     parser.add_argument(
         "--packs-dir", help="user pack directory; a pack here overrides the bundled one"
     )
@@ -101,9 +105,9 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     if args.deck is not None:
         overrides["deck"] = args.deck
     if args.source_lang is not None:
-        overrides["source_language"] = args.source_lang
+        overrides["source_language"] = language_code(args.source_lang)
     if args.target_lang is not None:
-        overrides["target_language"] = args.target_lang
+        overrides["target_language"] = language_code(args.target_lang)
     if args.note_type is not None:
         overrides["note_type"] = args.note_type
     if args.packs_dir is not None:

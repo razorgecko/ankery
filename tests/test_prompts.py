@@ -95,14 +95,16 @@ def test_unknown_category_hint_falls_back_to_full_vocabulary():
 
 
 def test_user_prompt_carries_word_and_language_pair():
-    prompt = build_user_prompt("Buch", "de", "en")
+    # Both languages are passed as display names; the user turn names the pair and
+    # the word.
+    prompt = build_user_prompt("Buch", "German", "English")
 
     assert "Word: Buch" in prompt
-    assert "Source language: de" in prompt
-    assert "Target language: en" in prompt
+    assert "Source language: German" in prompt
+    assert "Target language: English" in prompt
 
 
 def test_user_prompt_omits_category_line():
     # A category_hint is handled entirely in the system prompt; the user turn
     # never mentions the category.
-    assert "Part of speech" not in build_user_prompt("Buch", "de", "en")
+    assert "Part of speech" not in build_user_prompt("Buch", "German", "English")

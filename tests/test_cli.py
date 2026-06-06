@@ -249,6 +249,19 @@ def test_flags_override_config(patched):
     assert config.allow_duplicate is True
 
 
+def test_lang_flags_accept_english_names(patched):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+
+    cli.main(["--source-lang", "German", "--target-lang", "english", "Buch"])
+
+    config = captured["config"]
+    # Names normalize to codes before reaching config; an unknown token would pass
+    # through unchanged so it can't gate which packs load.
+    assert config.source_language == "de"
+    assert config.target_language == "en"
+
+
 def test_infra_flags_override_config(patched):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=1, word="Buch")})
