@@ -3,11 +3,12 @@ import stat
 import tomllib
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ankery.defaults import catch_all_model_name
 from ankery.manager import DeckBuilder
 from ankery.notedef import (
     NoteDefinitionError,
@@ -54,9 +55,13 @@ class Config:
     anki_timeout: float = 10.0
     allow_duplicate: bool = False
 
-    # `note_type` is the catch-all for words that match no pack note definition.
+    # `note_type` is the catch-all model for words that match no pack note
+    # definition. It defaults to the engine-owned model ankery provisions
+    # ("Ankery Basic"); the default is derived from that asset's `name` so the two
+    # can't drift. Repoint it at a foreign model (e.g. Anki's stock "Basic") with
+    # --note-type.
     deck: str = "Default"
-    note_type: str = "Basic"
+    note_type: str = field(default_factory=catch_all_model_name)
     tags: tuple[str, ...] = ()
 
     # Extra note layouts merged over the pack's by category; language-agnostic layouts live here.

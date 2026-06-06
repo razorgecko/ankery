@@ -41,13 +41,22 @@ def _provider_named(builder, name):
 # ---------------------------------------------------------------------------
 
 
+def test_note_type_default_is_the_owned_catch_all_model():
+    # The default must equal the catch-all asset's own name, derived from one
+    # source so the model ankery provisions and the model routing writes into
+    # can't drift apart.
+    from ankery.defaults import default_catch_all
+
+    assert Config().note_type == default_catch_all().name
+
+
 def test_from_env_uses_defaults_when_unset():
     config = Config.from_env({})
 
     assert config.llm_base_url == "http://localhost:8080/v1"
     assert config.anki_url == "http://localhost:8765"
     assert config.deck == "Default"
-    assert config.note_type == "Basic"
+    assert config.note_type == "Ankery Basic"
     assert config.tags == ()
     assert config.allow_duplicate is False
     assert config.source_language == "de"

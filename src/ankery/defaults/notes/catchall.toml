@@ -9,6 +9,13 @@
 # A section renders only when its source list is non-empty, and the <hr>
 # separator is emitted only between two present sections (the `ns.sep` flag), so
 # there is never a leading, trailing, or doubled rule.
+#
+# This is an ankery-owned model: it ships a `name`, a Front/Back field set, and
+# one forward card (no reverse — reversing a structured info dump makes a poor
+# flashcard). It carries no css of its own, so the sink styles it with the
+# fallback (the pack's style.css, else the engine default), the same styling
+# bespoke cards inherit. `Config.note_type` defaults to this `name`; the user can
+# repoint the catch-all at a foreign model with --note-type.
 name = "Ankery Basic"
 
 [map]
@@ -34,3 +41,10 @@ Back = """
 {%- for ex in examples %}{% if not loop.first %}<br>{% endif %}<i>{{ ex }}</i>{% if loop.index0 < example_translations | length and example_translations[loop.index0] %} — {{ example_translations[loop.index0] }}{% endif %}{% endfor -%}
 {%- endif -%}
 """
+
+# Card templates are Anki's own mustache, not Jinja (notedef.py renders only the
+# [map]). One forward card: the word prompts, the info dump answers.
+[[cards]]
+name = "Card 1"
+qfmt = "{{Front}}"
+afmt = "{{FrontSide}}\n<hr id=answer>\n{{Back}}"

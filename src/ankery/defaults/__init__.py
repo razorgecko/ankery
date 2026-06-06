@@ -13,6 +13,7 @@ deliberately skip category parsing; loading it as a real pack would fail the
 `[category]` contract, which is exactly why it lives here and not under `packs/`.
 """
 
+import functools
 from pathlib import Path
 
 from ankery.notedef import NoteDefinition, load_notes_from_dir
@@ -57,3 +58,15 @@ def default_catch_all() -> NoteDefinition:
             f"defaults/notes must hold exactly one catch-all note; found {len(notes)}."
         )
     return notes[0]
+
+
+@functools.cache
+def catch_all_model_name() -> str:
+    """Name of the engine-owned catch-all model (e.g. "Ankery Basic").
+
+    The single source of truth for that name: the catch-all note asset declares
+    it, and `Config.note_type`'s default derives from here — so the model ankery
+    provisions and the model routing writes into can't drift apart. Cached because
+    it feeds a dataclass field default, hit on every `Config()` construction.
+    """
+    return default_catch_all().name

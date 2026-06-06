@@ -48,9 +48,18 @@ class DeckBuilder:
         self.category_names = list(category_names or [])
 
     def verify_note_types(self) -> None:
-        """Provision/validate note types; call once before adding words."""
+        """Provision/validate note types; call once before adding words.
+
+        The owned catch-all is provisioned only when routing actually writes into
+        it — i.e. `note_type` still names it. If the user repointed the catch-all
+        at a foreign model with --note-type, we write into that model and must not
+        create ours (and assume the foreign one already exists).
+        """
+        definitions = list(self.note_definitions)
+        if self.note_type == self.catch_all_note.name:
+            definitions.append(self.catch_all_note)
         self.sink.verify_note_types(
-            self.note_definitions,
+            definitions,
             default_css=self.style_css,
             catch_all=self.note_type,
         )

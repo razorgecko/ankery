@@ -25,6 +25,28 @@ def test_exactly_one_catch_all_note_is_shipped():
     assert defaults.default_catch_all().name == "Ankery Basic"
 
 
+def test_catch_all_is_an_owned_model_with_one_forward_card():
+    # The catch-all is an ankery-provisioned model: Front/Back fields and a single
+    # forward card (word -> info dump). No reverse card — reversing a structured
+    # dump makes a poor flashcard.
+    note = defaults.default_catch_all()
+    assert note.fields == ["Front", "Back"]
+    assert len(note.cards) == 1
+    card = note.cards[0]
+    assert "{{Front}}" in card.qfmt
+    assert "{{Back}}" in card.afmt
+
+
+def test_catch_all_carries_no_css_so_it_inherits_the_fallback():
+    # No css of its own: the sink styles it with the pack's style.css (else the
+    # engine default), the same styling bespoke cards inherit.
+    assert defaults.default_catch_all().css == ""
+
+
+def test_catch_all_model_name_matches_the_asset():
+    assert defaults.catch_all_model_name() == defaults.default_catch_all().name
+
+
 def test_prompt_templates_are_shipped():
     # The prompt terminus must exist on disk and be loadable.
     assert defaults.SYSTEM_TEMPLATE_PATH.is_file()

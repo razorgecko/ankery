@@ -120,7 +120,7 @@ The LLM API key is the one setting that is **not** allowed here (see
 | `source_language` | `--source-lang` | `"de"` | Language of the words being looked up. |
 | `target_language` | `--target-lang` | `"en"` | Language to translate into. |
 | `packs_dir` | `--packs-dir` | — | Directory of custom packs; one here overrides a built-in of the same code. |
-| `note_type` | `--note-type` | `"Basic"` | Catch-all card layout for words with no dedicated layout. |
+| `note_type` | `--note-type` | `"Ankery Basic"` | Catch-all model for words with no dedicated layout. Defaults to ankery's own provisioned model; point it at a foreign model (e.g. Anki's stock `Basic`) to write there instead. |
 | `tags` | — | `[]` | Tags added to every created note. |
 | `allow_duplicate` | `--allow-duplicate` | `false` | Add a note even if Anki considers it a duplicate. |
 | `llm_base_url` | `--llm-url` | `"http://localhost:8080/v1"` | OpenAI-compatible LLM endpoint. |
@@ -182,8 +182,10 @@ afmt = "{{FrontSide}}<hr id=answer>{{Translation}}<br><br>{{Example}}"
 
 A word whose part of speech matches no layout falls back to the pack's default
 layout if it defines one (`applies_to = "*"`), and otherwise to the catch-all
-`note_type` (`Basic` by default). The card `qfmt`/`afmt` are Anki's own template
-syntax, not Jinja — only the `[map]` values are rendered here.
+`note_type` — by default `Ankery Basic`, a model ankery ships and provisions
+itself (a neutral word → info-dump card). Point `--note-type` at a foreign model
+(e.g. Anki's stock `Basic`) to write there instead. The card `qfmt`/`afmt` are
+Anki's own template syntax, not Jinja — only the `[map]` values are rendered here.
 
 ### Adding a language
 

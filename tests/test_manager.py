@@ -29,12 +29,20 @@ class FakeSink:
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
+        self.verified: dict | None = None
 
     def add_note(self, *, deck, note_type, fields, tags=None) -> int:
         self.calls.append(
             {"deck": deck, "note_type": note_type, "fields": fields, "tags": tags}
         )
         return 42
+
+    def verify_note_types(self, definitions, *, default_css="", catch_all=None) -> None:
+        self.verified = {
+            "definitions": list(definitions),
+            "default_css": default_css,
+            "catch_all": catch_all,
+        }
 
 
 def _info(word: str = "Buch") -> WordInfo:
@@ -287,6 +295,41 @@ def test_bespoke_category_note_wins_over_the_pack_default_note():
 
     assert sink.calls[0]["note_type"] == "Ankery DE: Verb"
     assert sink.calls[0]["fields"] == {"Infinitive": "sehen"}
+
+
+def test_verify_provisions_the_owned_catch_all_model():
+    # When note_type still names the owned catch-all, routing writes into it, so
+    # verify must provision it alongside the pack/bespoke notes.
+    sink = FakeSink()
+    verb = NoteDefinition(
+        name="Ankery DE: Verb", field_map={"Infinitive": "{{ word }}"}, applies_to="verb"
+    )
+    builder = _builder(
+        [FakeProvider("p", result=_info())],
+        sink,
+        note_type="Ankery Basic",
+        note_definitions=[verb],
+    )
+
+    builder.verify_note_types()
+
+    names = [d.name for d in sink.verified["definitions"]]
+    assert names == ["Ankery DE: Verb", "Ankery Basic"]
+    assert sink.verified["catch_all"] == "Ankery Basic"
+
+
+def test_verify_skips_owned_catch_all_when_note_type_points_at_a_foreign_model():
+    # --note-type repointed the catch-all at a foreign model: we write into that
+    # model (assumed to exist) and must not provision ours.
+    sink = FakeSink()
+    builder = _builder(
+        [FakeProvider("p", result=_info())], sink, note_type="Basic"
+    )
+
+    builder.verify_note_types()
+
+    assert sink.verified["definitions"] == []
+    assert sink.verified["catch_all"] == "Basic"
 
 
 def test_unmatched_word_with_no_notes_routes_through_the_catch_all_terminus():
