@@ -34,7 +34,18 @@ class AnkiConnectSink:
             "deckName": deck,
             "modelName": note_type,
             "fields": fields,
-            "options": {"allowDuplicate": self.allow_duplicate},
+            "options": {
+                "allowDuplicate": self.allow_duplicate,
+                # Scope dedup to the target deck so the same word can live in
+                # another deck; without this AnkiConnect checks the whole
+                # collection for the note type and blocks cross-deck repeats.
+                "duplicateScope": "deck",
+                "duplicateScopeOptions": {
+                    "deckName": deck,
+                    "checkChildren": False,
+                    "checkAllModels": False,
+                },
+            },
             "tags": tags or [],
         }
         result = self._invoke("addNote", note=note)

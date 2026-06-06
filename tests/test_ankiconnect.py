@@ -68,7 +68,15 @@ def test_add_note_builds_jsonrpc_payload(httpx_mock):
     assert note["modelName"] == "Basic"
     assert note["fields"] == _fields()
     assert note["tags"] == ["auto", "de"]
-    assert note["options"] == {"allowDuplicate": False}
+    assert note["options"] == {
+        "allowDuplicate": False,
+        "duplicateScope": "deck",
+        "duplicateScopeOptions": {
+            "deckName": "German",
+            "checkChildren": False,
+            "checkAllModels": False,
+        },
+    }
 
 
 def test_tags_default_to_empty_list(httpx_mock):
@@ -88,7 +96,8 @@ def test_allow_duplicate_flag_propagates(httpx_mock):
     )
 
     note = json.loads(httpx_mock.get_requests()[0].content)["params"]["note"]
-    assert note["options"] == {"allowDuplicate": True}
+    assert note["options"]["allowDuplicate"] is True
+    assert note["options"]["duplicateScope"] == "deck"
 
 
 def test_inband_error_raises_sink_error(httpx_mock):
