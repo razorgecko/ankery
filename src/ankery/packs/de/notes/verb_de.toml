@@ -1,5 +1,4 @@
 name = "Ankery DE: Verb"
-id = 1890202981
 applies_to = "verb"
 
 # The six present forms are separate fields; the "ich .. / du .." layout lives in

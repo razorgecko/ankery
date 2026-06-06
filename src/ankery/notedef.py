@@ -51,7 +51,6 @@ class NoteDefinition:
     name: str
     field_map: dict[str, str]
     applies_to: str | None = None
-    model_id: int | None = None
     cards: tuple[Card, ...] = ()
     css: str = ""
 
@@ -136,7 +135,6 @@ def _parse(raw: dict) -> NoteDefinition:
         name=raw["name"],
         field_map=raw["map"],
         applies_to=raw.get("applies_to"),
-        model_id=raw.get("id"),
         cards=cards,
         css=raw.get("css", ""),
     )

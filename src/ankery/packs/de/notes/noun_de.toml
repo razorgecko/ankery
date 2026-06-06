@@ -1,5 +1,4 @@
 name = "Ankery DE: Noun"
-id = 1986815750
 applies_to = "noun"
 
 # Field order is the order of these keys. Word leads because Anki keys duplicate

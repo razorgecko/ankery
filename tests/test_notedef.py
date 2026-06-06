@@ -52,11 +52,10 @@ def _verb() -> WordInfo:
     )
 
 
-def test_bundled_definitions_load_with_names_id_and_field_order():
+def test_bundled_definitions_load_with_names_and_field_order():
     defs = _defs()
 
     noun = defs["Ankery DE: Noun"]
-    assert noun.model_id == 1986815750
     assert noun.applies_to == "noun"
     # Word leads: Anki keys duplicate detection on the first field.
     assert noun.fields[0] == "Word"

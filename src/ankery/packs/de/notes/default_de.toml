@@ -1,5 +1,4 @@
 name = "Ankery DE: Word"
-id = 1986815830
 applies_to = "*"   # the German pack's catch-all: any POS without its own note
 
 # This is the pack default note: routing falls back to it for every POS that has
