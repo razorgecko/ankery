@@ -7,7 +7,6 @@ from ankery.models import WordInfo
 from ankery.notedef import (
     NoteDefinition,
     NoteDefinitionError,
-    default_field_map,
     load_notes_from_dir,
     merge_note_definitions,
 )
@@ -272,23 +271,6 @@ def test_merge_empty_override_returns_the_base_unchanged():
     assert merge_note_definitions(base, []) == base
 
 
-def test_default_field_map_is_the_neutral_catch_all():
-    info = WordInfo(
-        word="Buch",
-        source="test",
-        translations=["book"],
-        definitions=["gebundene Seiten"],
-        features={"gender": "das", "nominative_pl": "Bücher"},
-    )
-    fields = default_field_map(info)
-
-    # No article prefix, no German-specific layout: front is the bare word.
-    assert fields["Front"] == "Buch"
-    assert "book" in fields["Back"]
-    assert "gender: das" in fields["Back"]
-    assert "nominative_pl: Bücher" in fields["Back"]
-
-
 # ---------------------------------------------------------------------------
 # Escaping of untrusted provider data
 # ---------------------------------------------------------------------------
@@ -314,21 +296,3 @@ def test_field_map_safe_filter_opts_out_of_escaping():
     info = WordInfo(word="x", source="test", definitions=["<i>emphasis</i>"])
 
     assert note.render(info)["Back"] == "<i>emphasis</i>"
-
-
-def test_default_field_map_escapes_provider_html_but_keeps_structure():
-    info = WordInfo(
-        word="x",
-        source="test",
-        translations=["<script>alert(1)</script>"],
-        examples=["a <b>bold</b> sentence"],
-        example_translations=["a gloss"],
-    )
-    back = default_field_map(info)["Back"]
-
-    # Provider values are escaped...
-    assert "<script>" not in back
-    assert "&lt;script&gt;" in back
-    assert "<b>bold</b>" not in back
-    # ...but our own structural tags survive.
-    assert "<i>" in back and "<hr>" in back

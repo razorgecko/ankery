@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
+from ankery.defaults import default_style
 from ankery.models import WordInfo
 from ankery.notedef import NoteDefinition, load_notes_from_dir
 
 _BUNDLED_PACKS = Path(__file__).parent / "packs"
-_DEFAULT_STYLE = Path(__file__).parent / "default_style.css"
 
 # Typed loosely to avoid an import cycle with config.py.
 Normalize = Callable[[WordInfo], WordInfo]
@@ -65,9 +65,7 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
 
     style_path = notes_dir / "style.css"
     style_css = (
-        style_path.read_text("utf-8")
-        if style_path.exists()
-        else _DEFAULT_STYLE.read_text("utf-8")
+        style_path.read_text("utf-8") if style_path.exists() else default_style()
     )
 
     normalize = _load_normalize(directory / "filter.py", code)

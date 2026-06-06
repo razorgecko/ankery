@@ -2,7 +2,7 @@ import pytest
 
 from ankery.manager import DeckBuilder
 from ankery.models import WordInfo
-from ankery.notedef import NoteDefinition, default_field_map
+from ankery.notedef import NoteDefinition
 from ankery.providers.base import ProviderError
 
 
@@ -198,11 +198,11 @@ def test_add_word_returns_none_and_skips_sink_on_total_miss():
     assert sink.calls == []
 
 
-def test_custom_field_map_is_used():
+def test_custom_catch_all_note_is_used():
+    # The catch-all terminus is a NoteDefinition; a caller can supply its own.
     sink = FakeSink()
-    builder = _builder(
-        [FakeProvider("p", result=_info())], sink, map_fields=lambda info: {"Word": info.word}
-    )
+    custom = NoteDefinition(name="Custom", field_map={"Word": "{{ word }}"})
+    builder = _builder([FakeProvider("p", result=_info())], sink, catch_all_note=custom)
 
     builder.add_word("Buch")
 
@@ -289,19 +289,15 @@ def test_bespoke_category_note_wins_over_the_pack_default_note():
     assert sink.calls[0]["fields"] == {"Infinitive": "sehen"}
 
 
-def test_default_field_map_is_language_neutral():
-    # The catch-all names no language: the front is the bare word (no article),
-    # and every declared feature shows in the back as key: value.
-    info = WordInfo(
-        word="Buch",
-        source="test",
-        translations=["book"],
-        definitions=["gebundene Seiten"],
-        features={"gender": "das", "nominative_pl": "Bücher"},
+def test_unmatched_word_with_no_notes_routes_through_the_catch_all_terminus():
+    # With no note definitions at all, routing falls straight through to the
+    # engine-shipped catch-all note, written into the configured note_type.
+    sink = FakeSink()
+    builder = _builder(
+        [FakeProvider("p", result=_info())], sink, note_type="Basic"
     )
-    fields = default_field_map(info)
 
-    assert fields["Front"] == "Buch"
-    assert "book" in fields["Back"]
-    assert "gender: das" in fields["Back"]
-    assert "nominative_pl: Bücher" in fields["Back"]
+    builder.add_word("Buch")
+
+    assert sink.calls[0]["note_type"] == "Basic"
+    assert sink.calls[0]["fields"]["Front"] == "Buch"

@@ -1,86 +1,110 @@
+"""The prompt builder: engine-owned logic wrapped around an overridable template.
+
+The split is deliberate. The **template** (`defaults/prompts/system.j2`, or a pack/
+operator override) owns the *chrome*: the role line, the phrasing of the general
+rules, and the layout of the per-category guidance and feature listings. It is
+rendered with a rich variable surface so a competent prompter has real power
+(few-shot scaffolding, emphasis, reordering) without touching engine code.
+
+The **builder** (this module) owns the *logic* that must hold for any template:
+
+1. it computes the classification set and collapses it to the single value under a
+   hint, so the vocabulary always lines up with what was requested; and
+2. it **force-appends the empty-object escape-hatch clause whenever a hint is
+   present**, *after* the template renders. This is the anti-hallucination
+   contract: the provider-side detector (`llm.py`) reads a word-less object under a
+   hint as a clean miss, so a mistaken hint misses instead of fabricating a card.
+   If that clause lived in the overridable template a careless pack or operator
+   could drop it and silently break the contract; appending it here makes the
+   guarantee survive *any* template, trusted or not.
+"""
+
+import jinja2
+
+from ankery.defaults import default_system_template, default_user_template
 from ankery.pack import Pack
 
+# Plain text, not HTML: no autoescape. ChainableUndefined mirrors notedef — a
+# template that reaches for an absent variable renders empty rather than crashing
+# a run. trim/lstrip_blocks keep the line-based template readable; the builder
+# strips the single trailing newline a line-based template inevitably leaves.
+_env = jinja2.Environment(
+    trim_blocks=True,
+    lstrip_blocks=True,
+    autoescape=False,
+    undefined=jinja2.ChainableUndefined,
+)
 
-def render_system_prompt(pack: Pack, category_hint: str | None = None) -> str:
+
+def _system_context(pack: Pack, category_hint: str | None) -> tuple[dict, bool]:
+    """Build the template variable surface and the hinted flag.
+
+    A hint that names a declared category narrows the classification set to that
+    one value (the user has told us what the word is, so the other category
+    sections are noise) and flips `hinted`. An unrecognised hint falls back to the
+    full vocabulary, unhinted.
+    """
     names = sorted(pack.categories)
-    # The pack's human label for its routing dimension (e.g. "part of speech").
-    # It is the JSON key the model fills; the provider maps it onto WordInfo's
-    # generic `category` field. Naming the key for the domain, not for the
-    # engine, keeps the classification task concrete for the model.
-    label = pack.category_label
-    # A hint that names a category the pack declares narrows the prompt to that
-    # one class: the user has already told us what the word is, so the other
-    # category sections and their feature keys are just noise (and tokens). The
-    # closed classification set collapses to the single value to match. An
-    # unrecognised hint falls back to the full vocabulary.
     hinted = category_hint in pack.categories
     if hinted:
         names = [category_hint]
+    context = {
+        "name": pack.name,
+        "label": pack.category_label,
+        "names": names,
+        # CategorySpec objects expose .value/.citation/.guidance/.features.
+        "categories": [pack.categories[value] for value in names],
+        "common_features": pack.common_features,
+        "hinted": hinted,
+        "hint": category_hint if hinted else None,
+    }
+    return context, hinted
 
+
+def _escape_hatch(hint: str) -> str:
+    """The clause that lets a mistaken hint miss instead of fabricating a reading."""
+    return (
+        f"If the word is NOT actually a {hint}, do not force a reading or relabel "
+        "it — return an empty JSON object {} and nothing else."
+    )
+
+
+def render_system_prompt(
+    pack: Pack, category_hint: str | None = None, *, template: str | None = None
+) -> str:
+    """Render the system prompt for `pack`, optionally narrowed to `category_hint`.
+
+    `template` overrides the bundled chrome (the pack/operator layers supply it);
+    the builder logic — set collapse and the forced escape hatch — is invariant
+    across whichever layer supplied the template.
+    """
+    context, hinted = _system_context(pack, category_hint)
+    text = template if template is not None else default_system_template()
+    # Strip the trailing newline a line-based template leaves so output matches a
+    # hand-joined prompt; the escape hatch (under a hint) is appended afterwards so
+    # no template can omit it.
+    rendered = _env.from_string(text).render(**context).rstrip("\n")
     if hinted:
-        # The user has asserted the class. Stating it as a flat fact would invite
-        # the model to fabricate a reading for a word that is really some other
-        # category, so the assertion is conditional and carries an escape hatch:
-        # an empty object, which the provider reads as a clean miss. This is how
-        # a mistaken hint misses instead of hallucinating.
-        category_rule = (
-            f"- `{label}`: the user states this word is a {category_hint}. "
-            f"If that is correct, set it to {category_hint}. If the word is NOT "
-            f"actually a {category_hint}, do not force a reading or relabel it — "
-            "return an empty JSON object {} and nothing else."
+        rendered = f"{rendered}\n\n{_escape_hatch(category_hint)}"
+    return rendered
+
+
+def build_user_prompt(
+    word: str,
+    source_language: str,
+    target_language: str,
+    *,
+    template: str | None = None,
+) -> str:
+    """Render the user turn: the request itself. A category hint is handled wholly
+    in the system prompt, so the user turn never mentions the category."""
+    text = template if template is not None else default_user_template()
+    return (
+        _env.from_string(text)
+        .render(
+            word=word,
+            source_language=source_language,
+            target_language=target_language,
         )
-    elif len(names) == 1:
-        # A pack with a single category: nothing to choose between, state it outright.
-        category_rule = f"- `{label}`: {names[0]}."
-    else:
-        category_rule = f"- `{label}`: exactly one of: {', '.join(names)}."
-    lines: list[str] = [
-        f"You are a lexicographer building Anki vocabulary cards for {pack.name}. "
-        "Given a single word in the source language, return ONLY a JSON object "
-        "(no prose, no markdown fences) describing it.",
-        "",
-        "General rules:",
-        f"- `word`: the citation/dictionary form for its {label} (see below). "
-        "Give the bare lemma: no article, no surrounding parentheses.",
-        category_rule,
-        "- `definitions` and `examples`: written in the SOURCE language. "
-        "`example_translations`: the TARGET-language gloss of each example, "
-        "aligned by position.",
-        "- `translations`: a JSON array of strings in the TARGET language, e.g. "
-        '["house", "home"]. Always an array, never an object keyed by language.',
-        f"- `features`: a JSON object of grammatical properties, using EXACTLY the "
-        f"keys listed below for the word's {label} plus the common keys. "
-        "Omit a key only if it genuinely does not apply. Give each value bare — "
-        "forms with no leading article.",
-        "- Leave anything you are unsure about empty rather than guessing.",
-    ]
-
-    if pack.common_features:
-        lines += ["", f"Common feature keys (any {label}):"]
-        lines += [f"  {key}: {meaning}" for key, meaning in pack.common_features.items()]
-
-    for value in names:
-        spec = pack.categories[value]
-        lines += ["", f"{label.capitalize()}: {value}"]
-        if spec.citation:
-            lines.append(f"  citation form: {spec.citation}")
-        for note in spec.guidance:
-            lines.append(f"  - {note}")
-        if spec.features:
-            lines.append("  feature keys:")
-            lines += [f"    {key}: {meaning}" for key, meaning in spec.features.items()]
-
-    return "\n".join(lines)
-
-
-def build_user_prompt(word: str, source_language: str, target_language: str) -> str:
-    # A category_hint is handled wholly in the system prompt (render_system_prompt):
-    # it trims the vocabulary to the asserted category and adds the miss escape hatch.
-    # The user turn carries only the request itself.
-    return "\n".join(
-        [
-            f"Source language: {source_language}",
-            f"Target language: {target_language}",
-            f"Word: {word}",
-        ]
+        .rstrip("\n")
     )

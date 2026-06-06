@@ -1,8 +1,9 @@
 from collections.abc import Callable, Iterable
 from typing import NamedTuple
 
+from ankery.defaults import default_catch_all
 from ankery.models import WordInfo
-from ankery.notedef import FieldMap, NoteDefinition, default_field_map
+from ankery.notedef import FieldMap, NoteDefinition
 from ankery.providers.base import ProviderError, WordProvider
 from ankery.sinks.base import AnkiSink
 
@@ -26,7 +27,7 @@ class DeckBuilder:
         note_type: str,
         style_css: str,
         normalize: Callable[[WordInfo], WordInfo] | None = None,
-        map_fields: FieldMap | None = None,
+        catch_all_note: NoteDefinition | None = None,
         note_definitions: Iterable[NoteDefinition] | None = None,
         tags: list[str] | None = None,
         category_names: Iterable[str] | None = None,
@@ -37,7 +38,9 @@ class DeckBuilder:
         self.note_type = note_type
         self.style_css = style_css
         self.normalize = normalize or (lambda info: info)
-        self.map_fields = map_fields or default_field_map
+        # The neutral catch-all: the guaranteed routing terminus, shipped in the
+        # engine's defaults home. Falls back to it when no caller supplies one.
+        self.catch_all_note = catch_all_note or default_catch_all()
         self.note_definitions = list(note_definitions or [])
         self.tags = tags or []
         # The pack's declared category vocabulary; the CLI resolves a `word:cat`
@@ -73,7 +76,12 @@ class DeckBuilder:
 
     def _route(self, info: WordInfo) -> tuple[str, FieldMap]:
         """First note whose `applies` matches wins; else the pack default note (a
-        note with `applies_to = "*"`); else the neutral catch-all."""
+        note with `applies_to = "*"`); else the neutral catch-all.
+
+        The catch-all renders via its own note definition but is written into the
+        configured catch-all model (`note_type`), which the user can repoint with
+        `--note-type`; its definition supplies only the field map.
+        """
         default: NoteDefinition | None = None
         for note_def in self.note_definitions:
             if note_def.applies(info):
@@ -82,7 +90,7 @@ class DeckBuilder:
                 default = note_def
         if default is not None:
             return default.name, default.render
-        return self.note_type, self.map_fields
+        return self.note_type, self.catch_all_note.render
 
     def lookup(self, word: str, *, category_hint: str | None = None) -> WordInfo | None:
         """Run the provider chain and normalize the result; re-raises last ProviderError on total miss.

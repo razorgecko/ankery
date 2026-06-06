@@ -6,7 +6,6 @@ from pathlib import Path
 
 from ankery.config import Config, ConfigError, _config_dir, build_deck_builder
 from ankery.manager import DeckBuilder
-from ankery.notedef import default_field_map
 from ankery.providers.llm import LLMProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
 
@@ -300,7 +299,8 @@ def test_build_deck_builder_wires_provider_and_sink():
     assert builder.deck == "German"
     assert builder.note_type == "Basic"
     assert builder.tags == ["auto"]
-    assert builder.map_fields is default_field_map
+    # The catch-all terminus is the engine-shipped neutral note.
+    assert builder.catch_all_note.name == "Ankery Basic"
 
     provider = _provider_named(builder, "llm")
     assert isinstance(provider, LLMProvider)

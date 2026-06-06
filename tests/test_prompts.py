@@ -1,7 +1,42 @@
 """The system-prompt renderer: pack in, prompt out, no hardcoded language."""
 
+from pathlib import Path
+
 from ankery.pack import load_pack
 from ankery.prompts import build_user_prompt, render_system_prompt
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _golden(name: str) -> str:
+    # Fixtures are stored without a trailing newline-only line; read verbatim.
+    return FIXTURES.joinpath(name).read_text("utf-8")
+
+
+def test_unhinted_prompt_matches_golden_byte_for_byte():
+    # Pins the extracted template + builder to the exact prompt the imperative
+    # renderer produced before extraction, so the refactor changed nothing.
+    assert render_system_prompt(load_pack("de")) == _golden("system_prompt_de_unhinted.txt")
+
+
+def test_hinted_prompt_matches_golden_byte_for_byte():
+    assert render_system_prompt(load_pack("de"), "noun") == _golden("system_prompt_de_noun.txt")
+
+
+def test_escape_hatch_is_force_appended_by_the_builder_not_the_template():
+    # The crux of the anti-hallucination contract: even a template that knows
+    # nothing of the escape hatch still gets it under a hint, because the builder
+    # appends it after rendering. A pack/operator template therefore cannot drop it.
+    bare = "Cards for {{ name }}."
+    out = render_system_prompt(load_pack("de"), "noun", template=bare)
+
+    assert out.startswith("Cards for German.")
+    assert "return an empty JSON object {} and nothing else." in out
+
+
+def test_no_escape_hatch_without_a_hint():
+    out = render_system_prompt(load_pack("de"), template="Cards for {{ name }}.")
+    assert "empty JSON object" not in out
 
 
 def test_renders_category_vocabulary_as_the_classification_set():

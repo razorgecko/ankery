@@ -2,7 +2,6 @@
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
-from html import escape
 from pathlib import Path
 
 import jinja2
@@ -13,7 +12,7 @@ FieldMap = Callable[[WordInfo], dict[str, str]]
 
 # A note whose `applies_to` is this serves as the pack's catch-all fallback: it
 # matches no specific category, but routing falls back to it (before the
-# language-neutral catch-all) for any word no bespoke note claims.
+# neutral catch-all) for any word no bespoke note claims.
 DEFAULT_APPLIES_TO = "*"
 
 
@@ -141,32 +140,3 @@ def _parse(raw: dict) -> NoteDefinition:
         cards=cards,
         css=raw.get("css", ""),
     )
-
-
-def default_field_map(info: WordInfo) -> dict[str, str]:
-    """Catch-all field map for words matching no note definition: Front=word, Back=everything."""
-    return {"Front": info.word, "Back": _back(info)}
-
-
-def _back(info: WordInfo) -> str:
-    # The <br>/<hr>/<i> tags are our structure; provider-supplied values are
-    # escaped so they can't inject markup into the card.
-    sections: list[str] = []
-    if info.translations:
-        sections.append(escape(", ".join(info.translations)))
-    if info.definitions:
-        sections.append("<br>".join(escape(d) for d in info.definitions))
-    if info.features:
-        sections.append(
-            "<br>".join(
-                f"{escape(key)}: {escape(value)}" for key, value in info.features.items()
-            )
-        )
-    if info.examples:
-        rendered = []
-        for i, ex in enumerate(info.examples):
-            gloss = info.example_translations[i] if i < len(info.example_translations) else ""
-            ex_html = f"<i>{escape(ex)}</i>"
-            rendered.append(f"{ex_html} — {escape(gloss)}" if gloss else ex_html)
-        sections.append("<br>".join(rendered))
-    return "<hr>".join(sections)
