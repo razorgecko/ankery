@@ -21,8 +21,8 @@ class LLMProvider:
         model: str,
         system_prompt_for: Callable[[str | None], str],
         *,
-        source_language: str,
-        target_language: str,
+        pack: str,
+        variables: dict[str, str],
         category_key: str,
         timeout: float = 30.0,
         request_json_format: bool = True,
@@ -37,10 +37,10 @@ class LLMProvider:
         # prompt asks the model to fill a JSON key by this name; we map it onto
         # WordInfo's generic `category` before validation.
         self.category_key = category_key
-        # Canonical codes, stamped onto WordInfo. The language pair is named in the
-        # system prompt (rendered by `system_prompt_for`), not here.
-        self.source_language = source_language
-        self.target_language = target_language
+        # Stamped onto WordInfo as provenance (the producing pack and the resolved
+        # variables); we overwrite whatever the model echoed, never trusting it.
+        self.pack = pack
+        self.variables = variables
         self.timeout = timeout
         self.request_json_format = request_json_format
         self.api_key = api_key
@@ -93,8 +93,8 @@ class LLMProvider:
 
         # Always overwrite — never trust the model to set provenance fields.
         data["source"] = self.name
-        data["source_language"] = self.source_language
-        data["target_language"] = self.target_language
+        data["pack"] = self.pack
+        data["variables"] = self.variables
 
         try:
             return WordInfo.model_validate(data)

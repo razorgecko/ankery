@@ -40,6 +40,7 @@ from urllib.parse import quote
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+from ankery.languages import language_code
 from ankery.models import WordInfo
 from ankery.providers.retry import request_with_retry
 from ankery.providers.base import ProviderError
@@ -214,9 +215,13 @@ class NetzverbProvider:
 
 def _build(config, pack) -> NetzverbProvider:
     options = pack.provider_options.get("netzverb", {})
+    # This scraper works in language codes — it negotiates Accept-Language and
+    # picks the gloss span by code — so normalize the variable value, which the
+    # operator may have typed as a name ("english" -> "en").
+    target_language = language_code(config.variables.get("target_language", "en"))
     return NetzverbProvider(
         timeout=float(options.get("timeout", 15.0)),
-        target_language=config.target_language,
+        target_language=target_language,
     )
 
 
@@ -297,8 +302,8 @@ def _parse(
         example_translations=example_translations,
         features=features,
         source=source,
-        source_language="de",
-        target_language=target_language,
+        pack="de",
+        variables={"target_language": target_language},
     )
     if not info.translations and not info.definitions:
         return None

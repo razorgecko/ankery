@@ -24,6 +24,13 @@ providers = ["netzverb", "llm"]
 name = "pos"
 label = "part of speech"
 
+# Variables this pack declares, each with the default used when none is supplied.
+# This pack's prompt and its netzverb scraper read target_language to pick the
+# language of translations and example glosses.
+[variables.target_language]
+meaning = "language to write translations and example glosses in"
+default = "en"
+
 # Options handed to this pack's providers when built. Keyed by provider name;
 # the builder in provider.py reads its own table. Keeps provider tunables in the
 # pack instead of leaking a German-specific knob into the engine's Config.

@@ -55,8 +55,8 @@ def test_noun_fetch_returns_wordinfo(httpx_mock):
     assert info.word == "Haus"
     assert info.category == "noun"
     assert info.source == "netzverb"
-    assert info.source_language == "de"
-    assert info.target_language == "en"
+    assert info.pack == "de"
+    assert info.variables == {"target_language": "en"}
     assert info.features["gender"] == "das"
     assert info.features["ipa"] == "/haʊs/"
     assert info.definitions and "erbautes Gebäude" in info.definitions[0]

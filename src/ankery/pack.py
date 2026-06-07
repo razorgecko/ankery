@@ -31,10 +31,26 @@ class CategorySpec:
 
 
 @dataclass(frozen=True)
+class VariableSpec:
+    """One operator-supplied variable a pack declares (e.g. `target_language`).
+
+    `meaning` is a human description of the variable; it is parsed and stored but
+    not read by anything yet. `default` is the value used when the operator
+    supplies none; `None` means no default."""
+
+    key: str
+    meaning: str | None
+    default: str | None
+
+
+@dataclass(frozen=True)
 class Pack:
     code: str
     name: str
     common_features: dict[str, str]
+    # Variables this pack declares for the operator to set, keyed by name. The
+    # engine names none of them; the pack consumes them.
+    variables: dict[str, VariableSpec]
     # The human label for the routing dimension (e.g. "part of speech"), used in
     # the LLM prompt; the per-value vocabulary lives in `categories`.
     category_label: str
@@ -57,6 +73,7 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
     raw = _read_pack_toml(directory / "pack.toml")
 
     category_label, categories = _parse_categories(raw, directory)
+    variables = _parse_variables(raw)
     notes_dir = directory / "notes"
     try:
         notes = load_notes_from_dir(notes_dir)
@@ -75,6 +92,7 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
         code=code,
         name=raw.get("name", code),
         common_features=dict(raw.get("features", {})),
+        variables=variables,
         category_label=category_label,
         categories=categories,
         providers=tuple(raw.get("providers", ("llm",))),
@@ -134,6 +152,21 @@ def _parse_categories(raw: dict, directory: Path) -> tuple[str, dict[str, Catego
             features=dict(spec.get("features", {})),
         )
     return label, categories
+
+
+def _parse_variables(raw: dict) -> dict[str, VariableSpec]:
+    """Parse the optional [variables] table: each [variables.<key>] declares an
+    operator-supplied variable with an optional `meaning` and `default`."""
+    table = raw.get("variables", {})
+    variables: dict[str, VariableSpec] = {}
+    for key, spec in table.items():
+        default = spec.get("default")
+        variables[key] = VariableSpec(
+            key=key,
+            meaning=spec.get("meaning"),
+            default=None if default is None else str(default),
+        )
+    return variables
 
 
 def _load_module(path: Path, name: str) -> ModuleType:

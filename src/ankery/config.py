@@ -15,7 +15,6 @@ from ankery.notedef import (
     load_notes_from_dir,
     merge_note_definitions,
 )
-from ankery.languages import language_name
 from ankery.pack import Pack, PackError, load_pack
 from ankery.prompts import render_system_prompt
 from ankery.providers.base import WordProvider
@@ -40,7 +39,7 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Config:
-    """Infrastructure settings — endpoints, deck, language pair. Language behavior lives in the pack."""
+    """Infrastructure settings — endpoints, deck, pack selector, variables. Domain behavior lives in the pack."""
 
     # Empty means use the pack's preferred chain.
     providers: tuple[str, ...] = ()
@@ -68,8 +67,13 @@ class Config:
     # Extra note layouts merged over the pack's by category; language-agnostic layouts live here.
     notes_dir: Path | None = None
 
-    source_language: str = "de"
-    target_language: str = "en"
+    # The pack selector — a pack code, not a language to the engine. Resolved to a
+    # pack directory at build_deck_builder time.
+    pack: str = "de"
+    # Opaque operator-supplied variables the pack consumes; the engine names none.
+    # Seeded from the pack's declared defaults, overlaid with these, and validated
+    # against the pack's declarations at build_deck_builder time (resolve_variables).
+    variables: dict[str, str] = field(default_factory=dict)
     packs_dir: Path | None = None
 
     @classmethod
@@ -123,7 +127,8 @@ def _read_toml(path: Path) -> dict:
 def _load_config_file(path: Path) -> dict:
     """Read config.toml; rejects unknown keys and refuses the secret (belongs in auth.toml)."""
     raw = _read_toml(path)
-    allowed = {f.name for f in fields(Config)} - SECRET_KEYS
+    config_keys = {f.name for f in fields(Config)}
+    allowed = config_keys - SECRET_KEYS
     unknown = set(raw) - allowed
     if unknown:
         if unknown & SECRET_KEYS:
@@ -142,6 +147,23 @@ def _load_config_file(path: Path) -> dict:
     for key in ("packs_dir", "notes_dir"):
         if isinstance(raw.get(key), str):
             raw[key] = Path(raw[key]).expanduser()
+    # The [variables] table is an opaque key/value bag; coerce values to str so a
+    # TOML number/bool is carried as text. Which variable keys are valid is checked
+    # later, in resolve_variables, once the pack that declares them is loaded.
+    if isinstance(raw.get("variables"), dict):
+        # A TOML table header captures every key after it, so an engine key written
+        # below `[variables]` silently lands inside the bag (and would later fail
+        # with a misleading "pack does not declare variable" error). Catch that here
+        # and point at the real cause: ordering.
+        misplaced = set(raw["variables"]) & config_keys
+        if misplaced:
+            raise ConfigError(
+                f"{path}: {', '.join(sorted(misplaced))} appear under [variables] "
+                "but are engine config keys. A TOML table header captures every key "
+                "after it, so the [variables] table must come after all top-level "
+                "keys; move these above it."
+            )
+        raw["variables"] = {k: str(v) for k, v in raw["variables"].items()}
     return raw
 
 
@@ -175,6 +197,29 @@ def _warn_if_world_readable(path: Path) -> None:
         )
 
 
+def resolve_variables(raw: dict[str, str], pack: Pack) -> dict[str, str]:
+    """Resolve the operator's variables against the pack's declarations.
+
+    Seed from each declared variable's default, overlay the operator-supplied
+    `raw`, and reject any key the pack did not declare (the typo protection). Keys
+    with no default and no operator value are simply absent.
+    """
+    unknown = set(raw) - set(pack.variables)
+    if unknown:
+        known = ", ".join(sorted(pack.variables)) or "(none)"
+        raise ConfigError(
+            f"pack {pack.code!r} does not declare variable(s): "
+            f"{', '.join(sorted(unknown))}; it knows: {known}."
+        )
+    resolved = {
+        key: spec.default
+        for key, spec in pack.variables.items()
+        if spec.default is not None
+    }
+    resolved.update(raw)
+    return resolved
+
+
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
@@ -193,10 +238,10 @@ def _build_llm(config: "Config", pack: Pack) -> WordProvider:
         system_prompt_for=partial(
             render_system_prompt,
             pack,
-            target_language=language_name(config.target_language),
+            variables=config.variables,
         ),
-        source_language=pack.code,
-        target_language=config.target_language,
+        pack=pack.code,
+        variables=config.variables,
         category_key=pack.category_label,
         timeout=config.llm_timeout,
         request_json_format=config.llm_request_json_format,
@@ -212,11 +257,15 @@ PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
 
 
 def build_deck_builder(config: Config) -> DeckBuilder:
-    """Resolve the pack from `source_language` and wire providers, notes, sink, and builder."""
+    """Resolve the pack from `pack` and wire providers, notes, sink, and builder."""
     try:
-        pack = load_pack(config.source_language, config.packs_dir)
+        pack = load_pack(config.pack, config.packs_dir)
     except PackError as exc:
         raise ConfigError(str(exc)) from exc
+
+    # Resolve variables against the pack now that it is loaded — validation needs
+    # its declarations. Providers below read the resolved `config.variables`.
+    config = replace(config, variables=resolve_variables(config.variables, pack))
 
     registry: dict[str, ProviderBuilder] = {**PROVIDER_REGISTRY, **pack.provider_builders}
     chain = config.providers or pack.providers

@@ -6,7 +6,6 @@ from dataclasses import replace
 from pathlib import Path
 
 from ankery.config import Config, ConfigError, build_deck_builder
-from ankery.languages import language_code
 from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
 
@@ -72,11 +71,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--deck", help="destination deck")
     parser.add_argument(
-        "--source-lang",
-        help="language pack to load (e.g. de or german), keyed by code",
+        "--pack",
+        help="language pack to load, keyed by code (e.g. de); taken literally, "
+        "not normalized",
     )
     parser.add_argument(
-        "--target-lang", help="language to translate into (e.g. en or english)"
+        "--var",
+        metavar="KEY=VALUE",
+        action="append",
+        help="set a pack variable (e.g. --var target_language=en); repeatable. "
+        "The pack declares and consumes these.",
     )
     parser.add_argument(
         "--packs-dir", help="user pack directory; a pack here overrides the bundled one"
@@ -98,16 +102,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_vars(tokens: list[str]) -> dict[str, str]:
+    """Parse repeated `KEY=VALUE` flag tokens into a dict; the value is kept as
+    given. A token with no `=` is an error. A repeated key wins last."""
+    variables: dict[str, str] = {}
+    for token in tokens:
+        key, sep, value = token.partition("=")
+        if not sep:
+            raise ConfigError(f"--var expects KEY=VALUE, got {token!r}")
+        variables[key.strip()] = value
+    return variables
+
+
 def _config_from_args(args: argparse.Namespace) -> Config:
     overrides: dict[str, object] = {}
     if args.provider:
         overrides["providers"] = tuple(p.strip() for p in args.provider.split(","))
     if args.deck is not None:
         overrides["deck"] = args.deck
-    if args.source_lang is not None:
-        overrides["source_language"] = language_code(args.source_lang)
-    if args.target_lang is not None:
-        overrides["target_language"] = language_code(args.target_lang)
+    if args.pack is not None:
+        # Kept as given — the pack code is the operator's literal choice and must
+        # not be rewritten (a pack named `english` stays `english`, not `en`).
+        overrides["pack"] = args.pack
+    if args.var:
+        overrides["variables"] = _parse_vars(args.var)
     if args.note_type is not None:
         overrides["note_type"] = args.note_type
     if args.packs_dir is not None:

@@ -20,8 +20,8 @@ def test_list_fields_default_empty():
 
 def test_optional_fields_default():
     info = WordInfo(word="ephemeral", source="local_llm")
-    assert info.source_language is None
-    assert info.target_language is None
+    assert info.pack is None
+    assert info.variables == {}
     assert info.features == {}
     assert info.audio_url is None
 
@@ -31,8 +31,8 @@ def test_features_carry_arbitrary_language_keys():
     # reading, IPA all live in the open features dict under pack-declared keys.
     info = WordInfo(
         word="Buch",
-        source_language="de",
-        target_language="en",
+        pack="de",
+        variables={"target_language": "en"},
         category="noun",
         features={"gender": "das", "genitive_sg": "Buches", "nominative_pl": "Bücher"},
         source="local_llm",

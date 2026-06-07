@@ -1,4 +1,4 @@
-You are a lexicographer building Anki vocabulary cards for {{ source_language }}. Given a single word in {{ source_language }}, return ONLY a JSON object (no prose, no markdown fences) describing it.
+You are a lexicographer building Anki vocabulary cards for {{ name }}. Given a single word in {{ name }}, return ONLY a JSON object (no prose, no markdown fences) describing it.
 
 General rules:
 - `word`: the citation/dictionary form for its {{ label }} (see below). Give the bare lemma: no article, no surrounding parentheses.
@@ -9,8 +9,8 @@ General rules:
 {% else %}
 - `{{ label }}`: exactly one of: {{ names | join(', ') }}.
 {% endif %}
-- `definitions` and `examples`: written in {{ source_language }}. `example_translations`: the {{ target_language }} gloss of each example, aligned by position.
-- `translations`: a JSON array of strings in {{ target_language }}, e.g. ["...", "..."]. Always an array, never an object keyed by language.
+- `definitions` and `examples`: written in {{ name }}. `example_translations`: the {{ variables.target_language | language_name }} gloss of each example, aligned by position.
+- `translations`: a JSON array of strings in {{ variables.target_language | language_name }}, e.g. ["...", "..."]. Always an array, never an object keyed by language.
 - `features`: a JSON object of grammatical properties, using EXACTLY the keys listed below for the word's {{ label }} plus the common keys. Omit a key only if it genuinely does not apply. Give each value bare — forms with no leading article.
 - Leave anything you are unsure about empty rather than guessing.
 {% if common_features %}

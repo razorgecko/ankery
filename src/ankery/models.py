@@ -17,8 +17,10 @@ class WordInfo(BaseModel):
     # carries no domain knowledge.
     category: str | None = None
 
-    source_language: str | None = None
-    target_language: str | None = None
+    # Write-only provenance: the pack that produced this and the resolved variables
+    # it was produced under. The engine names neither; nothing reads them today.
+    pack: str | None = None
+    variables: dict[str, str] = Field(default_factory=dict)
 
     # Pack-defined properties; keys declared per category value by the active pack.
     features: dict[str, str] = Field(default_factory=dict)

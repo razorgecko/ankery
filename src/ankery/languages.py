@@ -1,23 +1,25 @@
 """Language code <-> English-name resolution.
 
 A deliberately small, hand-rolled table — not a standards-complete one. The engine
-needs a name only to read better in the LLM prompt ("written in German" beats
-"written in de"); the canonical value flowing through the system is always the code.
+itself names no language and does no conversion: this module is consumed only by
+pack code and by templates, never by engine wiring or pack selection. Each
+*consumer* normalizes a language-typed variable to the form it needs.
 
-Two directions, two callers:
+Two directions, two consumers:
 
-- `language_name(code)` is the prompt's display path. A miss falls back to
-  `code.title()` so an unlisted code still renders *something* legible rather than
-  blanking the line.
-- `language_code(token)` is the CLI's normalize path: it lets a flag take either a
-  code or an English name (`--target-lang english`). A miss is passed through
-  unchanged (lowercased) — crucially so this table never gates which packs may
-  load. A pack for a language we don't list here must still resolve by its code.
+- `language_name(code)` is a Jinja filter (registered in `prompts.py`): a pack
+  template renders `{{ variables.target_language | language_name }}` to read
+  better in the prompt ("written in German" beats "written in de"). A miss falls
+  back to `code.title()` so an unlisted code still renders *something* legible.
+- `language_code(token)` normalizes a code-or-name to a code; it is also exposed
+  as a Jinja filter and is used by the de pack's netzverb provider (which needs a
+  code to negotiate Accept-Language). A miss passes through unchanged (lowercased)
+  — so the table never gates which packs may load, and a language-typed variable
+  value we don't list here still resolves.
 
-Only the **target** language is resolved through this table, in `config.py`, and
-inlined into the system prompt. The **source** language is named by the pack's own
-`name` (authoritative), so it never touches this table; for any pack whose `name`
-matches its code's entry here the two agree.
+The pack selector (`--pack`) is **not** routed through this table — pack codes are
+their own namespace, taken literally, so a user pack named for a language is not
+silently rerouted (e.g. `english` must not become `en`).
 """
 
 # Curated: the languages someone is plausibly translating to/from. Extend freely;

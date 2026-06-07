@@ -19,7 +19,7 @@ $ ankery <word>
   dedicated layout and falling back to a plain front/back card for anything
   without one.
 - **Adds several words at once**, each to the configured deck.
-- **Works in any chosen language**, selected with `--source-lang`. New
+- **Works in any chosen language**, selected with `--pack`. New
   languages can be added as self-contained packs (see
   [Adding a language](#adding-a-language)).
 
@@ -60,7 +60,8 @@ This drops a launcher at `~/.local/bin/ankery`, available from any directory.
 ankery <word>                    # add a single word
 ankery <word1> <word2> <word3>   # add several at once
 ankery --deck MyDeck <word>      # choose the destination deck
-ankery --source-lang <lang_code> <word>   # look the word up in this language
+ankery --pack <code> <word>      # load this language pack (e.g. de)
+ankery --var target_language=en <word>   # set a pack variable
 ```
 
 The part of speech comes from whichever provider answers: a scraper may guess it
@@ -103,10 +104,17 @@ Settings live in `~/.config/ankery/config.toml`. Example:
 
 ```toml
 deck = "Vocabulary"
-source_language = "de"
-target_language = "en"
+pack = "de"
 tags = ["ankery"]
+
+[variables]
+target_language = "en"
 ```
+
+Keep the `[variables]` table **after** all top-level keys: a TOML table header
+captures every key written below it, so a setting like `deck` placed under
+`[variables]` would be read as a pack variable. ankery rejects that with an
+error naming the misplaced key.
 
 The LLM API key is the one setting that is **not** allowed here (see
 [Authorization](#authorization)).
@@ -117,8 +125,8 @@ The LLM API key is the one setting that is **not** allowed here (see
 |---|---|---|---|
 | `deck` | `--deck` | `"Default"` | Destination deck. |
 | `providers` | `--provider` | per language | Lookup sources, tried in fallback order. Empty uses the default chain for the chosen language. The flag takes a comma-separated list. |
-| `source_language` | `--source-lang` | `"de"` | Language of the words being looked up. |
-| `target_language` | `--target-lang` | `"en"` | Language to translate into. |
+| `pack` | `--pack` | `"de"` | Language pack to load, keyed by code. Taken literally — never normalized — so a user pack named for a language is not silently rerouted. |
+| `[variables]` table | `--var KEY=VALUE` | per pack | Opaque values the pack consumes (e.g. `target_language`). Each pack declares the keys it accepts and their defaults; an undeclared key is an error. The flag is repeatable. |
 | `packs_dir` | `--packs-dir` | — | Directory of custom packs; one here overrides a built-in of the same code. |
 | `note_type` | `--note-type` | `"Ankery Basic"` | Catch-all model for words with no dedicated layout. Defaults to ankery's own provisioned model; point it at a foreign model (e.g. Anki's stock `Basic`) to write there instead. |
 | `tags` | — | `[]` | Tags added to every created note. |
@@ -208,9 +216,9 @@ packs_dir = "~/.config/ankery/packs"
     providers/     OPTIONAL: language-specific lookup sources
 ```
 
-Select a pack at run time with `--source-lang fr` (or set `source_language`
-in `config.toml`). A pack here whose code matches a built-in one **replaces**
-it, so a bundled language can be overridden entirely.
+Select a pack at run time with `--pack fr` (or set `pack` in `config.toml`).
+A pack here whose code matches a built-in one **replaces** it, so a bundled
+language can be overridden entirely.
 
 A `notes/style.css` is optional: if a pack omits it, cards fall back to
 ankery's built-in default styling. Provide one to style this language's cards.

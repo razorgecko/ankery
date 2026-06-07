@@ -2,7 +2,7 @@
 the fallback card styling.
 
 This directory is **pack-shaped but is not a pack**: it has no `pack.toml` and no
-`[category]` routing dimension, and it is never selected by `source_language`. It
+`[category]` routing dimension, and it is never selected by `pack`. It
 is the guaranteed terminus for every neutral slot — shipped in-package and
 complete — so resolution of any slot is at most `pack-or-default` (the prompt adds
 one more operator layer on top), never a third hard-coded fallback hiding in a

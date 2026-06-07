@@ -22,6 +22,7 @@ The **builder** (this module) owns the *logic* that must hold for any template:
 import jinja2
 
 from ankery.defaults import default_system_template, default_user_template
+from ankery.languages import language_code, language_name
 from ankery.pack import Pack
 
 # Plain text, not HTML: no autoescape. ChainableUndefined mirrors notedef — a
@@ -34,10 +35,17 @@ _env = jinja2.Environment(
     autoescape=False,
     undefined=jinja2.ChainableUndefined,
 )
+# Language conversion is offered to templates as opt-in filters: a template writes
+# `{{ variables.foo | language_name }}` to render "English" from "en". They are
+# never applied here — the renderer passes variable values through verbatim — so a
+# pack that needs no language naming pays nothing. The filters are strict: applied
+# to a missing variable, `language_name` raises (it calls `.lower()` on undefined).
+_env.filters["language_name"] = language_name
+_env.filters["language_code"] = language_code
 
 
 def _system_context(
-    pack: Pack, category_hint: str | None, target_language: str
+    pack: Pack, category_hint: str | None, variables: dict[str, str]
 ) -> tuple[dict, bool]:
     """Build the template variable surface and the hinted flag.
 
@@ -46,10 +54,10 @@ def _system_context(
     sections are noise) and flips `hinted`. An unrecognised hint falls back to the
     full vocabulary, unhinted.
 
-    Both languages are exposed as display names so a template author spells the
-    pair the same way: `source_language` is the pack's own authoritative `name`,
-    `target_language` is threaded in already resolved. `name` stays meaning just
-    "pack name" (it happens to equal the source language for a language pack).
+    The pack's authoritative `name` is exposed as `name` (the template names the
+    source domain through it). The opaque operator `variables` are exposed verbatim
+    under `variables`; a template reads a language-typed one with the
+    `language_name` filter (`{{ variables.target_language | language_name }}`).
     """
     names = sorted(pack.categories)
     hinted = category_hint in pack.categories
@@ -62,8 +70,7 @@ def _system_context(
         # CategorySpec objects expose .value/.citation/.guidance/.features.
         "categories": [pack.categories[value] for value in names],
         "common_features": pack.common_features,
-        "source_language": pack.name,
-        "target_language": target_language,
+        "variables": variables,
         "hinted": hinted,
         "hint": category_hint if hinted else None,
     }
@@ -82,18 +89,19 @@ def render_system_prompt(
     pack: Pack,
     category_hint: str | None = None,
     *,
-    target_language: str,
+    variables: dict[str, str],
     template: str | None = None,
 ) -> str:
     """Render the system prompt for `pack`, optionally narrowed to `category_hint`.
 
-    `target_language` is a display name; the source language comes from the pack's
-    own `name` (exposed to the template as `source_language` for symmetry).
-    `template` overrides the bundled chrome (the pack/operator layers supply it);
-    the builder logic — set collapse and the forced escape hatch — is invariant
-    across whichever layer supplied it.
+    `variables` is the resolved operator bag, exposed to the template verbatim
+    under `variables` (language-typed entries reach for the `language_name`
+    filter); the source domain is named by the pack's own `name`. `template`
+    overrides the bundled chrome (the pack/operator layers supply it); the builder
+    logic — set collapse and the forced escape hatch — is invariant across
+    whichever layer supplied it.
     """
-    context, hinted = _system_context(pack, category_hint, target_language)
+    context, hinted = _system_context(pack, category_hint, variables)
     text = template if template is not None else default_system_template()
     # Strip the trailing newline a line-based template leaves so output matches a
     # hand-joined prompt; the escape hatch (under a hint) is appended afterwards so

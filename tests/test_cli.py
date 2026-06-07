@@ -233,8 +233,8 @@ def test_flags_override_config(patched):
     cli.main(
         [
             "--deck", "German::Verbs",
-            "--source-lang", "de",
-            "--target-lang", "ru",
+            "--pack", "de",
+            "--var", "target_language=ru",
             "--note-type", "Cloze",
             "--allow-duplicate",
             "Buch",
@@ -243,23 +243,41 @@ def test_flags_override_config(patched):
 
     config = captured["config"]
     assert config.deck == "German::Verbs"
-    assert config.source_language == "de"
-    assert config.target_language == "ru"
+    assert config.pack == "de"
+    assert config.variables == {"target_language": "ru"}
     assert config.note_type == "Cloze"
     assert config.allow_duplicate is True
 
 
-def test_lang_flags_accept_english_names(patched):
+def test_pack_flag_is_taken_literally(patched):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=1, word="Buch")})
 
-    cli.main(["--source-lang", "German", "--target-lang", "english", "Buch"])
+    cli.main(["--pack", "German", "Buch"])
 
-    config = captured["config"]
-    # Names normalize to codes before reaching config; an unknown token would pass
-    # through unchanged so it can't gate which packs load.
-    assert config.source_language == "de"
-    assert config.target_language == "en"
+    # The pack selector is kept as given: --pack German is carried through as
+    # `German`, not rewritten to `de`.
+    assert captured["config"].pack == "German"
+
+
+def test_var_flag_is_repeatable_and_passes_values_raw(patched):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+
+    cli.main(["--var", "target_language=english", "--var", "tone=formal", "Buch"])
+
+    # Values are carried through verbatim; repeated flags accumulate.
+    assert captured["config"].variables == {
+        "target_language": "english",
+        "tone": "formal",
+    }
+
+
+def test_var_flag_without_equals_is_a_config_error(capsys):
+    code = cli.main(["--var", "noequals", "Buch"])
+
+    assert code == 2
+    assert "--var expects KEY=VALUE" in capsys.readouterr().err
 
 
 def test_infra_flags_override_config(patched):
@@ -321,7 +339,7 @@ def test_config_error_reports_and_exits_two(monkeypatch, capsys):
 
 
 def test_pack_error_at_wiring_reports_and_exits_two(patched, monkeypatch, capsys):
-    # A bad source_language surfaces from build_deck_builder as ConfigError; the
+    # A bad pack surfaces from build_deck_builder as ConfigError; the
     # CLI catches it and exits 2, like any other config problem.
     captured, set_results = patched
 

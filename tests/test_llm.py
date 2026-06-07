@@ -22,8 +22,8 @@ def _provider(**kwargs) -> LLMProvider:
     # The provider renders the system prompt per fetch from a (category_hint -> str)
     # callable; the default ignores the hint and returns the constant SYSTEM.
     kwargs.setdefault("system_prompt_for", lambda category_hint=None: SYSTEM)
-    kwargs.setdefault("source_language", "de")
-    kwargs.setdefault("target_language", "en")
+    kwargs.setdefault("pack", "de")
+    kwargs.setdefault("variables", {"target_language": "en"})
     # The pack's category label is the JSON key the model fills; the provider
     # maps it onto WordInfo.category. The German pack labels it "part of speech".
     kwargs.setdefault("category_key", "part of speech")
@@ -97,15 +97,15 @@ def test_fetch_does_not_normalize_forms(httpx_mock):
     assert info.features["genitive_sg"] == "des Hauses"
 
 
-def test_fetch_sets_provenance_and_languages(httpx_mock):
-    # The model echoes back bogus provenance/language values; the provider must
-    # overwrite them with what it controls (its construction-time language pair).
+def test_fetch_sets_provenance_and_variables(httpx_mock):
+    # The model echoes back bogus provenance values; the provider must overwrite
+    # them with what it controls (its construction-time pack and variables).
     word_json = json.dumps(
         {
             "word": "Buch",
             "source": "hallucinated",
-            "source_language": "xx",
-            "target_language": "yy",
+            "pack": "xx",
+            "variables": {"target_language": "yy"},
         }
     )
     httpx_mock.add_response(url=CHAT_URL, json=_completion(word_json))
@@ -113,8 +113,8 @@ def test_fetch_sets_provenance_and_languages(httpx_mock):
     info = _provider().fetch("Buch")
 
     assert info.source == "llm"
-    assert info.source_language == "de"
-    assert info.target_language == "en"
+    assert info.pack == "de"
+    assert info.variables == {"target_language": "en"}
 
 
 def test_fetch_strips_code_fences(httpx_mock):

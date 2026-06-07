@@ -4,7 +4,14 @@ import pytest
 
 from pathlib import Path
 
-from ankery.config import Config, ConfigError, _config_dir, build_deck_builder
+from ankery.config import (
+    Config,
+    ConfigError,
+    _config_dir,
+    build_deck_builder,
+    resolve_variables,
+)
+from ankery.pack import load_pack
 from ankery.manager import DeckBuilder
 from ankery.providers.llm import LLMProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
@@ -59,7 +66,8 @@ def test_from_env_uses_defaults_when_unset():
     assert config.note_type == "Ankery Basic"
     assert config.tags == ()
     assert config.allow_duplicate is False
-    assert config.source_language == "de"
+    assert config.pack == "de"
+    assert config.variables == {}  # seeded from the pack only at build time
     assert config.providers == ()  # empty => use the pack's preferred chain
 
 
@@ -143,6 +151,29 @@ def test_load_reads_notes_dir_as_path(tmp_path):
     config = Config.load(path=path, environ={})
 
     assert config.notes_dir == Path("/srv/notes")  # string coerced to Path
+
+
+def test_load_reads_variables_table(tmp_path):
+    path = _write(tmp_path, "[variables]\ntarget_language = \"fr\"\n")
+    config = Config.load(path=path, environ={})
+
+    assert config.variables == {"target_language": "fr"}  # table maps onto the field
+
+
+def test_load_rejects_engine_key_captured_under_variables_table(tmp_path):
+    # `deck` written after the [variables] header is swallowed into the bag; the
+    # error must point at the ordering, not later masquerade as an unknown variable.
+    path = _write(tmp_path, "[variables]\ntarget_language = \"fr\"\ndeck = \"German\"\n")
+    with pytest.raises(ConfigError, match="deck appear under \\[variables\\]"):
+        Config.load(path=path, environ={})
+
+
+def test_load_coerces_variable_values_to_str(tmp_path):
+    # A TOML number is coerced to text; the bag is opaque key/value strings.
+    path = _write(tmp_path, "[variables]\ncount = 3\n")
+    config = Config.load(path=path, environ={})
+
+    assert config.variables == {"count": "3"}
 
 
 def test_load_reads_providers_list(tmp_path):
@@ -321,7 +352,7 @@ def test_build_deck_builder_wires_provider_and_sink():
 
 
 def test_build_deck_builder_loads_the_packs_notes_and_style():
-    builder = build_deck_builder(Config())  # default source_language "de"
+    builder = build_deck_builder(Config())  # default pack "de"
 
     assert [d.name for d in builder.note_definitions] == [
         "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
@@ -392,19 +423,23 @@ def test_build_deck_builder_rejects_unknown_provider():
         build_deck_builder(Config(providers=("nope",)))
 
 
-def test_build_deck_builder_rejects_unknown_source_language():
+def test_build_deck_builder_rejects_unknown_pack():
     with pytest.raises(ConfigError, match="no pack for 'zz'"):
-        build_deck_builder(Config(source_language="zz"))
+        build_deck_builder(Config(pack="zz"))
 
 
-def test_source_language_selects_a_user_pack_via_packs_dir(tmp_path):
+def test_pack_selects_a_user_pack_via_packs_dir(tmp_path):
     pack_dir = tmp_path / "xx"
     (pack_dir / "notes").mkdir(parents=True)
+    # The default prompt template renders {{ variables.target_language }}, so a
+    # pack riding it must declare that variable or rendering hits an undefined.
     (pack_dir / "pack.toml").write_text(
-        'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
+        'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n'
+        '[variables.target_language]\ndefault = "en"\n'
+        '[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
         "utf-8",
     )
-    builder = build_deck_builder(Config(source_language="xx", packs_dir=tmp_path))
+    builder = build_deck_builder(Config(pack="xx", packs_dir=tmp_path))
 
     assert [p.name for p in builder.providers] == ["llm"]
     assert "Examplish" in _provider_named(builder, "llm").system_prompt_for(None)
@@ -420,7 +455,40 @@ def test_empty_chain_with_packless_chain_is_an_error(tmp_path):
     )
 
     with pytest.raises(ConfigError, match="no providers configured"):
-        build_deck_builder(Config(source_language="yy", packs_dir=tmp_path))
+        build_deck_builder(Config(pack="yy", packs_dir=tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# Variables: seeded from the pack, overridden by the operator, typo-validated
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_variables_applies_pack_default():
+    # The operator supplies nothing; the de pack's target_language default seeds it.
+    assert resolve_variables({}, load_pack("de")) == {"target_language": "en"}
+
+
+def test_resolve_variables_override_wins_over_default():
+    resolved = resolve_variables({"target_language": "fr"}, load_pack("de"))
+    assert resolved == {"target_language": "fr"}
+
+
+def test_resolve_variables_rejects_undeclared_key():
+    with pytest.raises(ConfigError, match="does not declare variable"):
+        resolve_variables({"bogus": "x"}, load_pack("de"))
+
+
+def test_build_deck_builder_resolves_variables_into_providers():
+    # The resolved bag (pack default for target_language) reaches the llm provider.
+    builder = build_deck_builder(Config(providers=("llm",)))
+    assert _provider_named(builder, "llm").variables == {"target_language": "en"}
+
+
+def test_build_deck_builder_override_variable_reaches_provider():
+    builder = build_deck_builder(
+        Config(providers=("llm",), variables={"target_language": "french"})
+    )
+    assert _provider_named(builder, "llm").variables == {"target_language": "french"}
 
 
 # ---------------------------------------------------------------------------
