@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from ankery.pack import load_pack
-from ankery.prompts import build_user_prompt, render_system_prompt
+from ankery.prompts import render_system_prompt, render_user_prompt
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -13,17 +13,27 @@ def _golden(name: str) -> str:
     return FIXTURES.joinpath(name).read_text("utf-8")
 
 
+def _render_de(category_hint: str | None = None) -> str:
+    # The production path renders the de pack with its own (language-specific)
+    # template; the engine default is domain-neutral, so de-specific assertions
+    # must go through the pack template.
+    pack = load_pack("de")
+    return render_system_prompt(
+        pack,
+        category_hint,
+        variables={"target_language": "en"},
+        template=pack.system_template,
+    )
+
+
 def test_unhinted_prompt_matches_golden_byte_for_byte():
-    # Pins the extracted template + builder to the exact prompt the imperative
+    # Pins the de pack's template + builder to the exact prompt the imperative
     # renderer produced before extraction, so the refactor changed nothing.
-    assert render_system_prompt(load_pack("de"), variables={"target_language": "en"}) == _golden("system_prompt_de_unhinted.txt")
+    assert _render_de() == _golden("system_prompt_de_unhinted.txt")
 
 
 def test_hinted_prompt_matches_golden_byte_for_byte():
-    assert (
-        render_system_prompt(load_pack("de"), "noun", variables={"target_language": "en"})
-        == _golden("system_prompt_de_noun.txt")
-    )
+    assert _render_de("noun") == _golden("system_prompt_de_noun.txt")
 
 
 def test_escape_hatch_is_force_appended_by_the_builder_not_the_template():
@@ -47,7 +57,7 @@ def test_no_escape_hatch_without_a_hint():
 
 
 def test_renders_category_vocabulary_as_the_classification_set():
-    prompt = render_system_prompt(load_pack("de"), variables={"target_language": "en"})
+    prompt = _render_de()
 
     # The declared categories are offered as the closed classification vocabulary.
     assert (
@@ -57,7 +67,7 @@ def test_renders_category_vocabulary_as_the_classification_set():
 
 
 def test_renders_per_category_feature_keys_and_meanings():
-    prompt = render_system_prompt(load_pack("de"), variables={"target_language": "en"})
+    prompt = _render_de()
 
     assert "Part of speech: noun" in prompt
     assert "gender: the definite article" in prompt
@@ -65,7 +75,7 @@ def test_renders_per_category_feature_keys_and_meanings():
 
 
 def test_renders_common_features_and_guidance():
-    prompt = render_system_prompt(load_pack("de"), variables={"target_language": "en"})
+    prompt = _render_de()
 
     assert "Common feature keys" in prompt
     assert "ipa:" in prompt
@@ -74,13 +84,11 @@ def test_renders_common_features_and_guidance():
 
 
 def test_names_the_pack_language():
-    assert "German" in render_system_prompt(load_pack("de"), variables={"target_language": "en"})
+    assert "German" in _render_de()
 
 
 def test_category_hint_trims_the_prompt_to_the_named_category():
-    prompt = render_system_prompt(
-        load_pack("de"), category_hint="noun", variables={"target_language": "en"}
-    )
+    prompt = _render_de(category_hint="noun")
 
     # Only the hinted category section survives; the classification set collapses to it.
     assert "Part of speech: noun" in prompt
@@ -95,9 +103,7 @@ def test_category_hint_trims_the_prompt_to_the_named_category():
 
 
 def test_unknown_category_hint_falls_back_to_full_vocabulary():
-    prompt = render_system_prompt(
-        load_pack("de"), category_hint="bogus", variables={"target_language": "en"}
-    )
+    prompt = _render_de(category_hint="bogus")
 
     assert (
         "exactly one of: adjective, adverb, article, conjunction, noun, "
@@ -107,7 +113,7 @@ def test_unknown_category_hint_falls_back_to_full_vocabulary():
 
 def test_user_prompt_carries_only_the_word():
     # The language pair lives in the system prompt; the user turn is just the word.
-    prompt = build_user_prompt("Buch")
+    prompt = render_user_prompt("Buch")
 
     assert "Word: Buch" in prompt
     assert "language" not in prompt.lower()
@@ -116,13 +122,28 @@ def test_user_prompt_carries_only_the_word():
 def test_user_prompt_omits_category_line():
     # A category_hint is handled entirely in the system prompt; the user turn
     # never mentions the category.
-    assert "Part of speech" not in build_user_prompt("Buch")
+    assert "Part of speech" not in render_user_prompt("Buch")
 
 
 def test_system_prompt_names_the_target_language():
     # The target language is inlined into the system prompt as a display name.
-    prompt = render_system_prompt(load_pack("de"), variables={"target_language": "en"})
+    prompt = _render_de()
 
     assert "written in German" in prompt
     assert "the English gloss" in prompt
     assert "strings in English" in prompt
+
+
+def test_omitting_the_template_renders_the_domain_neutral_default():
+    # No template= argument => the builder falls back to the engine default, which
+    # is domain-neutral: it names no target language and makes no language-of-output
+    # claim a non-language pack could not honour. The de pack supplies only the
+    # category data here (not its template) to exercise the default's chrome.
+    prompt = render_system_prompt(load_pack("de"), variables={"target_language": "en"})
+
+    # The category vocabulary still threads through (it comes from injected
+    # variables, not the template's prose).
+    assert "exactly one of: adjective" in prompt
+    # ...but the language-specific phrasing of the de template does not.
+    assert "written in German" not in prompt
+    assert "English" not in prompt

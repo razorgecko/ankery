@@ -5,7 +5,6 @@ import httpx
 from pydantic import ValidationError
 
 from ankery.models import WordInfo
-from ankery.prompts import build_user_prompt
 from ankery.providers.base import ProviderError
 from ankery.providers.retry import request_with_retry
 
@@ -20,6 +19,7 @@ class LLMProvider:
         base_url: str,
         model: str,
         system_prompt_for: Callable[[str | None], str],
+        user_prompt_for: Callable[[str], str],
         *,
         pack: str,
         variables: dict[str, str],
@@ -33,6 +33,7 @@ class LLMProvider:
         # Rendered per fetch, not once at construction: a category_hint trims the
         # prompt to the hinted class, so the system message depends on the call.
         self.system_prompt_for = system_prompt_for
+        self.user_prompt_for = user_prompt_for
         # The pack's label for its routing dimension (e.g. "part of speech"). The
         # model fills a JSON key by this name; fetch maps it onto WordInfo.category.
         self.category_key = category_key
@@ -49,7 +50,7 @@ class LLMProvider:
             "model": self.model,
             "messages": [
                 {"role": "system", "content": self.system_prompt_for(category_hint)},
-                {"role": "user", "content": build_user_prompt(word)},
+                {"role": "user", "content": self.user_prompt_for(word)},
             ],
             "temperature": 0,
         }

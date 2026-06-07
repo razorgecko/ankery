@@ -1,5 +1,6 @@
 import pytest
 
+from ankery.defaults import default_system_template, default_user_template
 from ankery.models import WordInfo
 from ankery.pack import PackError, load_pack
 
@@ -35,6 +36,37 @@ def test_de_categories_declare_feature_keys():
     assert "gender" in pack.categories["noun"].features
     assert "present_1sg" in pack.categories["verb"].features
     assert "ipa" in pack.common_features  # common to every category
+
+
+def test_de_pack_ships_its_own_system_template():
+    # The German pack carries the language-specific prompt; the engine default is
+    # neutral, so this content lives in the pack, not the defaults.
+    pack = load_pack("de")
+    assert "written in {{ name }}" in pack.system_template
+    assert pack.system_template != default_system_template()
+
+
+def test_pack_without_prompts_dir_falls_back_to_default_templates(tmp_path):
+    # A pack that ships no prompts/ resolves both templates to the engine default.
+    _write_pack(tmp_path, "xx", 'name = "X"\n[category]\nname = "pos"\n[pos.noun]\n')
+    pack = load_pack("xx", packs_dir=tmp_path)
+
+    assert pack.system_template == default_system_template()
+    assert pack.user_template == default_user_template()
+
+
+def test_pack_supplied_prompt_template_is_loaded(tmp_path):
+    # A pack's prompts/system.j2 overrides the engine default; the builder still
+    # renders it (pack > defaults resolution).
+    _write_pack(tmp_path, "xx", 'name = "X"\n[category]\nname = "pos"\n[pos.noun]\n')
+    prompts = tmp_path / "xx" / "prompts"
+    prompts.mkdir()
+    (prompts / "system.j2").write_text("Cards for {{ name }}.\n", "utf-8")
+    pack = load_pack("xx", packs_dir=tmp_path)
+
+    assert pack.system_template == "Cards for {{ name }}.\n"
+    # The unspecified user template still falls back per file.
+    assert pack.user_template == default_user_template()
 
 
 def test_de_filter_hook_is_loaded_and_active():

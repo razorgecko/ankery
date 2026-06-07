@@ -212,6 +212,7 @@ packs_dir = "~/.config/ankery/packs"
     pack.toml      grammar terms, lookup guidance, and the provider chain
     notes/         card layouts for this language (one *.toml per type)
       style.css    OPTIONAL: card styling for this language
+    prompts/       OPTIONAL: system.j2 / user.j2 LLM prompt templates
     filter.py      OPTIONAL: clean up looked-up results
     providers/     OPTIONAL: language-specific lookup sources
 ```
@@ -222,6 +223,10 @@ language can be overridden entirely.
 
 A `notes/style.css` is optional: if a pack omits it, cards fall back to
 ankery's built-in default styling. Provide one to style this language's cards.
+
+A `prompts/` directory is optional too: a `system.j2` and/or `user.j2` tailors
+the LLM prompt for the pack, resolved per file over a domain-neutral built-in
+default.
 
 > **A pack is code.** `filter.py` and `providers/*.py` are Python that ankery
 > imports and runs in its own process, with full access to the local network and

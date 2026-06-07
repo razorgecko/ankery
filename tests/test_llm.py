@@ -22,6 +22,7 @@ def _provider(**kwargs) -> LLMProvider:
     # The provider renders the system prompt per fetch from a (category_hint -> str)
     # callable; the default ignores the hint and returns the constant SYSTEM.
     kwargs.setdefault("system_prompt_for", lambda category_hint=None: SYSTEM)
+    kwargs.setdefault("user_prompt_for", lambda word: f"Word: {word}")
     kwargs.setdefault("pack", "de")
     kwargs.setdefault("variables", {"target_language": "en"})
     # The pack's category label is the JSON key the model fills; the provider

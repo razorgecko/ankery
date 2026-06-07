@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from ankery.defaults import default_style
+from ankery.defaults import (
+    default_style,
+    default_system_template,
+    default_user_template,
+)
 from ankery.models import WordInfo
 from ankery.notedef import NoteDefinition, load_notes_from_dir
 
@@ -57,11 +61,19 @@ class Pack:
     provider_builders: dict[str, ProviderBuilder]
     notes: list[NoteDefinition]
     style_css: str
+    # Jinja prompt templates, resolved pack-or-default at load time.
+    system_template: str
+    user_template: str
     normalize: Normalize
 
 
 def _identity(info: WordInfo) -> WordInfo:
     return info
+
+
+def _read_template(path: Path, fallback: Callable[[], str]) -> str:
+    """Read a pack-supplied Jinja template, falling back to the engine default."""
+    return path.read_text("utf-8") if path.exists() else fallback()
 
 
 def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
@@ -82,6 +94,12 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
         style_path.read_text("utf-8") if style_path.exists() else default_style()
     )
 
+    prompts_dir = directory / "prompts"
+    system_template = _read_template(
+        prompts_dir / "system.j2", default_system_template
+    )
+    user_template = _read_template(prompts_dir / "user.j2", default_user_template)
+
     normalize = _load_normalize(directory / "filter.py", code)
     provider_builders = _load_providers(directory / "providers", code)
 
@@ -97,6 +115,8 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
         provider_builders=provider_builders,
         notes=notes,
         style_css=style_css,
+        system_template=system_template,
+        user_template=user_template,
         normalize=normalize,
     )
 

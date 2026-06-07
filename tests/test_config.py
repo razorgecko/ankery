@@ -431,11 +431,10 @@ def test_build_deck_builder_rejects_unknown_pack():
 def test_pack_selects_a_user_pack_via_packs_dir(tmp_path):
     pack_dir = tmp_path / "xx"
     (pack_dir / "notes").mkdir(parents=True)
-    # The default prompt template renders {{ variables.target_language }}, so a
-    # pack riding it must declare that variable or rendering hits an undefined.
+    # The engine default prompt template is domain-neutral: it declares no
+    # variables, so a pack riding it needs none to render.
     (pack_dir / "pack.toml").write_text(
         'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n'
-        '[variables.target_language]\ndefault = "en"\n'
         '[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
         "utf-8",
     )

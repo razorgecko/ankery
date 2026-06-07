@@ -87,7 +87,7 @@ def render_system_prompt(
     return rendered
 
 
-def build_user_prompt(word: str, *, template: str | None = None) -> str:
+def render_user_prompt(word: str, *, template: str | None = None) -> str:
     """Render the user turn: just the word."""
     text = template if template is not None else default_user_template()
     return _env.from_string(text).render(word=word).rstrip("\n")

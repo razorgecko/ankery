@@ -16,7 +16,7 @@ from ankery.notedef import (
     merge_note_definitions,
 )
 from ankery.pack import Pack, PackError, load_pack
-from ankery.prompts import render_system_prompt
+from ankery.prompts import render_system_prompt, render_user_prompt
 from ankery.providers.base import WordProvider
 from ankery.providers.llm import LLMProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
@@ -232,7 +232,9 @@ def _build_llm(config: "Config", pack: Pack) -> WordProvider:
             render_system_prompt,
             pack,
             variables=config.variables,
+            template=pack.system_template,
         ),
+        user_prompt_for=partial(render_user_prompt, template=pack.user_template),
         pack=pack.code,
         variables=config.variables,
         category_key=pack.category_label,
