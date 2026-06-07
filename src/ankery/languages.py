@@ -5,6 +5,8 @@ directions fall back rather than fail: an unlisted token renders/normalizes as t
 bare token, so the table never gates anything.
 """
 
+from collections.abc import Callable
+
 # Curated: the languages someone is plausibly translating to/from. Extend freely;
 # nothing breaks for an absent code, it just renders/normalizes as the bare token.
 _NAMES: dict[str, str] = {
@@ -50,3 +52,11 @@ def language_code(token: str) -> str:
     lowercased, assumed to already be a code."""
     token = token.strip().lower()
     return _CODES.get(token, token)
+
+
+# Helpers exposed to prompt templates as Jinja filters, keyed by the name a
+# template references (`{{ code | language_name }}`).
+FILTERS: dict[str, Callable[[str], str]] = {
+    "language_name": language_name,
+    "language_code": language_code,
+}

@@ -13,7 +13,7 @@ a hint as a clean miss; change the two together.
 import jinja2
 
 from ankery.defaults import default_system_template, default_user_template
-from ankery.languages import language_code, language_name
+from ankery.languages import FILTERS as LANGUAGE_FILTERS
 from ankery.pack import Pack
 
 # Plain text, not HTML: no autoescape. ChainableUndefined renders an absent
@@ -25,11 +25,8 @@ _env = jinja2.Environment(
     autoescape=False,
     undefined=jinja2.ChainableUndefined,
 )
-# Opt-in Jinja filters for language naming: a template writes
-# `{{ variables.foo | language_name }}` to render "English" from "en". Strict —
-# applied to a missing variable, language_name raises (calls `.lower()` on undefined).
-_env.filters["language_name"] = language_name
-_env.filters["language_code"] = language_code
+# Language-naming helpers, offered to any template as Jinja filters.
+_env.filters.update(LANGUAGE_FILTERS)
 
 
 def _system_context(
