@@ -153,7 +153,7 @@ _ROUTES = {
 class NetzverbProvider:
     name = "netzverb"
 
-    def __init__(self, *, timeout: float = 15.0, target_language: str = "en") -> None:
+    def __init__(self, *, timeout: float = 15.0, target_language: str) -> None:
         self._target_language = target_language
         self._timeout = timeout
 
@@ -217,7 +217,7 @@ def _build(config, pack) -> NetzverbProvider:
     # This scraper works in language codes — it negotiates Accept-Language and
     # picks the gloss span by code — so normalize the variable value, which the
     # operator may have typed as a name ("english" -> "en").
-    target_language = language_code(config.variables.get("target_language", "en"))
+    target_language = language_code(config.variables["target_language"])
     return NetzverbProvider(
         timeout=float(options.get("timeout", 15.0)),
         target_language=target_language,
