@@ -1,16 +1,9 @@
 """Engine-shipped neutral assets: the catch-all note, the prompt templates, and
 the fallback card styling.
 
-This directory is **pack-shaped but is not a pack**: it has no `pack.toml` and no
-`[category]` routing dimension, and it is never selected by `pack`. It
-is the guaranteed terminus for every neutral slot — shipped in-package and
-complete — so resolution of any slot is at most `pack-or-default` (the prompt adds
-one more operator layer on top), never a third hard-coded fallback hiding in a
-function.
-
-It is loaded by the *subset* loaders below (style, notes, prompt templates) which
-deliberately skip category parsing; loading it as a real pack would fail the
-`[category]` contract, which is exactly why it lives here and not under `packs/`.
+Pack-shaped but not a pack — no `pack.toml`, no `[category]`, never selected. The
+loaders below skip category parsing, so these load without going through the pack
+category contract.
 """
 
 import functools
@@ -36,7 +29,7 @@ def default_style() -> str:
 
 
 def default_system_template() -> str:
-    """The engine-shipped system-prompt chrome template (Jinja); the prompt terminus."""
+    """The engine-shipped system-prompt template (Jinja)."""
     return SYSTEM_TEMPLATE_PATH.read_text("utf-8")
 
 
@@ -46,11 +39,10 @@ def default_user_template() -> str:
 
 
 def default_catch_all() -> NoteDefinition:
-    """The single neutral catch-all note — the guaranteed routing terminus.
+    """The single neutral catch-all note.
 
-    Loaded by file path like any note, but shipped in-package and complete, so it
-    always exists; a packaging regression that drops or duplicates it fails here
-    rather than at run time.
+    A packaging regression that drops or duplicates it fails here rather than at
+    run time.
     """
     notes = load_notes_from_dir(NOTES_DIR)
     if len(notes) != 1:
@@ -62,11 +54,10 @@ def default_catch_all() -> NoteDefinition:
 
 @functools.cache
 def catch_all_model_name() -> str:
-    """Name of the engine-owned catch-all model (e.g. "Ankery Basic").
+    """Name of the engine-owned catch-all model (e.g. "Ankery Basic"), read from
+    the catch-all note asset.
 
-    The single source of truth for that name: the catch-all note asset declares
-    it, and `Config.note_type`'s default derives from here — so the model ankery
-    provisions and the model routing writes into can't drift apart. Cached because
-    it feeds a dataclass field default, hit on every `Config()` construction.
+    Cached because it feeds a dataclass field default, hit on every `Config()`
+    construction.
     """
     return default_catch_all().name

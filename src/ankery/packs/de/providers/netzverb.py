@@ -159,9 +159,8 @@ class NetzverbProvider:
 
     def fetch(self, word: str, category_hint: str | None = None) -> WordInfo | None:
         pos = self._resolve_pos(word, category_hint)
-        # A hint for a POS no site here serves (or any POS at all when none of
-        # the no-hint priors apply): miss cleanly so the chain (the LLM) handles
-        # it instead of scraping the wrong page shape.
+        # A hint for a POS no site here serves (or any POS at all when none of the
+        # no-hint priors apply): miss cleanly rather than scrape the wrong page shape.
         if pos is None:
             return None
         route = _ROUTES[pos]
@@ -281,10 +280,9 @@ def _parse(
     examples, example_translations = _example(steckbrief)
 
     features = _key_forms(soup, src, pos)
-    # Gender is a noun-only lexical property (only [pos.noun] declares it in
-    # pack.toml). Articles and demonstrative pronouns are themselves der/die/das,
-    # so a blind leading-article read would stamp gender="der" on them and feed a
-    # broken noun-shaped grammar line into the default note — gate it to nouns.
+    # Gender is a noun-only lexical property. Articles and demonstrative pronouns
+    # are themselves der/die/das, so a blind leading-article read would stamp
+    # gender="der" on them — gate it to nouns.
     if pos == "noun":
         _put(features, "gender", _gender(lemma_el))
     _put(features, "ipa", _pronunciation(steckbrief))

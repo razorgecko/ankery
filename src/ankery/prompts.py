@@ -1,22 +1,13 @@
-"""The prompt builder: engine-owned logic wrapped around an overridable template.
+"""Render the system and user prompts.
 
-The split is deliberate. The **template** (`defaults/prompts/system.j2`, or a pack/
-operator override) owns the *chrome*: the role line, the phrasing of the general
-rules, and the layout of the per-category guidance and feature listings. It is
-rendered with a rich variable surface so a competent prompter has real power
-(few-shot scaffolding, emphasis, reordering) without touching engine code.
+The template owns the prompt's wording and layout; this module owns the logic
+that must hold regardless of which template is used: it collapses the
+classification set to a single value under a hint, and force-appends the
+empty-object escape-hatch clause after the template renders so no override can
+drop it.
 
-The **builder** (this module) owns the *logic* that must hold for any template:
-
-1. it computes the classification set and collapses it to the single value under a
-   hint, so the vocabulary always lines up with what was requested; and
-2. it **force-appends the empty-object escape-hatch clause whenever a hint is
-   present**, *after* the template renders. This is the anti-hallucination
-   contract: the provider-side detector (`llm.py`) reads a word-less object under a
-   hint as a clean miss, so a mistaken hint misses instead of fabricating a card.
-   If that clause lived in the overridable template a careless pack or operator
-   could drop it and silently break the contract; appending it here makes the
-   guarantee survive *any* template, trusted or not.
+The escape-hatch clause pairs with `llm.py`, which reads a word-less object under
+a hint as a clean miss; change the two together.
 """
 
 import jinja2
@@ -25,21 +16,18 @@ from ankery.defaults import default_system_template, default_user_template
 from ankery.languages import language_code, language_name
 from ankery.pack import Pack
 
-# Plain text, not HTML: no autoescape. ChainableUndefined mirrors notedef — a
-# template that reaches for an absent variable renders empty rather than crashing
-# a run. trim/lstrip_blocks keep the line-based template readable; the builder
-# strips the single trailing newline a line-based template inevitably leaves.
+# Plain text, not HTML: no autoescape. ChainableUndefined renders an absent
+# variable as empty rather than crashing. trim/lstrip_blocks keep the line-based
+# template readable.
 _env = jinja2.Environment(
     trim_blocks=True,
     lstrip_blocks=True,
     autoescape=False,
     undefined=jinja2.ChainableUndefined,
 )
-# Language conversion is offered to templates as opt-in filters: a template writes
-# `{{ variables.foo | language_name }}` to render "English" from "en". They are
-# never applied here — the renderer passes variable values through verbatim — so a
-# pack that needs no language naming pays nothing. The filters are strict: applied
-# to a missing variable, `language_name` raises (it calls `.lower()` on undefined).
+# Opt-in Jinja filters for language naming: a template writes
+# `{{ variables.foo | language_name }}` to render "English" from "en". Strict —
+# applied to a missing variable, language_name raises (calls `.lower()` on undefined).
 _env.filters["language_name"] = language_name
 _env.filters["language_code"] = language_code
 
@@ -50,14 +38,8 @@ def _system_context(
     """Build the template variable surface and the hinted flag.
 
     A hint that names a declared category narrows the classification set to that
-    one value (the user has told us what the word is, so the other category
-    sections are noise) and flips `hinted`. An unrecognised hint falls back to the
-    full vocabulary, unhinted.
-
-    The pack's authoritative `name` is exposed as `name` (the template names the
-    source domain through it). The opaque operator `variables` are exposed verbatim
-    under `variables`; a template reads a language-typed one with the
-    `language_name` filter (`{{ variables.target_language | language_name }}`).
+    one value and flips `hinted`. An unrecognised hint falls back to the full
+    vocabulary, unhinted.
     """
     names = sorted(pack.categories)
     hinted = category_hint in pack.categories
@@ -94,18 +76,14 @@ def render_system_prompt(
 ) -> str:
     """Render the system prompt for `pack`, optionally narrowed to `category_hint`.
 
-    `variables` is the resolved operator bag, exposed to the template verbatim
-    under `variables` (language-typed entries reach for the `language_name`
-    filter); the source domain is named by the pack's own `name`. `template`
-    overrides the bundled chrome (the pack/operator layers supply it); the builder
-    logic — set collapse and the forced escape hatch — is invariant across
-    whichever layer supplied it.
+    `variables` is the resolved operator bag, exposed to the template verbatim.
+    `template` overrides the bundled default. The escape-hatch clause is appended
+    under a hint after rendering, so no template can omit it.
     """
     context, hinted = _system_context(pack, category_hint, variables)
     text = template if template is not None else default_system_template()
-    # Strip the trailing newline a line-based template leaves so output matches a
-    # hand-joined prompt; the escape hatch (under a hint) is appended afterwards so
-    # no template can omit it.
+    # Strip the trailing newline the line-based template leaves; the escape hatch
+    # (under a hint) is appended afterwards so no template can omit it.
     rendered = _env.from_string(text).render(**context).rstrip("\n")
     if hinted:
         rendered = f"{rendered}\n\n{_escape_hatch(category_hint)}"
@@ -113,7 +91,6 @@ def render_system_prompt(
 
 
 def build_user_prompt(word: str, *, template: str | None = None) -> str:
-    """Render the user turn: just the word. The language pair and any category hint
-    live in the system prompt, so the user turn carries only the word itself."""
+    """Render the user turn: just the word."""
     text = template if template is not None else default_user_template()
     return _env.from_string(text).render(word=word).rstrip("\n")

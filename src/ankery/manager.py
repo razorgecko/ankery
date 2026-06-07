@@ -38,13 +38,12 @@ class DeckBuilder:
         self.note_type = note_type
         self.style_css = style_css
         self.normalize = normalize or (lambda info: info)
-        # The neutral catch-all: the guaranteed routing terminus, shipped in the
-        # engine's defaults home. Falls back to it when no caller supplies one.
+        # The neutral catch-all note; falls back to the engine default when no
+        # caller supplies one.
         self.catch_all_note = catch_all_note or default_catch_all()
         self.note_definitions = list(note_definitions or [])
         self.tags = tags or []
-        # The pack's declared category vocabulary; the CLI resolves a `word:cat`
-        # hint against it before calling add_word.
+        # The pack's declared category vocabulary.
         self.category_names = list(category_names or [])
 
     def verify_note_types(self) -> None:

@@ -2,27 +2,24 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class WordInfo(BaseModel):
-    """Structured word data — the shared contract between providers, manager, and sink."""
+    """Structured word data."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
     word: str = Field(min_length=1)
     definitions: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
-    # May be shorter than `examples`; index defensively.
+    # Aligned to `examples` by index; may be shorter.
     example_translations: list[str] = Field(default_factory=list)
     translations: list[str] = Field(default_factory=list)
-    # The pack's routing discriminator value (e.g. "noun"); one of its declared
-    # [category] vocabulary. Picks the note; named generically so the engine
-    # carries no domain knowledge.
+    # One value from the pack's declared category vocabulary (e.g. "noun").
     category: str | None = None
 
-    # Write-only provenance: the pack that produced this and the resolved variables
-    # it was produced under. The engine names neither; nothing reads them today.
+    # Provenance: the pack that produced this and the variables it was produced under.
     pack: str | None = None
     variables: dict[str, str] = Field(default_factory=dict)
 
-    # Pack-defined properties; keys declared per category value by the active pack.
+    # Pack-defined properties, keyed by labels the pack declares.
     features: dict[str, str] = Field(default_factory=dict)
 
     audio_url: str | None = None

@@ -13,10 +13,8 @@ from ankery.sinks.base import SinkError
 def split_category_hint(raw: str) -> tuple[str, str | None]:
     """Split a `word:cat` token into (word, raw_hint); no colon -> (word, None).
 
-    The category hint is everything after the last colon, e.g. `schnell:adj`
-    or `Bank:noun`. A colon is glob-safe, so words need no shell quoting. The hint
-    is resolved against the pack's declared categories by prefix match (see
-    resolve_category_hint).
+    The category hint is everything after the last colon, e.g. `schnell:adj` or
+    `Bank:noun`. A colon is glob-safe, so words need no shell quoting.
     """
     word, sep, hint = raw.rpartition(":")
     if not sep:

@@ -39,7 +39,7 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Config:
-    """Infrastructure settings — endpoints, deck, pack selector, variables. Domain behavior lives in the pack."""
+    """Infrastructure settings — endpoints, deck, pack selector, variables."""
 
     # Empty means use the pack's preferred chain.
     providers: tuple[str, ...] = ()
@@ -56,23 +56,18 @@ class Config:
     allow_duplicate: bool = False
 
     # `note_type` is the catch-all model for words that match no pack note
-    # definition. It defaults to the engine-owned model ankery provisions
-    # ("Ankery Basic"); the default is derived from that asset's `name` so the two
-    # can't drift. Repoint it at a foreign model (e.g. Anki's stock "Basic") with
-    # --note-type.
+    # definition; defaults to the engine-owned "Ankery Basic". --note-type repoints
+    # it at a foreign model (e.g. Anki's stock "Basic").
     deck: str = "Default"
     note_type: str = field(default_factory=catch_all_model_name)
     tags: tuple[str, ...] = ()
 
-    # Extra note layouts merged over the pack's by category; language-agnostic layouts live here.
+    # Extra note layouts merged over the pack's by category.
     notes_dir: Path | None = None
 
-    # The pack selector — a pack code, not a language to the engine. Resolved to a
-    # pack directory at build_deck_builder time.
+    # The pack selector — a pack code, taken literally (not a language code).
     pack: str = "de"
-    # Opaque operator-supplied variables the pack consumes; the engine names none.
-    # Seeded from the pack's declared defaults, overlaid with these, and validated
-    # against the pack's declarations at build_deck_builder time (resolve_variables).
+    # Opaque operator-supplied variables the pack consumes.
     variables: dict[str, str] = field(default_factory=dict)
     packs_dir: Path | None = None
 
@@ -84,7 +79,7 @@ class Config:
         auth_path: Path | None = None,
         environ: dict[str, str] | None = None,
     ) -> "Config":
-        """Resolve config: defaults < config.toml < auth.toml < env. CLI flags applied by caller."""
+        """Resolve config: defaults < config.toml < auth.toml < env."""
         env = os.environ if environ is None else environ
         if path is None:
             raw = env.get(ENV_PREFIX + "CONFIG")
@@ -148,13 +143,11 @@ def _load_config_file(path: Path) -> dict:
         if isinstance(raw.get(key), str):
             raw[key] = Path(raw[key]).expanduser()
     # The [variables] table is an opaque key/value bag; coerce values to str so a
-    # TOML number/bool is carried as text. Which variable keys are valid is checked
-    # later, in resolve_variables, once the pack that declares them is loaded.
+    # TOML number/bool is carried as text.
     if isinstance(raw.get("variables"), dict):
         # A TOML table header captures every key after it, so an engine key written
-        # below `[variables]` silently lands inside the bag (and would later fail
-        # with a misleading "pack does not declare variable" error). Catch that here
-        # and point at the real cause: ordering.
+        # below `[variables]` silently lands inside the bag. Catch that here and
+        # point at the cause: ordering.
         misplaced = set(raw["variables"]) & config_keys
         if misplaced:
             raise ConfigError(
@@ -264,7 +257,7 @@ def build_deck_builder(config: Config) -> DeckBuilder:
         raise ConfigError(str(exc)) from exc
 
     # Resolve variables against the pack now that it is loaded — validation needs
-    # its declarations. Providers below read the resolved `config.variables`.
+    # its declarations.
     config = replace(config, variables=resolve_variables(config.variables, pack))
 
     registry: dict[str, ProviderBuilder] = {**PROVIDER_REGISTRY, **pack.provider_builders}

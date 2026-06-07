@@ -10,9 +10,8 @@ from ankery.models import WordInfo
 
 FieldMap = Callable[[WordInfo], dict[str, str]]
 
-# A note whose `applies_to` is this serves as the pack's catch-all fallback: it
-# matches no specific category, but routing falls back to it (before the
-# neutral catch-all) for any word no bespoke note claims.
+# The `applies_to` value marking a note as the pack's catch-all fallback; it
+# matches no specific category.
 DEFAULT_APPLIES_TO = "*"
 
 
@@ -25,9 +24,8 @@ def _finalize(value: object) -> object:
     return "" if value is None else value
 
 
-# autoescape: field values flow from untrusted providers (LLM/scraper) into card
-# HTML, so escape them by default. Card structure lives in the Anki templates, not
-# here; a map that deliberately emits HTML can opt out per-value with `| safe`.
+# Field values come from untrusted providers (LLM/scraper) and flow into card
+# HTML, so autoescape by default; a map can opt out per-value with `| safe`.
 _env = jinja2.Environment(
     trim_blocks=True,
     lstrip_blocks=True,
@@ -78,7 +76,7 @@ class NoteDefinition:
 
 
 def load_notes_from_dir(directory: Path) -> list[NoteDefinition]:
-    """Load all *.toml note definitions from `directory`, sorted by stem (routing order)."""
+    """Load all *.toml note definitions from `directory`, sorted by file stem."""
     if not directory.is_dir():
         return []
     by_path: list[tuple[Path, NoteDefinition]] = []

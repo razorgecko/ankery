@@ -18,8 +18,8 @@ class WordProvider(Protocol):
         """Return word info, or None if this provider has no result for `word`.
 
         `category_hint`, when given, is a canonical category value from the active
-        pack's vocabulary (resolved at the CLI boundary). A provider may use it to
-        disambiguate (e.g. pick the right page to scrape) or to skip a lookup it
-        can't serve for that category; passing it is always optional.
+        pack's vocabulary. A provider may use it to disambiguate (e.g. pick the
+        right page to scrape) or to skip a lookup it can't serve for that category;
+        passing it is always optional.
         """
         ...

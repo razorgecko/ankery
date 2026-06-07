@@ -27,15 +27,14 @@ class CategorySpec:
     value: str  # a routing category value, e.g. "noun"
     citation: str | None
     guidance: tuple[str, ...]
-    features: dict[str, str]  # key -> meaning, handed to the LLM and read by notes
+    features: dict[str, str]  # key -> meaning
 
 
 @dataclass(frozen=True)
 class VariableSpec:
     """One operator-supplied variable a pack declares (e.g. `target_language`).
 
-    `meaning` is a human description of the variable; it is parsed and stored but
-    not read by anything yet. `default` is the value used when the operator
+    `meaning` is a human description. `default` is the value used when the operator
     supplies none; `None` means no default."""
 
     key: str
@@ -48,11 +47,9 @@ class Pack:
     code: str
     name: str
     common_features: dict[str, str]
-    # Variables this pack declares for the operator to set, keyed by name. The
-    # engine names none of them; the pack consumes them.
+    # Variables this pack declares for the operator to set, keyed by name.
     variables: dict[str, VariableSpec]
-    # The human label for the routing dimension (e.g. "part of speech"), used in
-    # the LLM prompt; the per-value vocabulary lives in `categories`.
+    # The human label for the routing dimension (e.g. "part of speech").
     category_label: str
     categories: dict[str, CategorySpec]
     providers: tuple[str, ...]

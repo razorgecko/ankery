@@ -1,11 +1,9 @@
-"""Shared HTTP retry helper for providers hitting rate-limited endpoints.
+"""HTTP retry helper: send a request, retry while the response is HTTP 429.
 
-Providers send a single request and then inspect the response (a 404 miss, a
-``raise_for_status``). A 429 (Too Many Requests) is transient: the server is
-asking us to back off and try again. :func:`request_with_retry` wraps the send
-so 429 is retried transparently, honouring the server's ``Retry-After`` when
-given and otherwise backing off exponentially. The final response is returned
-unchanged, so the caller keeps full control over every other status.
+429 (Too Many Requests) is transient — the server is asking us to back off.
+:func:`request_with_retry` retries it transparently, honouring the server's
+``Retry-After`` when given and otherwise backing off exponentially, and returns
+the final response unchanged so the caller handles every other status itself.
 """
 
 from __future__ import annotations

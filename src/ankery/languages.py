@@ -1,25 +1,8 @@
 """Language code <-> English-name resolution.
 
-A deliberately small, hand-rolled table — not a standards-complete one. The engine
-itself names no language and does no conversion: this module is consumed only by
-pack code and by templates, never by engine wiring or pack selection. Each
-*consumer* normalizes a language-typed variable to the form it needs.
-
-Two directions, two consumers:
-
-- `language_name(code)` is a Jinja filter (registered in `prompts.py`): a pack
-  template renders `{{ variables.target_language | language_name }}` to read
-  better in the prompt ("written in German" beats "written in de"). A miss falls
-  back to `code.title()` so an unlisted code still renders *something* legible.
-- `language_code(token)` normalizes a code-or-name to a code; it is also exposed
-  as a Jinja filter and is used by the de pack's netzverb provider (which needs a
-  code to negotiate Accept-Language). A miss passes through unchanged (lowercased)
-  — so the table never gates which packs may load, and a language-typed variable
-  value we don't list here still resolves.
-
-The pack selector (`--pack`) is **not** routed through this table — pack codes are
-their own namespace, taken literally, so a user pack named for a language is not
-silently rerouted (e.g. `english` must not become `en`).
+A deliberately small, hand-rolled table, not a standards-complete one. Both
+directions fall back rather than fail: an unlisted token renders/normalizes as the
+bare token, so the table never gates anything.
 """
 
 # Curated: the languages someone is plausibly translating to/from. Extend freely;
@@ -63,10 +46,7 @@ def language_name(code: str) -> str:
 
 
 def language_code(token: str) -> str:
-    """Normalize a code-or-English-name to a code; unknown tokens pass through lowercased.
-
-    Pass-through is intentional: this must not restrict which packs can load, so a
-    token we don't recognize is assumed to already be a code.
-    """
+    """Normalize a code-or-English-name to a code; an unknown token passes through
+    lowercased, assumed to already be a code."""
     token = token.strip().lower()
     return _CODES.get(token, token)

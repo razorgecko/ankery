@@ -34,11 +34,10 @@ class LLMProvider:
         # prompt to the hinted class, so the system message depends on the call.
         self.system_prompt_for = system_prompt_for
         # The pack's label for its routing dimension (e.g. "part of speech"). The
-        # prompt asks the model to fill a JSON key by this name; we map it onto
-        # WordInfo's generic `category` before validation.
+        # model fills a JSON key by this name; fetch maps it onto WordInfo.category.
         self.category_key = category_key
-        # Stamped onto WordInfo as provenance (the producing pack and the resolved
-        # variables); we overwrite whatever the model echoed, never trusting it.
+        # Stamped onto WordInfo as provenance; fetch overwrites whatever the model
+        # echoed, never trusting it.
         self.pack = pack
         self.variables = variables
         self.timeout = timeout
@@ -61,8 +60,7 @@ class LLMProvider:
 
         url = f"{self.base_url}/chat/completions"
         try:
-            # 429 (rate limited) is transient: retry it transparently, honouring
-            # the server's Retry-After, before raise_for_status escalates the rest.
+            # 429 is transient; retry it before raise_for_status handles the rest.
             response = request_with_retry(
                 lambda: httpx.post(
                     url, json=payload, headers=headers, timeout=self.timeout
@@ -79,15 +77,13 @@ class LLMProvider:
 
         data = _parse_json_object(content)
 
-        # Under a category_hint the system prompt offers the model an empty object
-        # as the way to reject a mistaken assertion (the word is not that class).
-        # An empty/word-less object is that signal: a clean miss, not a hard error,
-        # so the chain moves on rather than fabricating a card for the wrong word.
+        # Under a hint, an empty/word-less object is the model's signal that the
+        # word is not that class; treat it as a clean miss, not a fabricated card.
+        # Pairs with the escape-hatch clause prompts.py appends under a hint.
         if category_hint and not data.get("word"):
             return None
 
-        # The prompt asks the model to fill the category under the pack's own
-        # label (e.g. "part of speech"); map it onto WordInfo's generic field.
+        # Map the pack-labelled category key onto WordInfo's generic field.
         if self.category_key in data:
             data["category"] = data.pop(self.category_key)
 
