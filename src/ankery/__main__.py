@@ -98,6 +98,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="add the note even if Anki considers it a duplicate",
     )
+    parser.add_argument(
+        "-n", "--dry-run",
+        action="store_true",
+        help="look up and render notes without writing anything to Anki; prints "
+        "the -v preview (unless -q) and skips note type provisioning, so no "
+        "running Anki is needed",
+    )
     output = parser.add_mutually_exclusive_group()
     output.add_argument(
         "-q", "--quiet",
@@ -186,16 +193,19 @@ def _setup_trace() -> None:
     log.setLevel(logging.DEBUG)
 
 
-def _report_added(result, word: str, level: int) -> None:
-    """Print one added word at the given verbosity: nothing at 0, the word at 1,
-    plus note id, note type, and the saved fields at 2+."""
+def _report_added(result, word: str, level: int, *, dry_run: bool = False) -> None:
+    """Print one added/previewed word at the given verbosity: nothing at 0, the
+    word at 1, plus note id, note type, and the saved fields at 2+."""
     if level < 1:
         return
     label = word if result.word == word else f"{word} -> {result.word}"
     if level == 1:
         print(f"{label}: added")
         return
-    print(f"{label}: added (note {result.note_id}, {result.note_type})")
+    if dry_run:
+        print(f"{label}: would add ({result.note_type})")
+    else:
+        print(f"{label}: added (note {result.note_id}, {result.note_type})")
     for name, value in result.fields.items():
         print(f"  {name}: {value}")
 
@@ -205,6 +215,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     # 0 = quiet, 1 = default, 2 = note content (-v), 3 = engine trace (-vv).
     level = 0 if args.quiet else 1 + min(args.verbose, 2)
+    if args.dry_run and not args.quiet:
+        level = max(level, 2)  # the preview is the point of a dry run; -q still wins
     if level >= 3:
         _setup_trace()
     try:
@@ -217,14 +229,16 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         _error(str(exc))
         return 2
-    try:
-        created = builder.verify_note_types()
-    except SinkError as exc:
-        _error(f"note type setup failed: {exc}")
-        return 1
-    if level >= 1:
-        for name in created or []:
-            print(f"created note type: {name}")
+    # A dry run touches no Anki at all: no note type provisioning either.
+    if not args.dry_run:
+        try:
+            created = builder.verify_note_types()
+        except SinkError as exc:
+            _error(f"note type setup failed: {exc}")
+            return 1
+        if level >= 1:
+            for name in created or []:
+                print(f"created note type: {name}")
 
     exit_code = 0
     for raw_word in args.words:
@@ -242,7 +256,10 @@ def main(argv: list[str] | None = None) -> int:
                 exit_code = 1
                 continue
         try:
-            result = builder.add_word(word, category_hint=category_hint)
+            if args.dry_run:
+                result = builder.preview(word, category_hint=category_hint)
+            else:
+                result = builder.add_word(word, category_hint=category_hint)
         except ProviderError as exc:
             _error(f"{word}: lookup failed: {exc}")
             exit_code = 1
@@ -254,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
                 _error(f"{word}: not found")
                 exit_code = 1
             else:
-                _report_added(result, word, level)
+                _report_added(result, word, level, dry_run=args.dry_run)
     return exit_code
 
 

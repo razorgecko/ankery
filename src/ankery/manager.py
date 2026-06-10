@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class AddResult(NamedTuple):
-    """Outcome of adding a word: the note id, the form the provider resolved to,
-    and what was written — the note type and the rendered fields."""
+    """Outcome of adding (or previewing) a word: the note id (None for a
+    preview), the form the provider resolved to, and what was (or would be)
+    written — the note type and the rendered fields."""
 
-    note_id: int
+    note_id: int | None
     word: str
     note_type: str = ""
     fields: dict[str, str] = {}
@@ -70,6 +71,21 @@ class DeckBuilder:
             catch_all=self.note_type,
         ) or []
 
+    def preview(self, word: str, *, category_hint: str | None = None) -> AddResult | None:
+        """Look up, route, and render a note without writing it; None on a clean miss.
+
+        The same path as `add_word` up to the sink — chain, normalize, route,
+        render — so the result is exactly what `add_word` would write. `note_id`
+        is None.
+        """
+        info = self.lookup(word, category_hint=category_hint)
+        if info is None:
+            return None
+        note_type, map_fields = self._route(info)
+        return AddResult(
+            note_id=None, word=info.word, note_type=note_type, fields=map_fields(info)
+        )
+
     def add_word(self, word: str, *, category_hint: str | None = None) -> AddResult | None:
         """Look up, build, and write a note; returns the result or None on a clean miss.
 
@@ -77,19 +93,17 @@ class DeckBuilder:
         from the requested `word` (e.g. an inflection redirected to its lemma).
         `category_hint`, when given, forces the routing category (see `lookup`).
         """
-        info = self.lookup(word, category_hint=category_hint)
-        if info is None:
+        result = self.preview(word, category_hint=category_hint)
+        if result is None:
             return None
-        note_type, map_fields = self._route(info)
-        fields = map_fields(info)
-        logger.info("adding %r to deck %r as %r", info.word, self.deck, note_type)
+        logger.info("adding %r to deck %r as %r", result.word, self.deck, result.note_type)
         note_id = self.sink.add_note(
             deck=self.deck,
-            note_type=note_type,
-            fields=fields,
+            note_type=result.note_type,
+            fields=result.fields,
             tags=self.tags,
         )
-        return AddResult(note_id=note_id, word=info.word, note_type=note_type, fields=fields)
+        return result._replace(note_id=note_id)
 
     def _route(self, info: WordInfo) -> tuple[str, FieldMap]:
         """First note whose `applies` matches wins; else the pack default note (a

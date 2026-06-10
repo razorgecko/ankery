@@ -21,6 +21,7 @@ class FakeBuilder:
         self.verified = False
         self.verify_error: Exception | None = None
         self.created: list[str] = []
+        self.preview_calls: list[tuple[str, str | None]] = []
 
     def verify_note_types(self):
         if self.verify_error is not None:
@@ -31,6 +32,13 @@ class FakeBuilder:
     def add_word(self, word, *, category_hint=None):
         self.calls.append(word)
         self.hint_calls.append((word, category_hint))
+        return self._outcome(word)
+
+    def preview(self, word, *, category_hint=None):
+        self.preview_calls.append((word, category_hint))
+        return self._outcome(word)
+
+    def _outcome(self, word):
         outcome = self._results[word]
         if isinstance(outcome, Exception):
             raise outcome
@@ -529,6 +537,58 @@ def test_quiet_and_verbose_are_mutually_exclusive(patched, capsys):
         cli.main(["-q", "-v", "Buch"])
 
     assert exc.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# Dry run
+# ---------------------------------------------------------------------------
+
+
+def test_dry_run_previews_without_touching_anki(patched, capsys):
+    captured, set_results = patched
+    builder = set_results(
+        {
+            "Buch": AddResult(
+                note_id=None,
+                word="Buch",
+                note_type="Ankery DE: Noun",
+                fields={"Word": "Buch", "Article": "das"},
+            )
+        }
+    )
+
+    code = cli.main(["--dry-run", "Buch"])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Buch: would add (Ankery DE: Noun)" in out  # -v output forced
+    assert "  Word: Buch" in out
+    assert "  Article: das" in out
+    assert builder.preview_calls == [("Buch", None)]
+    assert builder.calls == []  # add_word never invoked
+    assert builder.verified is False  # note type provisioning skipped
+
+
+def test_dry_run_not_found_still_errors(patched, capsys):
+    captured, set_results = patched
+    set_results({"Xyz": None})
+
+    code = cli.main(["--dry-run", "Xyz"])
+
+    assert code == 1
+    assert "Xyz: not found" in capsys.readouterr().err
+
+
+def test_quiet_dry_run_prints_nothing(patched, capsys):
+    captured, set_results = patched
+    set_results(
+        {"Buch": AddResult(note_id=None, word="Buch", note_type="N", fields={"W": "x"})}
+    )
+
+    code = cli.main(["-q", "-n", "Buch"])
+
+    assert code == 0
+    assert capsys.readouterr().out == ""  # explicit -q beats the implied -v
 
 
 def test_missing_word_argument_is_an_argparse_error(capsys):

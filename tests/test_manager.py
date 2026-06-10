@@ -339,6 +339,26 @@ def test_verify_skips_owned_catch_all_when_note_type_points_at_a_foreign_model()
     assert sink.verified["catch_all"] == "Basic"
 
 
+def test_preview_renders_without_writing_to_sink():
+    sink = FakeSink()
+    builder = _builder([FakeProvider("p", result=_info())], sink, note_type="Basic")
+
+    result = builder.preview("Buch")
+
+    assert result.note_id is None
+    assert result.note_type == "Basic"
+    assert result.fields["Front"] == "Buch"
+    assert sink.calls == []  # nothing written
+
+
+def test_preview_returns_none_on_clean_miss():
+    sink = FakeSink()
+    builder = _builder([FakeProvider("p", result=None)], sink)
+
+    assert builder.preview("Buch") is None
+    assert sink.calls == []
+
+
 def test_verify_note_types_returns_created_names():
     sink = FakeSink()
     sink.created_result = ["Ankery Basic"]

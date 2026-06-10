@@ -62,6 +62,10 @@ ankery <word1> <word2> <word3>   # add several at once
 ankery --deck MyDeck <word>      # choose the destination deck
 ankery --pack <code> <word>      # load this language pack (e.g. de)
 ankery --var target_language=en <word>   # set a pack variable
+ankery -n <word>                 # dry run: show the card, write nothing
+ankery -q <word>                 # quiet: no output, errors still on stderr
+ankery -v <word>                 # also print each note's saved content
+ankery -vv <word>                # additionally trace the lookup on stderr
 ```
 
 The part of speech comes from whichever provider answers: a scraper may guess it
