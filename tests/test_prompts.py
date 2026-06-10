@@ -27,8 +27,8 @@ def _render_de(category_hint: str | None = None) -> str:
 
 
 def test_unhinted_prompt_matches_golden_byte_for_byte():
-    # Pins the de pack's template + builder to the exact prompt the imperative
-    # renderer produced before extraction, so the refactor changed nothing.
+    # Pins the de pack's template + builder output byte-for-byte; regenerated
+    # deliberately whenever the pack's declarations or template change.
     assert _render_de() == _golden("system_prompt_de_unhinted.txt")
 
 
@@ -62,7 +62,7 @@ def test_renders_category_vocabulary_as_the_classification_set():
     # The declared categories are offered as the closed classification vocabulary.
     assert (
         "exactly one of: adjective, adverb, article, conjunction, noun, "
-        "particle, preposition, pronoun, verb" in prompt
+        "particle, phrase, preposition, pronoun, verb" in prompt
     )
 
 
@@ -107,7 +107,7 @@ def test_unknown_category_hint_falls_back_to_full_vocabulary():
 
     assert (
         "exactly one of: adjective, adverb, article, conjunction, noun, "
-        "particle, preposition, pronoun, verb" in prompt
+        "particle, phrase, preposition, pronoun, verb" in prompt
     )
 
 

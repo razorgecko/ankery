@@ -19,13 +19,13 @@ def test_bundled_de_pack_loads():
     assert pack.category_label == "part of speech"
     assert set(pack.categories) == {
         "noun", "verb", "adjective", "adverb", "preposition",
-        "pronoun", "article", "conjunction", "particle",
+        "pronoun", "article", "conjunction", "particle", "phrase",
     }
-    # Stem order: default_de, noun_de, verb_de. "Ankery DE: Word" is the pack's
-    # catch-all default note (applies_to "*"); adjective/adverb/preposition have
-    # no bespoke note and route to it.
+    # Stem order: default_de, noun_de, phrase_de, verb_de. "Ankery DE: Word" is
+    # the pack's catch-all default note (applies_to "*"); adjective/adverb/
+    # preposition have no bespoke note and route to it.
     assert pack.notes and [n.name for n in pack.notes] == [
-        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Phrase", "Ankery DE: Verb",
     ]
     assert ".card" in pack.style_css
 
@@ -35,6 +35,7 @@ def test_de_categories_declare_feature_keys():
 
     assert "gender" in pack.categories["noun"].features
     assert "present_1sg" in pack.categories["verb"].features
+    assert "literal" in pack.categories["phrase"].features
     assert "ipa" in pack.common_features  # common to every category
 
 

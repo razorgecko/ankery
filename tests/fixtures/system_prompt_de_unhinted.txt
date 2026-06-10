@@ -2,7 +2,7 @@ You are a lexicographer building Anki vocabulary cards for German. Given a singl
 
 General rules:
 - `word`: the citation/dictionary form for its part of speech (see below). Give the bare lemma: no article, no surrounding parentheses.
-- `part of speech`: exactly one of: adjective, adverb, article, conjunction, noun, particle, preposition, pronoun, verb.
+- `part of speech`: exactly one of: adjective, adverb, article, conjunction, noun, particle, phrase, preposition, pronoun, verb.
 - `definitions` and `examples`: written in German. `example_translations`: the English gloss of each example, aligned by position.
 - `translations`: a JSON array of strings in English, e.g. ["...", "..."]. Always an array, never an object keyed by language.
 - `features`: a JSON object of grammatical properties, using EXACTLY the keys listed below for the word's part of speech plus the common keys. Omit a key only if it genuinely does not apply. Give each value bare — forms with no leading article.
@@ -49,6 +49,13 @@ Part of speech: particle
   - Classify as particle an uninflected word with no standalone sentence role: modal/flavouring particles that colour the speaker's attitude (doch, mal, ja, halt, eben, schon, wohl, eigentlich) and focus particles that highlight a phrase (auch, nur, sogar, selbst, gerade).
   - Distinguish from adverbs by the Vorfeld test: an adverb answers wie/wann/wo and can stand alone as the first element before the finite verb (Heute kommt er); a particle cannot occupy that slot on its own. If the word can, it is an adverb, not a particle.
   - Do not classify a coordinating/subordinating linker (a conjunction) or a case-governing word (a preposition) as a particle, even though both are uninflected.
+
+Part of speech: phrase
+  citation form: the full phrase in its canonical form: verbal idioms in the infinitive (jemandem die Daumen drücken), open slots as jemand/jemandem/jemanden or etwas
+  - Classify as phrase only a multi-word expression: an idiom, a fixed expression, a proverb, or a strong collocation. A single word is never a phrase — give it its actual part of speech.
+  - Keep every word that belongs to the expression, including its articles; the bare-lemma/no-article rule applies to single words, not to phrases.
+  feature keys:
+    literal: word-by-word literal gloss of the phrase, in the same language as the translations; give it only when the phrase is idiomatic (its literal reading differs from the actual meaning), omit it for transparent phrases
 
 Part of speech: preposition
   citation form: the preposition

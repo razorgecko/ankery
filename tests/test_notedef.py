@@ -183,9 +183,9 @@ def test_bundled_definitions_carry_no_css_of_their_own():
 
 
 def test_load_notes_orders_by_stem_for_routing_precedence():
-    # Stem order is routing order: default_de, noun_de, verb_de.
+    # Stem order is routing order: default_de, noun_de, phrase_de, verb_de.
     assert [d.name for d in load_notes_from_dir(DE_NOTES)] == [
-        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Phrase", "Ankery DE: Verb",
     ]
 
 

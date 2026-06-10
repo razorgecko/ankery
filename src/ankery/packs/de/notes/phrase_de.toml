@@ -1,0 +1,21 @@
+name = "Ankery DE: Phrase"
+applies_to = "phrase"
+
+# Word leads so Anki keys duplicate detection on it. Literal is filled only for
+# idiomatic phrases (see ../pack.toml [pos.phrase]); the recognition card hides
+# the row via a mustache conditional when it is empty.
+[map]
+Word        = "{{ word }}"
+Translation = "{{ translations | join(', ') }}"
+Literal     = "{{ features.literal }}"
+Example     = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
+
+[[cards]]
+name = "P1 Recognition"
+qfmt = "{{Word}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Translation}}{{#Literal}}<br><br>lit. {{Literal}}{{/Literal}}{{#Example}}<br><br>{{Example}}{{/Example}}"
+
+[[cards]]
+name = "P2 Production"
+qfmt = "{{Translation}} (phrase)"
+afmt = "{{FrontSide}}<hr id=answer>{{Word}}"

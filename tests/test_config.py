@@ -355,7 +355,7 @@ def test_build_deck_builder_loads_the_packs_notes_and_style():
     builder = build_deck_builder(Config())  # default pack "de"
 
     assert [d.name for d in builder.note_definitions] == [
-        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Phrase", "Ankery DE: Verb",
     ]
     assert ".card" in builder.style_css
 
@@ -376,14 +376,17 @@ def test_notes_dir_merges_over_the_packs_notes_by_category(tmp_path):
     builder = build_deck_builder(Config(notes_dir=tmp_path))
 
     names = [d.name for d in builder.note_definitions]
-    assert names == ["Ankery DE: Word", "Simple Noun", "Ankery DE: Verb", "Simple Adjective"]
+    assert names == [
+        "Ankery DE: Word", "Simple Noun", "Ankery DE: Phrase", "Ankery DE: Verb",
+        "Simple Adjective",
+    ]
 
 
 def test_notes_dir_unset_leaves_the_packs_notes_alone():
     builder = build_deck_builder(Config())  # notes_dir is None by default
 
     assert [d.name for d in builder.note_definitions] == [
-        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Verb",
+        "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Phrase", "Ankery DE: Verb",
     ]
 
 

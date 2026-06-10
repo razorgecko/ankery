@@ -82,6 +82,15 @@ ankery laufen:v       # short forms work: n, v, adj, adv, prep, …
 The hint is the part-of-speech name the pack declares (`noun`, `verb`,
 `adjective`, …); any unambiguous prefix is accepted.
 
+Multi-word expressions — idioms, fixed phrases, proverbs — can be added too,
+if the pack declares a category for them (e.g. `phrase` in the `de` pack).
+Quote the expression so the shell passes it as one argument:
+
+```bash
+ankery "jemandem die Daumen drücken"
+ankery "die Kirche im Dorf lassen:ph"   # :ph pins it (p alone is ambiguous)
+```
+
 Run `ankery --help` to see all options.
 
 ## Configuration

@@ -111,7 +111,7 @@ governs_case = "the case it governs: accusative, dative, genitive, or accusative
 # the citation + boundary guidance carry the weight. The guidance exists chiefly
 # to keep the LLM from bleeding these classes into the open ones next door —
 # pronoun vs article, particle vs adverb, conjunction vs conjunctional adverb —
-# since all nine POS now compete in one classification set.
+# since every declared POS competes in one classification set.
 
 [pos.pronoun]
 citation = "the nominative base form, e.g. ich, er, sie, mein, dieser, welcher, wer"
@@ -147,3 +147,16 @@ guidance = [
     "Distinguish from adverbs by the Vorfeld test: an adverb answers wie/wann/wo and can stand alone as the first element before the finite verb (Heute kommt er); a particle cannot occupy that slot on its own. If the word can, it is an adverb, not a particle.",
     "Do not classify a coordinating/subordinating linker (a conjunction) or a case-governing word (a preposition) as a particle, even though both are uninflected.",
 ]
+
+# The one multi-word category: idioms, fixed expressions, proverbs. The second
+# guidance bullet exists because the template's general rules demand a bare,
+# article-free lemma — right for single words, wrong for a phrase whose articles
+# are part of the expression — so this section must override that rule explicitly.
+[pos.phrase]
+citation = "the full phrase in its canonical form: verbal idioms in the infinitive (jemandem die Daumen drücken), open slots as jemand/jemandem/jemanden or etwas"
+guidance = [
+    "Classify as phrase only a multi-word expression: an idiom, a fixed expression, a proverb, or a strong collocation. A single word is never a phrase — give it its actual part of speech.",
+    "Keep every word that belongs to the expression, including its articles; the bare-lemma/no-article rule applies to single words, not to phrases.",
+]
+[pos.phrase.features]
+literal = "word-by-word literal gloss of the phrase, in the same language as the translations; give it only when the phrase is idiomatic (its literal reading differs from the actual meaning), omit it for transparent phrases"
