@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Callable
 
 import httpx
@@ -7,6 +8,8 @@ from pydantic import ValidationError
 from ankery.models import WordInfo
 from ankery.providers.base import ProviderError
 from ankery.providers.retry import request_with_retry
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider:
@@ -46,11 +49,13 @@ class LLMProvider:
         self.api_key = api_key
 
     def fetch(self, word: str, category_hint: str | None = None) -> WordInfo | None:
+        system_prompt = self.system_prompt_for(category_hint)
+        user_prompt = self.user_prompt_for(word)
         payload: dict = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": self.system_prompt_for(category_hint)},
-                {"role": "user", "content": self.user_prompt_for(word)},
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ],
             "temperature": 0,
         }
@@ -60,6 +65,10 @@ class LLMProvider:
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
         url = f"{self.base_url}/chat/completions"
+        # Log the payload only, never `headers` — they carry the bearer token.
+        logger.info("llm: POST %s (model %r, hint=%r)", url, self.model, category_hint)
+        logger.debug("llm: system prompt:\n%s", system_prompt)
+        logger.debug("llm: user prompt: %s", user_prompt)
         try:
             # 429 is transient; retry it before raise_for_status handles the rest.
             response = request_with_retry(
@@ -76,12 +85,14 @@ class LLMProvider:
         except (KeyError, IndexError, ValueError) as exc:
             raise ProviderError(f"Unexpected LLM response shape: {exc}") from exc
 
+        logger.debug("llm: response content:\n%s", content)
         data = _parse_json_object(content)
 
         # Under a hint, an empty/word-less object is the model's signal that the
         # word is not that class; treat it as a clean miss, not a fabricated card.
         # Pairs with the escape-hatch clause prompts.py appends under a hint.
         if category_hint and not data.get("word"):
+            logger.info("llm: word-less object under hint %r -> miss", category_hint)
             return None
 
         # Map the pack-labelled category key onto WordInfo's generic field.

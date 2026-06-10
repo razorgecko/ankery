@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 import warnings
 from collections.abc import Sequence
@@ -97,6 +98,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="add the note even if Anki considers it a duplicate",
     )
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="no normal output; errors still go to stderr",
+    )
+    output.add_argument(
+        "-v", "--verbose",
+        action="count",
+        default=0,
+        help="-v also prints each note's id, type, and saved content; "
+        "-vv adds an engine trace on stderr (providers tried, requests, prompts)",
+    )
     return parser
 
 
@@ -151,30 +165,72 @@ def _show_warning(message, category, filename, lineno, file=None, line=None) -> 
     print(f"ankery: warning: {message}", file=file or sys.stderr)
 
 
+def _error(message: str) -> None:
+    print(f"ankery: error: {message}", file=sys.stderr)
+
+
+def _setup_trace() -> None:
+    """Route engine logs to stderr at DEBUG. Scoped to the "ankery" logger tree so
+    third-party loggers (httpx) stay quiet; pack code joins by naming its logger
+    under "ankery." (see the netzverb provider)."""
+    log = logging.getLogger("ankery")
+    # Replace, don't stack: repeated main() calls (tests, library use) would
+    # otherwise duplicate every line and hold stale stderr streams.
+    for handler in list(log.handlers):
+        if getattr(handler, "_ankery_trace", False):
+            log.removeHandler(handler)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("ankery: trace: %(message)s"))
+    handler._ankery_trace = True
+    log.addHandler(handler)
+    log.setLevel(logging.DEBUG)
+
+
+def _report_added(result, word: str, level: int) -> None:
+    """Print one added word at the given verbosity: nothing at 0, the word at 1,
+    plus note id, note type, and the saved fields at 2+."""
+    if level < 1:
+        return
+    label = word if result.word == word else f"{word} -> {result.word}"
+    if level == 1:
+        print(f"{label}: added")
+        return
+    print(f"{label}: added (note {result.note_id}, {result.note_type})")
+    for name, value in result.fields.items():
+        print(f"  {name}: {value}")
+
+
 def main(argv: list[str] | None = None) -> int:
     warnings.showwarning = _show_warning
     args = build_parser().parse_args(argv)
+    # 0 = quiet, 1 = default, 2 = note content (-v), 3 = engine trace (-vv).
+    level = 0 if args.quiet else 1 + min(args.verbose, 2)
+    if level >= 3:
+        _setup_trace()
     try:
         config = _config_from_args(args)
     except ConfigError as exc:
-        print(f"config error: {exc}", file=sys.stderr)
+        _error(str(exc))
         return 2
     try:
         builder = build_deck_builder(config)
     except ConfigError as exc:
-        print(f"config error: {exc}", file=sys.stderr)
+        _error(str(exc))
         return 2
     try:
-        builder.verify_note_types()
+        created = builder.verify_note_types()
     except SinkError as exc:
-        print(f"note type setup failed: {exc}", file=sys.stderr)
+        _error(f"note type setup failed: {exc}")
         return 1
+    if level >= 1:
+        for name in created or []:
+            print(f"created note type: {name}")
 
     exit_code = 0
     for raw_word in args.words:
         word, raw_hint = split_category_hint(raw_word)
         if not word:
-            print("skipping empty word", file=sys.stderr)
+            _error("empty word, skipping")
             exit_code = 1
             continue
         category_hint: str | None = None
@@ -182,24 +238,23 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 category_hint = resolve_category_hint(raw_hint, builder.category_names)
             except ValueError as exc:
-                print(f"{raw_word}: {exc}", file=sys.stderr)
+                _error(f"{raw_word}: {exc}")
                 exit_code = 1
                 continue
         try:
             result = builder.add_word(word, category_hint=category_hint)
         except ProviderError as exc:
-            print(f"{word}: lookup failed: {exc}", file=sys.stderr)
+            _error(f"{word}: lookup failed: {exc}")
             exit_code = 1
         except SinkError as exc:
-            print(f"{word}: could not add note: {exc}", file=sys.stderr)
+            _error(f"{word}: could not add note: {exc}")
             exit_code = 1
         else:
             if result is None:
-                print(f"{word}: not found", file=sys.stderr)
+                _error(f"{word}: not found")
                 exit_code = 1
             else:
-                label = word if result.word == word else f"{word} -> {result.word}"
-                print(f"{label}: added (note {result.note_id})")
+                _report_added(result, word, level)
     return exit_code
 
 

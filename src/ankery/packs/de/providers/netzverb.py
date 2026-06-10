@@ -32,6 +32,7 @@ misses cleanly.
 Imports must be absolute — this file is loaded by path.
 """
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -44,6 +45,10 @@ from ankery.languages import language_code
 from ankery.models import WordInfo
 from ankery.providers.retry import request_with_retry
 from ankery.providers.base import ProviderError
+
+# Named explicitly: this module is loaded by file path, so __name__ is synthetic
+# and would fall outside the "ankery" logger tree the CLI's trace level enables.
+logger = logging.getLogger("ankery.pack.de.netzverb")
 
 _VERBFORMEN_BASE = "https://www.verbformen.com"
 _VERBEN_BASE = "https://www.verben.de"
@@ -162,8 +167,10 @@ class NetzverbProvider:
         # A hint for a POS no site here serves (or any POS at all when none of the
         # no-hint priors apply): miss cleanly rather than scrape the wrong page shape.
         if pos is None:
+            logger.info("netzverb: no route for hint %r -> miss", category_hint)
             return None
         route = _ROUTES[pos]
+        logger.info("netzverb: %r via the %s route", word, pos)
         # Scope the client to one lookup so connections are pooled across the
         # requests it makes, then always closed — no leaked sockets.
         with httpx.Client(
@@ -185,6 +192,7 @@ class NetzverbProvider:
         if html is None and route.fallback is not None:
             retry = route.fallback(word)
             if retry != word:
+                logger.info("netzverb: 404 for %r, retrying as %r", word, retry)
                 return retry, self._get(client, route, retry)
         return word, html
 
@@ -199,6 +207,7 @@ class NetzverbProvider:
     def _get(self, client: httpx.Client, route: "_Route", word: str) -> str | None:
         url = f"{route.base}{route.path.format(word=quote(word, safe=''))}"
         headers = {"Accept-Language": _accept_language(self._target_language)}
+        logger.info("netzverb: GET %s", url)
         try:
             # 429 (rate limited) is transient — the site is asking us to slow
             # down, not refusing the word; retry it before treating the response.
@@ -206,6 +215,7 @@ class NetzverbProvider:
         except httpx.HTTPError as exc:
             raise ProviderError(f"request to {url} failed: {exc}") from exc
         if r.status_code == 404:
+            logger.info("netzverb: 404 -> miss")
             return None
         if r.status_code != 200:
             raise ProviderError(f"{url} returned HTTP {r.status_code}")
@@ -304,6 +314,7 @@ def _parse(
         variables={"target_language": target_language},
     )
     if not info.translations and not info.definitions:
+        logger.info("netzverb: page parsed but no gloss or definition -> miss")
         return None
     return info
 

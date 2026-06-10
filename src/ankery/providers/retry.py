@@ -8,12 +8,15 @@ the final response unchanged so the caller handles every other status itself.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ATTEMPTS = 4
 DEFAULT_BASE_DELAY = 1.0
@@ -43,7 +46,9 @@ def request_with_retry(
         response = send()
         if response.status_code != 429 or attempt == max_attempts - 1:
             return response
-        sleep(_retry_delay(response, base_delay * 2**attempt, max_delay))
+        delay = _retry_delay(response, base_delay * 2**attempt, max_delay)
+        logger.info("HTTP 429, retrying in %.1fs (attempt %d)", delay, attempt + 1)
+        sleep(delay)
     return response  # unreachable: the loop returns on its final attempt
 
 

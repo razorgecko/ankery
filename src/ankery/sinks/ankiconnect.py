@@ -1,9 +1,12 @@
+import logging
 from collections.abc import Iterable
 
 import httpx
 
 from ankery.notedef import NoteDefinition
 from ankery.sinks.base import SinkError
+
+logger = logging.getLogger(__name__)
 
 ANKICONNECT_VERSION = 6
 
@@ -59,17 +62,25 @@ class AnkiConnectSink:
         *,
         default_css: str = "",
         catch_all: str | None = None,
-    ) -> None:
-        """Create missing note types; raise SinkError if fields don't match an existing model.
+    ) -> list[str]:
+        """Create missing note types and return the names created; raise SinkError
+        if fields don't match an existing model.
 
         Field order is contractual: Anki keys duplicate detection and empty-note
         guard on the first field. Never mutates an existing model. Safe to re-run.
         """
+        definitions = list(definitions)
+        logger.info(
+            "ankiconnect: verifying note types: %s",
+            ", ".join(repr(d.name) for d in definitions) or "(none)",
+        )
         existing = self._model_names()
         fallback_css = self._catch_all_css(catch_all, default_css, existing)
+        created: list[str] = []
         for note_def in definitions:
             if note_def.name not in existing:
                 self._create_model(note_def, css=note_def.css or fallback_css)
+                created.append(note_def.name)
                 continue
             actual = self._model_field_names(note_def.name)
             if actual != note_def.fields:
@@ -79,6 +90,8 @@ class AnkiConnectSink:
                     "Refusing to modify a note type that may already have notes; "
                     "reconcile the fields in Anki or rename the note type."
                 )
+            logger.info("ankiconnect: note type %r exists, fields match", note_def.name)
+        return created
 
     def _catch_all_css(
         self, catch_all: str | None, default_css: str, existing: set[str]
@@ -107,6 +120,7 @@ class AnkiConnectSink:
         return result
 
     def _create_model(self, note_def: NoteDefinition, *, css: str) -> None:
+        logger.info("ankiconnect: creating note type %r", note_def.name)
         self._invoke(
             "createModel",
             modelName=note_def.name,
@@ -120,6 +134,12 @@ class AnkiConnectSink:
         )
 
     def _invoke(self, action: str, **params: object) -> object:
+        # Wire-level line; name the model when the params carry one so repeated
+        # actions (modelFieldNames per note type) are tellable apart.
+        if "modelName" in params:
+            logger.debug("ankiconnect: %s %r", action, params["modelName"])
+        else:
+            logger.debug("ankiconnect: %s", action)
         payload = {
             "action": action,
             "version": ANKICONNECT_VERSION,

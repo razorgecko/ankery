@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytest
@@ -19,11 +20,13 @@ class FakeBuilder:
         self.category_names = list(category_names)
         self.verified = False
         self.verify_error: Exception | None = None
+        self.created: list[str] = []
 
     def verify_note_types(self):
         if self.verify_error is not None:
             raise self.verify_error
         self.verified = True
+        return self.created
 
     def add_word(self, word, *, category_hint=None):
         self.calls.append(word)
@@ -127,14 +130,16 @@ def test_word_without_colon_passes_no_hint(patched):
     assert builder.hint_calls == [("Buch", None)]
 
 
-def test_added_word_prints_note_id_and_exits_zero(patched, capsys):
+def test_added_word_prints_without_note_id_and_exits_zero(patched, capsys):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=42, word="Buch")})
 
     code = cli.main(["Buch"])
 
+    out = capsys.readouterr().out
     assert code == 0
-    assert "Buch: added (note 42)" in capsys.readouterr().out
+    assert "Buch: added" in out
+    assert "42" not in out  # the note id is -v territory
 
 
 def test_resolved_word_shows_redirect(patched, capsys):
@@ -144,7 +149,7 @@ def test_resolved_word_shows_redirect(patched, capsys):
     code = cli.main(["Hause"])
 
     assert code == 0
-    assert "Hause -> Haus: added (note 42)" in capsys.readouterr().out
+    assert "Hause -> Haus: added" in capsys.readouterr().out
 
 
 def test_not_found_reports_and_exits_nonzero(patched, capsys):
@@ -212,7 +217,7 @@ def test_empty_or_whitespace_word_is_skipped_not_looked_up(patched, capsys):
     code = cli.main(["   ", "Buch"])
 
     assert code == 1  # the empty word marks the run as failed
-    assert "skipping empty word" in capsys.readouterr().err
+    assert "empty word" in capsys.readouterr().err
     assert captured["builder"].calls == ["Buch"]  # whitespace word never reached the builder
 
 
@@ -335,7 +340,7 @@ def test_config_error_reports_and_exits_two(monkeypatch, capsys):
     code = cli.main(["Buch"])
 
     assert code == 2  # distinct from the 1 used for per-word failures
-    assert "config error: unknown config keys: dekc" in capsys.readouterr().err
+    assert "ankery: error: unknown config keys: dekc" in capsys.readouterr().err
 
 
 def test_pack_error_at_wiring_reports_and_exits_two(patched, monkeypatch, capsys):
@@ -351,7 +356,7 @@ def test_pack_error_at_wiring_reports_and_exits_two(patched, monkeypatch, capsys
     code = cli.main(["Buch"])
 
     assert code == 2
-    assert "config error: no pack for 'zz'" in capsys.readouterr().err
+    assert "ankery: error: no pack for 'zz'" in capsys.readouterr().err
 
 
 def _capture_load_path(monkeypatch) -> dict:
@@ -429,6 +434,101 @@ def test_no_auth_source_loads_default_path(patched, monkeypatch):
     cli.main(["Buch"])
 
     assert seen["auth_path"] is None  # Config.load falls back to its default path
+
+
+# ---------------------------------------------------------------------------
+# Verbosity levels
+# ---------------------------------------------------------------------------
+
+
+def test_quiet_suppresses_stdout_but_keeps_exit_code(patched, capsys):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+
+    code = cli.main(["-q", "Buch"])
+
+    assert code == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_quiet_keeps_errors_on_stderr(patched, capsys):
+    captured, set_results = patched
+    set_results({"Xyz": None})
+
+    code = cli.main(["-q", "Xyz"])
+
+    out, err = capsys.readouterr()
+    assert code == 1
+    assert out == ""
+    assert "Xyz: not found" in err
+
+
+def test_verbose_prints_note_id_type_and_fields(patched, capsys):
+    captured, set_results = patched
+    set_results(
+        {
+            "Buch": AddResult(
+                note_id=42,
+                word="Buch",
+                note_type="Ankery DE: Noun",
+                fields={"Word": "Buch", "Article": ""},
+            )
+        }
+    )
+
+    code = cli.main(["-v", "Buch"])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Buch: added (note 42, Ankery DE: Noun)" in out
+    assert "  Word: Buch" in out
+    assert "  Article: " in out  # empty fields stay visible, that's the point
+
+
+def test_created_note_types_are_announced(patched, capsys):
+    captured, set_results = patched
+    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    builder.created = ["Ankery Basic"]
+
+    cli.main(["Buch"])
+
+    assert "created note type: Ankery Basic" in capsys.readouterr().out
+
+
+def test_quiet_suppresses_created_note_types(patched, capsys):
+    captured, set_results = patched
+    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    builder.created = ["Ankery Basic"]
+
+    cli.main(["-q", "Buch"])
+
+    assert capsys.readouterr().out == ""
+
+
+def test_double_verbose_installs_the_engine_trace_once(patched):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    log = logging.getLogger("ankery")
+
+    try:
+        cli.main(["-vv", "Buch"])
+        cli.main(["-vv", "Buch"])  # repeated runs must not stack handlers
+
+        handlers = [h for h in log.handlers if getattr(h, "_ankery_trace", False)]
+        assert len(handlers) == 1
+        assert log.level == logging.DEBUG
+    finally:
+        for handler in list(log.handlers):
+            if getattr(handler, "_ankery_trace", False):
+                log.removeHandler(handler)
+        log.setLevel(logging.NOTSET)
+
+
+def test_quiet_and_verbose_are_mutually_exclusive(patched, capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["-q", "-v", "Buch"])
+
+    assert exc.value.code == 2
 
 
 def test_missing_word_argument_is_an_argparse_error(capsys):

@@ -137,8 +137,9 @@ def test_verify_creates_missing_model(httpx_mock):
     httpx_mock.add_response(url=URL, json={"result": [], "error": None})  # modelNames
     httpx_mock.add_response(url=URL, json={"result": 12345, "error": None})  # createModel
 
-    _sink().verify_note_types([_note_def()])
+    created = _sink().verify_note_types([_note_def()])
 
+    assert created == ["Ankery DE: Noun"]
     requests = httpx_mock.get_requests()
     assert _actions(httpx_mock) == ["modelNames", "createModel"]
     params = json.loads(requests[1].content)["params"]
@@ -211,8 +212,9 @@ def test_verify_accepts_exact_match_without_creating(httpx_mock):
     httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
     httpx_mock.add_response(url=URL, json={"result": ["Word", "Article"], "error": None})
 
-    _sink().verify_note_types([_note_def()])  # no raise
+    created = _sink().verify_note_types([_note_def()])  # no raise
 
+    assert created == []  # nothing was missing, nothing reported as created
     assert _actions(httpx_mock) == ["modelNames", "modelFieldNames"]  # no createModel
 
 

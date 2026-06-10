@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from ankery.manager import DeckBuilder
@@ -30,6 +32,7 @@ class FakeSink:
     def __init__(self) -> None:
         self.calls: list[dict] = []
         self.verified: dict | None = None
+        self.created_result: list[str] = []
 
     def add_note(self, *, deck, note_type, fields, tags=None) -> int:
         self.calls.append(
@@ -37,12 +40,13 @@ class FakeSink:
         )
         return 42
 
-    def verify_note_types(self, definitions, *, default_css="", catch_all=None) -> None:
+    def verify_note_types(self, definitions, *, default_css="", catch_all=None) -> list[str]:
         self.verified = {
             "definitions": list(definitions),
             "default_css": default_css,
             "catch_all": catch_all,
         }
+        return self.created_result
 
 
 def _info(word: str = "Buch") -> WordInfo:
@@ -187,13 +191,16 @@ def test_add_word_maps_fields_and_writes_to_sink():
 
     result = builder.add_word("Buch")
 
-    assert result == (42, "Buch")
+    assert result.note_id == 42
+    assert result.word == "Buch"
+    assert result.note_type == "Basic"
+    assert result.fields["Front"] == "Buch"
     assert len(sink.calls) == 1
     call = sink.calls[0]
     assert call["deck"] == "German"
     assert call["note_type"] == "Basic"
     assert call["tags"] == ["auto"]
-    assert call["fields"]["Front"] == "Buch"
+    assert call["fields"] == result.fields  # what was reported is what was written
 
 
 def test_add_word_returns_none_and_skips_sink_on_total_miss():
@@ -330,6 +337,25 @@ def test_verify_skips_owned_catch_all_when_note_type_points_at_a_foreign_model()
 
     assert sink.verified["definitions"] == []
     assert sink.verified["catch_all"] == "Basic"
+
+
+def test_verify_note_types_returns_created_names():
+    sink = FakeSink()
+    sink.created_result = ["Ankery Basic"]
+    builder = _builder([FakeProvider("p")], sink)
+
+    assert builder.verify_note_types() == ["Ankery Basic"]
+
+
+def test_lookup_logs_provider_attempts(caplog):
+    caplog.set_level(logging.INFO, logger="ankery")
+    first = FakeProvider("first", result=None)
+    second = FakeProvider("second", result=_info())
+
+    _builder([first, second]).lookup("Buch")
+
+    assert "provider 'first': miss" in caplog.text
+    assert "provider 'second': resolved 'Buch'" in caplog.text
 
 
 def test_unmatched_word_with_no_notes_routes_through_the_catch_all_terminus():

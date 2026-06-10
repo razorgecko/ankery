@@ -27,6 +27,7 @@ class AnkiSink(Protocol):
         *,
         default_css: str = "",
         catch_all: str | None = None,
-    ) -> None:
-        """Create missing note types; raise SinkError if an existing type has wrong fields."""
+    ) -> list[str]:
+        """Create missing note types and return the names created; raise SinkError
+        if an existing type has wrong fields."""
         ...
