@@ -9,17 +9,20 @@ General rules:
 {% else %}
 - `{{ label }}`: exactly one of: {{ names | join(', ') }}.
 {% endif %}
-- `properties`: a JSON object of grammatical properties, using EXACTLY the keys listed below for the term's {{ label }} plus the common keys. Omit a key only if it genuinely does not apply. Give each value bare — forms with no leading article.
-{# Hardcodes the keys pack.toml declares under [collections] — change the two together. #}
-- `collections`: a JSON object whose values are flat arrays of strings, with exactly these keys:
-    `definitions`, `examples`: written in {{ name }}.
-    `example_translations`: the {{ variables.target_language | language_name }} gloss of each example, aligned by position.
-    `translations`: strings in {{ variables.target_language | language_name }}, e.g. ["...", "..."] — always an array, never an object keyed by language.
+- `properties`: a JSON object keyed by the property keys listed below — the common keys plus the ones for the term's {{ label }}. Give each value bare, with no leading article. Omit a key only if it genuinely does not apply.
+- `collections`: a JSON object keyed by the collection keys listed below. Every value is a flat array of strings — always an array, never a single string and never an object keyed by language.
 - Leave anything you are unsure about empty rather than guessing.
 {% if common_properties %}
 
 Common property keys (any {{ label }}):
 {% for key, meaning in common_properties.items() %}
+  {{ key }}: {{ meaning }}
+{% endfor %}
+{% endif %}
+{% if common_collections %}
+
+Collection keys (any {{ label }}):
+{% for key, meaning in common_collections.items() %}
   {{ key }}: {{ meaning }}
 {% endfor %}
 {% endif %}
@@ -35,6 +38,12 @@ Common property keys (any {{ label }}):
 {% if cat.properties %}
   property keys:
 {% for key, meaning in cat.properties.items() %}
+    {{ key }}: {{ meaning }}
+{% endfor %}
+{% endif %}
+{% if cat.collections %}
+  collection keys:
+{% for key, meaning in cat.collections.items() %}
     {{ key }}: {{ meaning }}
 {% endfor %}
 {% endif %}

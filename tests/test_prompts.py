@@ -129,21 +129,23 @@ def test_system_prompt_names_the_target_language():
     # The target language is inlined into the system prompt as a display name.
     prompt = _render_de()
 
-    assert "`definitions`, `examples`: written in German" in prompt
-    assert "the English gloss of each example" in prompt
-    assert "`translations`: strings in English" in prompt
+    assert "definitions: definitions of the word, written in German" in prompt
+    assert "the English translation of each example" in prompt
+    assert "translations: the word's translations into English" in prompt
 
 
 def test_omitting_the_template_renders_the_domain_neutral_default():
-    # No template= argument => the builder falls back to the engine default, which
-    # is domain-neutral: it names no target language and makes no language-of-output
-    # claim a non-language pack could not honour. The de pack supplies only the
-    # category data here (not its template) to exercise the default's chrome.
+    # No template= argument => the builder falls back to the engine default, whose
+    # chrome names no language: a non-language pack renders on it unchanged. The de
+    # pack supplies only its category data here (not its template).
     prompt = render_system_prompt(load_pack("de"), variables={"target_language": "en"})
 
     # The category vocabulary still threads through (it comes from injected
     # variables, not the template's prose).
     assert "exactly one of: adjective" in prompt
-    # ...but the language-specific phrasing of the de template does not.
-    assert "written in German" not in prompt
-    assert "English" not in prompt
+    # The default's neutral chrome replaces the de template's own wording.
+    assert "lexicographer" not in prompt
+    # The language phrasing now lives in the pack's collection meanings (data), not
+    # the template, so it threads through even under the neutral default.
+    assert "written in German" in prompt
+    assert "the English translation of each example" in prompt

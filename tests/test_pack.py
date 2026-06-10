@@ -52,10 +52,12 @@ def test_de_declares_common_sections():
 
 
 def test_de_pack_ships_its_own_system_template():
-    # The German pack carries the language-specific prompt; the engine default is
-    # neutral, so this content lives in the pack, not the defaults.
+    # The German pack carries its own prompt chrome (a lexicographer building
+    # vocabulary cards); the engine default is neutral, so this lives in the pack.
+    # The target-language interpolation lives in the pack's collection meanings,
+    # not the template, so the template can loop the keys generically.
     pack = load_pack("de")
-    assert "variables.target_language | language_name" in pack.system_template
+    assert "lexicographer" in pack.system_template
     assert pack.system_template != default_system_template()
 
 

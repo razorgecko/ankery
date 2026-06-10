@@ -44,13 +44,15 @@ timeout = 15.0
 ipa = "IPA transcription of the pronunciation, e.g. /haʊs/; omit if unsure"
 
 # List-valued properties common to every part of speech, the plural counterpart
-# of [properties]: declared key -> what it means to the LLM. This pack's
-# prompts/system.j2 hardcodes these keys — change the two together.
+# of [properties]: declared key -> what it means to the LLM. The meanings are
+# rendered as Jinja (prompts.py) over name/label/variables, so they carry the
+# source/target language phrasing themselves and the template can loop them
+# generically instead of hardcoding the key list.
 [collections]
-definitions = "definitions of the word"
-examples = "representative example sentences using the word"
-example_translations = "a translation of each example, aligned to examples by position"
-translations = "the word's translations"
+definitions = "definitions of the word, written in {{ name }}"
+examples = "representative example sentences using the word, written in {{ name }}"
+example_translations = "the {{ variables.target_language | language_name }} translation of each example, aligned to examples by position"
+translations = "the word's translations into {{ variables.target_language | language_name }}"
 
 # Per-POS grammar. `citation` defines the lemma form, `guidance` is extra prose
 # for the LLM, and each `properties` table declares the keys for that POS with the
