@@ -6,7 +6,7 @@ classification set to a single value under a hint, and force-appends the
 empty-object escape-hatch clause after the template renders so no override can
 drop it.
 
-The escape-hatch clause pairs with `llm.py`, which reads a word-less object under
+The escape-hatch clause pairs with `llm.py`, which reads a term-less object under
 a hint as a clean miss; change the two together.
 """
 
@@ -46,9 +46,10 @@ def _system_context(
         "name": pack.name,
         "label": pack.category_label,
         "names": names,
-        # CategorySpec objects expose .value/.citation/.guidance/.features.
+        # CategorySpec objects expose .value/.citation/.guidance/.properties/.collections.
         "categories": [pack.categories[value] for value in names],
-        "common_features": pack.common_features,
+        "common_properties": pack.common_properties,
+        "common_collections": pack.common_collections,
         "variables": variables,
         "hinted": hinted,
         "hint": category_hint if hinted else None,
@@ -59,7 +60,7 @@ def _system_context(
 def _escape_hatch(hint: str) -> str:
     """The clause that lets a mistaken hint miss instead of fabricating a reading."""
     return (
-        f"If the word is NOT actually a {hint}, do not force a reading or relabel "
+        f"If the entry is NOT actually a {hint}, do not force a reading or relabel "
         "it — return an empty JSON object {} and nothing else."
     )
 
@@ -87,7 +88,7 @@ def render_system_prompt(
     return rendered
 
 
-def render_user_prompt(word: str, *, template: str | None = None) -> str:
-    """Render the user turn: just the word."""
+def render_user_prompt(term: str, *, template: str | None = None) -> str:
+    """Render the user turn: just the term."""
     text = template if template is not None else default_user_template()
-    return _env.from_string(text).render(word=word).rstrip("\n")
+    return _env.from_string(text).render(term=term).rstrip("\n")

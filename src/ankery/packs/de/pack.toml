@@ -16,7 +16,7 @@ providers = ["netzverb", "llm"]
 # The pack's routing dimension. `name` is the table below that enumerates the
 # category values (here [pos.*]) and is the closed vocabulary the LLM classifies
 # into; `label` is the human phrase the LLM prompt uses for it (and the JSON key
-# the model fills, mapped onto WordInfo's generic `category`). For German the
+# the model fills, mapped onto Entry's generic `category`). For German the
 # categories are parts of speech; another pack might use `name = "kind"` with a
 # [kind.*] table instead. Must follow the bare top-level keys above (a TOML table
 # header captures every key after it).
@@ -37,21 +37,30 @@ default = "en"
 [provider_options.netzverb]
 timeout = 15.0
 
-# Features common to every part of speech: declared key -> what it means to the
-# LLM. `ipa` is where the old `pronunciation` field went — a feature, not a
+# Properties common to every part of speech: declared key -> what it means to the
+# LLM. `ipa` is where the old `pronunciation` field went — a property, not a
 # privileged core field, so a language can declare `reading`/`pinyin` instead.
-[features]
+[properties]
 ipa = "IPA transcription of the pronunciation, e.g. /haʊs/; omit if unsure"
 
+# List-valued properties common to every part of speech, the plural counterpart
+# of [properties]: declared key -> what it means to the LLM. This pack's
+# prompts/system.j2 hardcodes these keys — change the two together.
+[collections]
+definitions = "definitions of the word"
+examples = "representative example sentences using the word"
+example_translations = "a translation of each example, aligned to examples by position"
+translations = "the word's translations"
+
 # Per-POS grammar. `citation` defines the lemma form, `guidance` is extra prose
-# for the LLM, and each `features` table declares the keys for that POS with the
+# for the LLM, and each `properties` table declares the keys for that POS with the
 # meaning handed to the LLM and read back by the notes. The set of [pos.*]
 # sections is also the closed vocabulary the LLM classifies the category into
 # (declared as [category] above).
 
 [pos.noun]
 citation = "nominative singular; the bare lemma with no article"
-[pos.noun.features]
+[pos.noun.properties]
 gender = "the definite article der/die/das that marks grammatical gender"
 nominative_pl = "nominative plural form (bare, no article)"
 genitive_sg = "genitive singular form (bare, no article)"
@@ -64,7 +73,7 @@ guidance = [
     "perfect is the full compound form (auxiliary + past participle).",
     "For separable/prefixed verbs, give each form as it appears in a sentence.",
 ]
-[pos.verb.features]
+[pos.verb.properties]
 present_1sg = "1st person singular present (ich)"
 present_2sg = "2nd person singular present (du)"
 present_3sg = "3rd person singular present (er/sie/es)"
@@ -78,7 +87,7 @@ separable = "\"true\" if the verb has a separable prefix, else \"false\""
 
 [pos.adjective]
 citation = "the base (positive) form, uninflected (no declension ending)"
-[pos.adjective.features]
+[pos.adjective.properties]
 comparative = "comparative form (bare)"
 superlative = "superlative form, with am, e.g. am schnellsten"
 
@@ -94,13 +103,13 @@ guidance = [
     "If the word is the bare adjective used adverbially (schnell, gut, langsam), classify it as an adjective, not an adverb.",
     "Fill comparative/superlative only for the few gradable adverbs (gern/lieber, bald/eher); omit them otherwise.",
 ]
-[pos.adverb.features]
+[pos.adverb.properties]
 comparative = "comparative form; omit unless the adverb is gradable"
 superlative = "superlative form; omit unless the adverb is gradable"
 
 [pos.preposition]
 citation = "the preposition"
-[pos.preposition.features]
+[pos.preposition.properties]
 governs_case = "the case it governs: accusative, dative, genitive, or accusative/dative for two-way (Wechsel) prepositions"
 
 # The four function-word classes below (pronoun, article, conjunction, particle)
@@ -158,5 +167,5 @@ guidance = [
     "Classify as phrase only a multi-word expression: an idiom, a fixed expression, a proverb, or a strong collocation. A single word is never a phrase — give it its actual part of speech.",
     "Keep every word that belongs to the expression, including its articles; the bare-lemma/no-article rule applies to single words, not to phrases.",
 ]
-[pos.phrase.features]
+[pos.phrase.properties]
 literal = "word-by-word literal gloss of the phrase, in the same language as the translations; give it only when the phrase is idiomatic (its literal reading differs from the actual meaning), omit it for transparent phrases"

@@ -12,15 +12,15 @@ from ankery.sinks.base import SinkError
 
 
 def split_category_hint(raw: str) -> tuple[str, str | None]:
-    """Split a `word:cat` token into (word, raw_hint); no colon -> (word, None).
+    """Split a `term:cat` token into (term, raw_hint); no colon -> (term, None).
 
     The category hint is everything after the last colon, e.g. `schnell:adj` or
-    `Bank:noun`. A colon is glob-safe, so words need no shell quoting.
+    `Bank:noun`. A colon is glob-safe, so terms need no shell quoting.
     """
-    word, sep, hint = raw.rpartition(":")
+    term, sep, hint = raw.rpartition(":")
     if not sep:
         return raw.strip(), None
-    return word.strip(), hint.strip()
+    return term.strip(), hint.strip()
 
 
 def resolve_category_hint(hint: str, category_names: Sequence[str]) -> str:
@@ -49,9 +49,9 @@ def resolve_category_hint(hint: str, category_names: Sequence[str]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ankery",
-        description="Look up words and add them to an Anki deck.",
+        description="Look up terms and add them to an Anki deck.",
     )
-    parser.add_argument("words", nargs="+", help="one or more words to add")
+    parser.add_argument("terms", nargs="+", help="one or more terms to add")
     parser.add_argument(
         "--config",
         help="path to a config TOML (overrides ANKERY_CONFIG; "
@@ -193,12 +193,12 @@ def _setup_trace() -> None:
     log.setLevel(logging.DEBUG)
 
 
-def _report_added(result, word: str, level: int, *, dry_run: bool = False) -> None:
-    """Print one added/previewed word at the given verbosity: nothing at 0, the
-    word at 1, plus note id, note type, and the saved fields at 2+."""
+def _report_added(result, term: str, level: int, *, dry_run: bool = False) -> None:
+    """Print one added/previewed term at the given verbosity: nothing at 0, the
+    term at 1, plus note id, note type, and the saved fields at 2+."""
     if level < 1:
         return
-    label = word if result.word == word else f"{word} -> {result.word}"
+    label = term if result.term == term else f"{term} -> {result.term}"
     if level == 1:
         print(f"{label}: added")
         return
@@ -241,10 +241,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"created note type: {name}")
 
     exit_code = 0
-    for raw_word in args.words:
-        word, raw_hint = split_category_hint(raw_word)
-        if not word:
-            _error("empty word, skipping")
+    for raw_term in args.terms:
+        term, raw_hint = split_category_hint(raw_term)
+        if not term:
+            _error("empty term, skipping")
             exit_code = 1
             continue
         category_hint: str | None = None
@@ -252,26 +252,26 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 category_hint = resolve_category_hint(raw_hint, builder.category_names)
             except ValueError as exc:
-                _error(f"{raw_word}: {exc}")
+                _error(f"{raw_term}: {exc}")
                 exit_code = 1
                 continue
         try:
             if args.dry_run:
-                result = builder.preview(word, category_hint=category_hint)
+                result = builder.preview(term, category_hint=category_hint)
             else:
-                result = builder.add_word(word, category_hint=category_hint)
+                result = builder.add_term(term, category_hint=category_hint)
         except ProviderError as exc:
-            _error(f"{word}: lookup failed: {exc}")
+            _error(f"{term}: lookup failed: {exc}")
             exit_code = 1
         except SinkError as exc:
-            _error(f"{word}: could not add note: {exc}")
+            _error(f"{term}: could not add note: {exc}")
             exit_code = 1
         else:
             if result is None:
-                _error(f"{word}: not found")
+                _error(f"{term}: not found")
                 exit_code = 1
             else:
-                _report_added(result, word, level, dry_run=args.dry_run)
+                _report_added(result, term, level, dry_run=args.dry_run)
     return exit_code
 
 

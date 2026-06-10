@@ -5,7 +5,7 @@ from collections.abc import Callable
 import httpx
 from pydantic import ValidationError
 
-from ankery.models import WordInfo
+from ankery.models import Entry
 from ankery.providers.base import ProviderError
 from ankery.providers.retry import request_with_retry
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMProvider:
-    """Word provider backed by an OpenAI-compatible /v1/chat/completions endpoint."""
+    """Entry provider backed by an OpenAI-compatible /v1/chat/completions endpoint."""
 
     name = "llm"
 
@@ -38,9 +38,9 @@ class LLMProvider:
         self.system_prompt_for = system_prompt_for
         self.user_prompt_for = user_prompt_for
         # The pack's label for its routing dimension (e.g. "part of speech"). The
-        # model fills a JSON key by this name; fetch maps it onto WordInfo.category.
+        # model fills a JSON key by this name; fetch maps it onto Entry.category.
         self.category_key = category_key
-        # Stamped onto WordInfo as provenance; fetch overwrites whatever the model
+        # Stamped onto the Entry as provenance; fetch overwrites whatever the model
         # echoed, never trusting it.
         self.pack = pack
         self.variables = variables
@@ -48,9 +48,9 @@ class LLMProvider:
         self.request_json_format = request_json_format
         self.api_key = api_key
 
-    def fetch(self, word: str, category_hint: str | None = None) -> WordInfo | None:
+    def fetch(self, term: str, category_hint: str | None = None) -> Entry | None:
         system_prompt = self.system_prompt_for(category_hint)
-        user_prompt = self.user_prompt_for(word)
+        user_prompt = self.user_prompt_for(term)
         payload: dict = {
             "model": self.model,
             "messages": [
@@ -88,14 +88,14 @@ class LLMProvider:
         logger.debug("llm: response content:\n%s", content)
         data = _parse_json_object(content)
 
-        # Under a hint, an empty/word-less object is the model's signal that the
-        # word is not that class; treat it as a clean miss, not a fabricated card.
+        # Under a hint, an empty/term-less object is the model's signal that the
+        # entry is not that class; treat it as a clean miss, not a fabricated card.
         # Pairs with the escape-hatch clause prompts.py appends under a hint.
-        if category_hint and not data.get("word"):
-            logger.info("llm: word-less object under hint %r -> miss", category_hint)
+        if category_hint and not data.get("term"):
+            logger.info("llm: term-less object under hint %r -> miss", category_hint)
             return None
 
-        # Map the pack-labelled category key onto WordInfo's generic field.
+        # Map the pack-labelled category key onto Entry's generic field.
         if self.category_key in data:
             data["category"] = data.pop(self.category_key)
 
@@ -104,10 +104,17 @@ class LLMProvider:
         data["pack"] = self.pack
         data["variables"] = self.variables
 
+        # Validation silently ignores unknown keys, so a mis-nested key (e.g. a
+        # bare `examples` at top level instead of inside `collections`) vanishes
+        # without an error; this is its only trace.
+        dropped = data.keys() - Entry.model_fields.keys()
+        if dropped:
+            logger.debug("llm: ignoring unknown top-level keys: %s", sorted(dropped))
+
         try:
-            return WordInfo.model_validate(data)
+            return Entry.model_validate(data)
         except ValidationError as exc:
-            raise ProviderError(f"LLM output failed WordInfo validation: {exc}") from exc
+            raise ProviderError(f"LLM output failed Entry validation: {exc}") from exc
 
 
 def _strip_code_fences(text: str) -> str:

@@ -5,10 +5,10 @@ applies_to = "phrase"
 # idiomatic phrases (see ../pack.toml [pos.phrase]); the recognition card hides
 # the row via a mustache conditional when it is empty.
 [map]
-Word        = "{{ word }}"
-Translation = "{{ translations | join(', ') }}"
-Literal     = "{{ features.literal }}"
-Example     = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
+Word        = "{{ term }}"
+Translation = "{{ collections.translations | join(', ') }}"
+Literal     = "{{ properties.literal }}"
+Example     = "{{ collections.examples[0] }}{% if collections.example_translations %} — {{ collections.example_translations[0] }}{% endif %}"
 
 [[cards]]
 name = "P1 Recognition"

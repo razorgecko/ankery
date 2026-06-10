@@ -12,13 +12,13 @@ from ankery.defaults import (
     default_system_template,
     default_user_template,
 )
-from ankery.models import WordInfo
+from ankery.models import Entry
 from ankery.notedef import NoteDefinition, load_notes_from_dir
 
 _BUNDLED_PACKS = Path(__file__).parent / "packs"
 
 # Typed loosely to avoid an import cycle with config.py.
-Normalize = Callable[[WordInfo], WordInfo]
+Normalize = Callable[[Entry], Entry]
 ProviderBuilder = Callable[..., object]
 
 
@@ -31,7 +31,8 @@ class CategorySpec:
     value: str  # a routing category value, e.g. "noun"
     citation: str | None
     guidance: tuple[str, ...]
-    features: dict[str, str]  # key -> meaning
+    properties: dict[str, str]  # scalar key -> meaning
+    collections: dict[str, str]  # list-valued key -> meaning
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,8 @@ class VariableSpec:
 class Pack:
     code: str
     name: str
-    common_features: dict[str, str]
+    common_properties: dict[str, str]
+    common_collections: dict[str, str]
     # Variables this pack declares for the operator to set, keyed by name.
     variables: dict[str, VariableSpec]
     # The human label for the routing dimension (e.g. "part of speech").
@@ -67,8 +69,8 @@ class Pack:
     normalize: Normalize
 
 
-def _identity(info: WordInfo) -> WordInfo:
-    return info
+def _identity(entry: Entry) -> Entry:
+    return entry
 
 
 def _read_template(path: Path, fallback: Callable[[], str]) -> str:
@@ -106,7 +108,8 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
     return Pack(
         code=code,
         name=raw.get("name", code),
-        common_features=dict(raw.get("features", {})),
+        common_properties=dict(raw.get("properties", {})),
+        common_collections=dict(raw.get("collections", {})),
         variables=variables,
         category_label=category_label,
         categories=categories,
@@ -166,7 +169,8 @@ def _parse_categories(raw: dict, directory: Path) -> tuple[str, dict[str, Catego
             value=value,
             citation=spec.get("citation"),
             guidance=tuple(spec.get("guidance", ())),
-            features=dict(spec.get("features", {})),
+            properties=dict(spec.get("properties", {})),
+            collections=dict(spec.get("collections", {})),
         )
     return label, categories
 

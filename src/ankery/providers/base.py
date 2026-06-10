@@ -1,6 +1,6 @@
 from typing import Protocol, runtime_checkable
 
-from ankery.models import WordInfo
+from ankery.models import Entry
 
 
 class ProviderError(Exception):
@@ -11,11 +11,11 @@ class ProviderError(Exception):
 
 
 @runtime_checkable
-class WordProvider(Protocol):
+class Provider(Protocol):
     name: str
 
-    def fetch(self, word: str, category_hint: str | None = None) -> WordInfo | None:
-        """Return word info, or None if this provider has no result for `word`.
+    def fetch(self, term: str, category_hint: str | None = None) -> Entry | None:
+        """Return an Entry, or None if this provider has no result for `term`.
 
         `category_hint`, when given, is a canonical category value from the active
         pack's vocabulary. A provider may use it to disambiguate (e.g. pick the

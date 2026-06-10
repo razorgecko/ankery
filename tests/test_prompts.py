@@ -66,7 +66,7 @@ def test_renders_category_vocabulary_as_the_classification_set():
     )
 
 
-def test_renders_per_category_feature_keys_and_meanings():
+def test_renders_per_category_property_keys_and_meanings():
     prompt = _render_de()
 
     assert "Part of speech: noun" in prompt
@@ -74,10 +74,10 @@ def test_renders_per_category_feature_keys_and_meanings():
     assert "present_1sg: 1st person singular present" in prompt
 
 
-def test_renders_common_features_and_guidance():
+def test_renders_common_properties_and_guidance():
     prompt = _render_de()
 
-    assert "Common feature keys" in prompt
+    assert "Common property keys" in prompt
     assert "ipa:" in prompt
     # Per-category guidance prose from pack.toml is included.
     assert "Fill all six present-tense forms" in prompt
@@ -96,10 +96,10 @@ def test_category_hint_trims_the_prompt_to_the_named_category():
     assert "exactly one of" not in prompt
     # The assertion is conditional, with an empty-object escape hatch so a
     # mistaken hint misses instead of fabricating a noun reading.
-    assert "the user states this word is a noun" in prompt
+    assert "the user states this term is a noun" in prompt
     assert "return an empty JSON object {}" in prompt
-    # Common feature keys apply to any category, so trimming must keep them.
-    assert "Common feature keys" in prompt
+    # Common property keys apply to any category, so trimming must keep them.
+    assert "Common property keys" in prompt
 
 
 def test_unknown_category_hint_falls_back_to_full_vocabulary():
@@ -111,11 +111,11 @@ def test_unknown_category_hint_falls_back_to_full_vocabulary():
     )
 
 
-def test_user_prompt_carries_only_the_word():
-    # The language pair lives in the system prompt; the user turn is just the word.
+def test_user_prompt_carries_only_the_term():
+    # The language pair lives in the system prompt; the user turn is just the term.
     prompt = render_user_prompt("Buch")
 
-    assert "Word: Buch" in prompt
+    assert "Term: Buch" in prompt
     assert "language" not in prompt.lower()
 
 
@@ -129,9 +129,9 @@ def test_system_prompt_names_the_target_language():
     # The target language is inlined into the system prompt as a display name.
     prompt = _render_de()
 
-    assert "written in German" in prompt
-    assert "the English gloss" in prompt
-    assert "strings in English" in prompt
+    assert "`definitions`, `examples`: written in German" in prompt
+    assert "the English gloss of each example" in prompt
+    assert "`translations`: strings in English" in prompt
 
 
 def test_omitting_the_template_renders_the_domain_neutral_default():

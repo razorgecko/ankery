@@ -17,7 +17,7 @@ from ankery.notedef import (
 )
 from ankery.pack import Pack, PackError, load_pack
 from ankery.prompts import render_system_prompt, render_user_prompt
-from ankery.providers.base import WordProvider
+from ankery.providers.base import Provider
 from ankery.providers.llm import LLMProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
 
@@ -55,7 +55,7 @@ class Config:
     anki_timeout: float = 10.0
     allow_duplicate: bool = False
 
-    # `note_type` is the catch-all model for words that match no pack note
+    # `note_type` is the catch-all model for terms that match no pack note
     # definition; defaults to the engine-owned "Ankery Basic". --note-type repoints
     # it at a foreign model (e.g. Anki's stock "Basic").
     deck: str = "Default"
@@ -216,7 +216,7 @@ def resolve_variables(raw: dict[str, str], pack: Pack) -> dict[str, str]:
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
-def _build_llm(config: "Config", pack: Pack) -> WordProvider:
+def _build_llm(config: "Config", pack: Pack) -> Provider:
     if config.llm_api_key:
         parts = urlsplit(config.llm_base_url)
         if parts.scheme == "http" and parts.hostname not in _LOOPBACK_HOSTS:
@@ -244,7 +244,7 @@ def _build_llm(config: "Config", pack: Pack) -> WordProvider:
     )
 
 
-ProviderBuilder = Callable[["Config", Pack], WordProvider]
+ProviderBuilder = Callable[["Config", Pack], Provider]
 
 PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
     "llm": _build_llm,

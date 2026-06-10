@@ -3,15 +3,15 @@ applies_to = "noun"
 
 # Field order is the order of these keys. Word leads because Anki keys duplicate
 # detection on the first field; leading with Article would flag every same-gender
-# noun as a duplicate. The map reads the feature keys the pack declares for nouns
+# noun as a duplicate. The map reads the property keys the pack declares for nouns
 # (see ../pack.toml [pos.noun]); an undeclared/absent key renders empty.
 [map]
-Word        = "{{ word }}"
-Article     = "{{ features.gender }}"
-Plural      = "{{ features.nominative_pl }}"
-GenitiveSg  = "{{ features.genitive_sg }}"
-Translation = "{{ translations | join(', ') }}"
-Example     = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
+Word        = "{{ term }}"
+Article     = "{{ properties.gender }}"
+Plural      = "{{ properties.nominative_pl }}"
+GenitiveSg  = "{{ properties.genitive_sg }}"
+Translation = "{{ collections.translations | join(', ') }}"
+Example     = "{{ collections.examples[0] }}{% if collections.example_translations %} — {{ collections.example_translations[0] }}{% endif %}"
 
 [[cards]]
 name = "N1 Recognition"

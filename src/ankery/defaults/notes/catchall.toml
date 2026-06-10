@@ -1,14 +1,16 @@
-# The neutral catch-all note: the guaranteed terminus for any word no pack note
+# The neutral catch-all note: the guaranteed terminus for any entry no pack note
 # (bespoke or the pack's own `applies_to = "*"` default) claims. It names no
-# domain — Front is the bare word, Back dumps whatever WordInfo
-# carries, in fixed sections (translations -> definitions -> features ->
-# index-aligned example/gloss pairs) separated by <hr>, each section's items by
-# <br>. The <br>/<hr>/<i> tags are our structure; every provider-supplied value
-# is autoescaped (notedef.py) so it cannot inject markup into the card.
+# domain — Front is the bare term, Back dumps whatever the Entry carries: each
+# non-empty collection as its own block in insertion order, then the properties block,
+# blocks separated by <hr> and each block's items by <br>. The <br>/<hr> tags are
+# our structure; every provider-supplied value is autoescaped (notedef.py) so it
+# cannot inject markup into the card.
 #
-# A section renders only when its source list is non-empty, and the <hr>
-# separator is emitted only between two present sections (the `ns.sep` flag), so
-# there is never a leading, trailing, or doubled rule.
+# A block renders only when its source is non-empty, and the <hr> separator is
+# emitted only between two present blocks (the `ns.sep` flag), so there is never a
+# leading, trailing, or doubled rule. The catch-all sees no pack declarations at
+# render time, so it pairs no collections by index (that is a pack-note convention)
+# and dumps each independently.
 #
 # This is an ankery-owned model: it ships a `name`, a Front/Back field set, and
 # one forward card (no reverse — reversing a structured info dump makes a poor
@@ -19,31 +21,25 @@
 name = "Ankery Basic"
 
 [map]
-Front = "{{ word }}"
+Front = "{{ term }}"
 Back = """
 {%- set ns = namespace(sep = false) -%}
-{%- if translations -%}
-{{ translations | join(', ') }}
+{%- for key, items in collections.items() -%}
+{%- if items -%}
+{%- if ns.sep %}<hr>{% endif -%}
+{%- for item in items %}{% if not loop.first %}<br>{% endif %}{{ item }}{% endfor -%}
 {%- set ns.sep = true -%}
 {%- endif -%}
-{%- if definitions -%}
+{%- endfor -%}
+{%- if properties -%}
 {%- if ns.sep %}<hr>{% endif -%}
-{%- for d in definitions %}{% if not loop.first %}<br>{% endif %}{{ d }}{% endfor -%}
+{%- for k, v in properties.items() %}{% if not loop.first %}<br>{% endif %}{{ k }}: {{ v }}{% endfor -%}
 {%- set ns.sep = true -%}
-{%- endif -%}
-{%- if features -%}
-{%- if ns.sep %}<hr>{% endif -%}
-{%- for k, v in features.items() %}{% if not loop.first %}<br>{% endif %}{{ k }}: {{ v }}{% endfor -%}
-{%- set ns.sep = true -%}
-{%- endif -%}
-{%- if examples -%}
-{%- if ns.sep %}<hr>{% endif -%}
-{%- for ex in examples %}{% if not loop.first %}<br>{% endif %}<i>{{ ex }}</i>{% if loop.index0 < example_translations | length and example_translations[loop.index0] %} — {{ example_translations[loop.index0] }}{% endif %}{% endfor -%}
 {%- endif -%}
 """
 
 # Card templates are Anki's own mustache, not Jinja (notedef.py renders only the
-# [map]). One forward card: the word prompts, the info dump answers.
+# [map]). One forward card: the term prompts, the info dump answers.
 [[cards]]
 name = "Card 1"
 qfmt = "{{Front}}"

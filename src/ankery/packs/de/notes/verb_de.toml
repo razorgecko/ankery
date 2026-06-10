@@ -2,21 +2,21 @@ name = "Ankery DE: Verb"
 applies_to = "verb"
 
 # The six present forms are separate fields; the "ich .. / du .." layout lives in
-# the card templates below, not in the map. Keys read from features (declared in
+# the card templates below, not in the map. Keys read from properties (declared in
 # ../pack.toml [pos.verb]).
 [map]
-Infinitive  = "{{ word }}"
-Translation = "{{ translations | join(', ') }}"
-Aux         = "{{ features.auxiliary }}"
-Present1sg  = "{{ features.present_1sg }}"
-Present2sg  = "{{ features.present_2sg }}"
-Present3sg  = "{{ features.present_3sg }}"
-Present1pl  = "{{ features.present_1pl }}"
-Present2pl  = "{{ features.present_2pl }}"
-Present3pl  = "{{ features.present_3pl }}"
-Preterite   = "{{ features.preterite }}"
-Perfect     = "{{ features.perfect }}"
-Example     = "{{ examples[0] }}{% if example_translations %} — {{ example_translations[0] }}{% endif %}"
+Infinitive  = "{{ term }}"
+Translation = "{{ collections.translations | join(', ') }}"
+Aux         = "{{ properties.auxiliary }}"
+Present1sg  = "{{ properties.present_1sg }}"
+Present2sg  = "{{ properties.present_2sg }}"
+Present3sg  = "{{ properties.present_3sg }}"
+Present1pl  = "{{ properties.present_1pl }}"
+Present2pl  = "{{ properties.present_2pl }}"
+Present3pl  = "{{ properties.present_3pl }}"
+Preterite   = "{{ properties.preterite }}"
+Perfect     = "{{ properties.perfect }}"
+Example     = "{{ collections.examples[0] }}{% if collections.example_translations %} — {{ collections.example_translations[0] }}{% endif %}"
 
 [[cards]]
 name = "V1 Recognition"

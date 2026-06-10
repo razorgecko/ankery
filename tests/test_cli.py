@@ -11,7 +11,7 @@ from ankery.sinks.base import SinkError
 
 
 class FakeBuilder:
-    """Captures add_word calls and replays a scripted result per word."""
+    """Captures add_term calls and replays a scripted result per term."""
 
     def __init__(self, results: dict[str, object], category_names=("noun", "verb", "adjective")):
         self._results = results
@@ -29,17 +29,17 @@ class FakeBuilder:
         self.verified = True
         return self.created
 
-    def add_word(self, word, *, category_hint=None):
-        self.calls.append(word)
-        self.hint_calls.append((word, category_hint))
-        return self._outcome(word)
+    def add_term(self, term, *, category_hint=None):
+        self.calls.append(term)
+        self.hint_calls.append((term, category_hint))
+        return self._outcome(term)
 
-    def preview(self, word, *, category_hint=None):
-        self.preview_calls.append((word, category_hint))
-        return self._outcome(word)
+    def preview(self, term, *, category_hint=None):
+        self.preview_calls.append((term, category_hint))
+        return self._outcome(term)
 
-    def _outcome(self, word):
-        outcome = self._results[word]
+    def _outcome(self, term):
+        outcome = self._results[term]
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
@@ -108,9 +108,9 @@ def test_resolve_category_hint_rejects_empty():
         cli.resolve_category_hint("", ["noun"])
 
 
-def test_colon_hint_is_resolved_and_passed_to_add_word(patched):
+def test_colon_hint_is_resolved_and_passed_to_add_term(patched):
     captured, set_results = patched
-    builder = set_results({"Bank": AddResult(note_id=7, word="Bank")})
+    builder = set_results({"Bank": AddResult(note_id=7, term="Bank")})
 
     code = cli.main(["Bank:n"])
 
@@ -131,7 +131,7 @@ def test_unknown_hint_reports_and_skips_lookup(patched, capsys):
 
 def test_word_without_colon_passes_no_hint(patched):
     captured, set_results = patched
-    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    builder = set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(["Buch"])
 
@@ -140,7 +140,7 @@ def test_word_without_colon_passes_no_hint(patched):
 
 def test_added_word_prints_without_note_id_and_exits_zero(patched, capsys):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=42, word="Buch")})
+    set_results({"Buch": AddResult(note_id=42, term="Buch")})
 
     code = cli.main(["Buch"])
 
@@ -152,7 +152,7 @@ def test_added_word_prints_without_note_id_and_exits_zero(patched, capsys):
 
 def test_resolved_word_shows_redirect(patched, capsys):
     captured, set_results = patched
-    set_results({"Hause": AddResult(note_id=42, word="Haus")})
+    set_results({"Hause": AddResult(note_id=42, term="Haus")})
 
     code = cli.main(["Hause"])
 
@@ -192,7 +192,7 @@ def test_sink_error_reports_and_exits_nonzero(patched, capsys):
 
 def test_note_type_verification_failure_exits_before_words(patched, capsys):
     captured, set_results = patched
-    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    builder = set_results({"Buch": AddResult(note_id=1, term="Buch")})
     builder.verify_error = SinkError("note type 'Ankery DE: Noun' already exists")
 
     code = cli.main(["Buch"])
@@ -206,9 +206,9 @@ def test_multiple_words_one_failure_still_processes_all(patched, capsys):
     captured, set_results = patched
     set_results(
         {
-            "a": AddResult(note_id=1, word="a"),
+            "a": AddResult(note_id=1, term="a"),
             "b": None,
-            "c": AddResult(note_id=2, word="c"),
+            "c": AddResult(note_id=2, term="c"),
         }
     )
 
@@ -220,18 +220,18 @@ def test_multiple_words_one_failure_still_processes_all(patched, capsys):
 
 def test_empty_or_whitespace_word_is_skipped_not_looked_up(patched, capsys):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     code = cli.main(["   ", "Buch"])
 
     assert code == 1  # the empty word marks the run as failed
-    assert "empty word" in capsys.readouterr().err
+    assert "empty term" in capsys.readouterr().err
     assert captured["builder"].calls == ["Buch"]  # whitespace word never reached the builder
 
 
 def test_surrounding_whitespace_is_stripped_before_lookup(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     code = cli.main(["  Buch  "])
 
@@ -241,7 +241,7 @@ def test_surrounding_whitespace_is_stripped_before_lookup(patched):
 
 def test_flags_override_config(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(
         [
@@ -264,7 +264,7 @@ def test_flags_override_config(patched):
 
 def test_pack_flag_is_taken_literally(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(["--pack", "German", "Buch"])
 
@@ -275,7 +275,7 @@ def test_pack_flag_is_taken_literally(patched):
 
 def test_var_flag_is_repeatable_and_passes_values_raw(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(["--var", "target_language=english", "--var", "tone=formal", "Buch"])
 
@@ -295,7 +295,7 @@ def test_var_flag_without_equals_is_a_config_error(capsys):
 
 def test_infra_flags_override_config(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(
         [
@@ -314,7 +314,7 @@ def test_infra_flags_override_config(patched):
 
 def test_provider_flag_overrides_chain(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(["--provider", "netzverb,llm", "Buch"])
 
@@ -323,7 +323,7 @@ def test_provider_flag_overrides_chain(patched):
 
 def test_packs_dir_flag_sets_user_pack_dir(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(["--packs-dir", "/srv/packs", "Buch"])
 
@@ -332,7 +332,7 @@ def test_packs_dir_flag_sets_user_pack_dir(patched):
 
 def test_notes_dir_flag_sets_notes_dir(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     cli.main(["--notes-dir", "/srv/notes", "Buch"])
 
@@ -382,7 +382,7 @@ def _capture_load_path(monkeypatch) -> dict:
 
 def test_config_flag_sets_load_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
     seen = _capture_load_path(monkeypatch)
 
     cli.main(["--config", "/tmp/custom.toml", "Buch"])
@@ -392,7 +392,7 @@ def test_config_flag_sets_load_path(patched, monkeypatch):
 
 def test_config_flag_passed_through_even_with_env_set(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.setenv("ANKERY_CONFIG", "/tmp/from-env.toml")
 
@@ -403,7 +403,7 @@ def test_config_flag_passed_through_even_with_env_set(patched, monkeypatch):
 
 def test_no_config_source_loads_default_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.delenv("ANKERY_CONFIG", raising=False)
 
@@ -414,7 +414,7 @@ def test_no_config_source_loads_default_path(patched, monkeypatch):
 
 def test_auth_flag_sets_auth_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
     seen = _capture_load_path(monkeypatch)
 
     cli.main(["--auth", "/tmp/custom-auth.toml", "Buch"])
@@ -424,7 +424,7 @@ def test_auth_flag_sets_auth_path(patched, monkeypatch):
 
 def test_auth_flag_passed_through_even_with_env_set(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.setenv("ANKERY_AUTH", "/tmp/auth-from-env.toml")
 
@@ -435,7 +435,7 @@ def test_auth_flag_passed_through_even_with_env_set(patched, monkeypatch):
 
 def test_no_auth_source_loads_default_path(patched, monkeypatch):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
     seen = _capture_load_path(monkeypatch)
     monkeypatch.delenv("ANKERY_AUTH", raising=False)
 
@@ -451,7 +451,7 @@ def test_no_auth_source_loads_default_path(patched, monkeypatch):
 
 def test_quiet_suppresses_stdout_but_keeps_exit_code(patched, capsys):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
 
     code = cli.main(["-q", "Buch"])
 
@@ -477,7 +477,7 @@ def test_verbose_prints_note_id_type_and_fields(patched, capsys):
         {
             "Buch": AddResult(
                 note_id=42,
-                word="Buch",
+                term="Buch",
                 note_type="Ankery DE: Noun",
                 fields={"Word": "Buch", "Article": ""},
             )
@@ -495,7 +495,7 @@ def test_verbose_prints_note_id_type_and_fields(patched, capsys):
 
 def test_created_note_types_are_announced(patched, capsys):
     captured, set_results = patched
-    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    builder = set_results({"Buch": AddResult(note_id=1, term="Buch")})
     builder.created = ["Ankery Basic"]
 
     cli.main(["Buch"])
@@ -505,7 +505,7 @@ def test_created_note_types_are_announced(patched, capsys):
 
 def test_quiet_suppresses_created_note_types(patched, capsys):
     captured, set_results = patched
-    builder = set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    builder = set_results({"Buch": AddResult(note_id=1, term="Buch")})
     builder.created = ["Ankery Basic"]
 
     cli.main(["-q", "Buch"])
@@ -515,7 +515,7 @@ def test_quiet_suppresses_created_note_types(patched, capsys):
 
 def test_double_verbose_installs_the_engine_trace_once(patched):
     captured, set_results = patched
-    set_results({"Buch": AddResult(note_id=1, word="Buch")})
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
     log = logging.getLogger("ankery")
 
     try:
@@ -550,7 +550,7 @@ def test_dry_run_previews_without_touching_anki(patched, capsys):
         {
             "Buch": AddResult(
                 note_id=None,
-                word="Buch",
+                term="Buch",
                 note_type="Ankery DE: Noun",
                 fields={"Word": "Buch", "Article": "das"},
             )
@@ -565,7 +565,7 @@ def test_dry_run_previews_without_touching_anki(patched, capsys):
     assert "  Word: Buch" in out
     assert "  Article: das" in out
     assert builder.preview_calls == [("Buch", None)]
-    assert builder.calls == []  # add_word never invoked
+    assert builder.calls == []  # add_term never invoked
     assert builder.verified is False  # note type provisioning skipped
 
 
@@ -582,7 +582,7 @@ def test_dry_run_not_found_still_errors(patched, capsys):
 def test_quiet_dry_run_prints_nothing(patched, capsys):
     captured, set_results = patched
     set_results(
-        {"Buch": AddResult(note_id=None, word="Buch", note_type="N", fields={"W": "x"})}
+        {"Buch": AddResult(note_id=None, term="Buch", note_type="N", fields={"W": "x"})}
     )
 
     code = cli.main(["-q", "-n", "Buch"])
@@ -596,4 +596,4 @@ def test_missing_word_argument_is_an_argparse_error(capsys):
         cli.main([])
 
     assert exc.value.code == 2  # argparse's usage-error exit code
-    assert "the following arguments are required: words" in capsys.readouterr().err
+    assert "the following arguments are required: terms" in capsys.readouterr().err

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 import ankery
-from ankery.models import WordInfo
+from ankery.models import Entry
 from ankery.notedef import (
     NoteDefinition,
     NoteDefinitionError,
@@ -20,25 +20,23 @@ def _defs() -> dict[str, NoteDefinition]:
     return {d.name: d for d in load_notes_from_dir(DE_NOTES)}
 
 
-def _noun() -> WordInfo:
-    return WordInfo(
-        word="Haus",
+def _noun() -> Entry:
+    return Entry(
+        term="Haus",
         source="test",
         category="noun",
-        translations=["house", "home"],
-        examples=["Das Haus ist groß."],
-        features={"gender": "das", "nominative_pl": "Häuser", "genitive_sg": "Hauses"},
+        collections={"translations": ["house", "home"], "examples": ["Das Haus ist groß."]},
+        properties={"gender": "das", "nominative_pl": "Häuser", "genitive_sg": "Hauses"},
     )
 
 
-def _verb() -> WordInfo:
-    return WordInfo(
-        word="sehen",
+def _verb() -> Entry:
+    return Entry(
+        term="sehen",
         source="test",
         category="verb",
-        translations=["to see"],
-        examples=["Ich sehe dich."],
-        features={
+        collections={"translations": ["to see"], "examples": ["Ich sehe dich."]},
+        properties={
             "present_1sg": "sehe",
             "present_2sg": "siehst",
             "present_3sg": "sieht",
@@ -78,13 +76,13 @@ def test_noun_render_fills_the_noun_model_fields():
 def test_render_copies_forms_verbatim_no_stripping():
     # Normalization (dropping the article) is the pack filter's job, not the
     # template's. An article-bearing feature value must survive the map untouched.
-    info = WordInfo(
-        word="Haus",
+    entry = Entry(
+        term="Haus",
         source="test",
         category="noun",
-        features={"gender": "das", "nominative_pl": "die Häuser", "genitive_sg": "des Hauses"},
+        properties={"gender": "das", "nominative_pl": "die Häuser", "genitive_sg": "des Hauses"},
     )
-    fields = _defs()["Ankery DE: Noun"].render(info)
+    fields = _defs()["Ankery DE: Noun"].render(entry)
 
     assert fields["Plural"] == "die Häuser"
     assert fields["GenitiveSg"] == "des Hauses"
@@ -108,11 +106,11 @@ def test_verb_render_fills_present_forms_as_separate_fields():
 
 
 def test_verb_render_uses_empty_string_for_missing_present_forms():
-    info = WordInfo(
-        word="x", source="test", category="verb",
-        features={"present_1sg": "bin", "present_3sg": "ist"},
+    entry = Entry(
+        term="x", source="test", category="verb",
+        properties={"present_1sg": "bin", "present_3sg": "ist"},
     )
-    fields = _defs()["Ankery DE: Verb"].render(info)
+    fields = _defs()["Ankery DE: Verb"].render(entry)
 
     assert fields["Present1sg"] == "bin"
     assert fields["Present3sg"] == "ist"
@@ -121,9 +119,9 @@ def test_verb_render_uses_empty_string_for_missing_present_forms():
 
 
 def test_render_tolerates_absent_data_without_literal_none():
-    # Optional WordInfo fields are None, not absent; they must render "" not the
-    # string "None", and missing feature keys must render "".
-    bare = WordInfo(word="Ding", source="test", category="noun")
+    # Optional Entry fields are None, not absent; they must render "" not the
+    # string "None", and missing feature/section keys must render "".
+    bare = Entry(term="Ding", source="test", category="noun")
     fields = _defs()["Ankery DE: Noun"].render(bare)
 
     assert fields == {
@@ -145,7 +143,7 @@ def test_applies_routes_by_category():
     # An adjective matches no bespoke note (none `applies`), so it routes to the
     # pack default note "Ankery DE: Word" — which is itself fallback-only (`applies` is
     # always False; routing selects it via is_default, see test_manager).
-    adj = WordInfo(word="schön", source="test", category="adjective")
+    adj = Entry(term="schön", source="test", category="adjective")
     assert not any(d.applies(adj) for d in defs.values())
     assert defs["Ankery DE: Word"].is_default
     assert not defs["Ankery DE: Word"].applies(adj)
@@ -155,23 +153,24 @@ def test_applies_routes_by_category():
 def test_default_note_renders_bundled_grammar_per_category():
     d = _defs()["Ankery DE: Word"]
 
-    prep = WordInfo(
-        word="mit", source="test", category="preposition",
-        translations=["with"], features={"governs_case": "dative"},
+    prep = Entry(
+        term="mit", source="test", category="preposition",
+        collections={"translations": ["with"]}, properties={"governs_case": "dative"},
     )
     assert d.render(prep)["Grammar"] == "+ dative"
     assert d.render(prep)["Translation"] == "with"
     assert d.render(prep)["PartOfSpeech"] == "preposition"
 
-    adj = WordInfo(
-        word="schnell", source="test", category="adjective",
-        features={"comparative": "schneller", "superlative": "am schnellsten"},
+    adj = Entry(
+        term="schnell", source="test", category="adjective",
+        properties={"comparative": "schneller", "superlative": "am schnellsten"},
     )
     assert d.render(adj)["Grammar"] == "Steigerung: schneller / am schnellsten"
 
-    # A category with none of the bundled features (e.g. a non-gradable adverb) yields
+    # A category with none of the bundled properties (e.g. a non-gradable adverb) yields
     # an empty Grammar; the card hides the block via its {{#Grammar}} section.
-    adv = WordInfo(word="heute", source="test", category="adverb", translations=["today"])
+    adv = Entry(term="heute", source="test", category="adverb",
+                collections={"translations": ["today"]})
     assert d.render(adv)["Grammar"] == ""
 
 
@@ -203,7 +202,7 @@ def _write_note(directory: Path, stem: str, name: str, applies_to: str | None):
     directory.mkdir(parents=True, exist_ok=True)
     applies = f'applies_to = "{applies_to}"\n' if applies_to is not None else ""
     (directory / f"{stem}.toml").write_text(
-        f'name = "{name}"\n{applies}[map]\nFront = "{{{{ word }}}}"\n', "utf-8"
+        f'name = "{name}"\n{applies}[map]\nFront = "{{{{ term }}}}"\n', "utf-8"
     )
 
 
@@ -232,7 +231,7 @@ def test_notes_without_applies_to_do_not_collide(tmp_path):
 
 
 def _note(name: str, applies_to: str | None) -> NoteDefinition:
-    return NoteDefinition(name=name, field_map={"Front": "{{ word }}"}, applies_to=applies_to)
+    return NoteDefinition(name=name, field_map={"Front": "{{ term }}"}, applies_to=applies_to)
 
 
 def test_merge_override_replaces_same_category_in_place():
@@ -279,10 +278,13 @@ def test_field_map_escapes_provider_html():
     # Provider-supplied values can contain markup; a note map must escape it so
     # it can't inject into the card. Card structure lives in templates, not here.
     note = NoteDefinition(
-        name="X", field_map={"Front": "{{ word }}", "Back": "{{ translations[0] }}"}
+        name="X", field_map={"Front": "{{ term }}", "Back": "{{ collections.translations[0] }}"}
     )
-    info = WordInfo(word="<b>x</b>", source="test", translations=["<script>alert(1)</script>"])
-    fields = note.render(info)
+    entry = Entry(
+        term="<b>x</b>", source="test",
+        collections={"translations": ["<script>alert(1)</script>"]},
+    )
+    fields = note.render(entry)
 
     assert fields["Front"] == "&lt;b&gt;x&lt;/b&gt;"
     assert "<script>" not in fields["Back"]
@@ -291,7 +293,7 @@ def test_field_map_escapes_provider_html():
 
 def test_field_map_safe_filter_opts_out_of_escaping():
     # A pack that deliberately emits HTML from a value can use `| safe`.
-    note = NoteDefinition(name="X", field_map={"Back": "{{ definitions[0] | safe }}"})
-    info = WordInfo(word="x", source="test", definitions=["<i>emphasis</i>"])
+    note = NoteDefinition(name="X", field_map={"Back": "{{ collections.definitions[0] | safe }}"})
+    entry = Entry(term="x", source="test", collections={"definitions": ["<i>emphasis</i>"]})
 
-    assert note.render(info)["Back"] == "<i>emphasis</i>"
+    assert note.render(entry)["Back"] == "<i>emphasis</i>"

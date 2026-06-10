@@ -6,9 +6,9 @@ from pathlib import Path
 
 import jinja2
 
-from ankery.models import WordInfo
+from ankery.models import Entry
 
-FieldMap = Callable[[WordInfo], dict[str, str]]
+FieldMap = Callable[[Entry], dict[str, str]]
 
 # The `applies_to` value marking a note as the pack's catch-all fallback; it
 # matches no specific category.
@@ -61,14 +61,14 @@ class NoteDefinition:
         """Whether this note is the pack's catch-all fallback (`applies_to = "*"`)."""
         return self.applies_to == DEFAULT_APPLIES_TO
 
-    def applies(self, info: WordInfo) -> bool:
+    def applies(self, entry: Entry) -> bool:
         if self.applies_to is None or self.is_default:
             return False  # the default note is fallback-only, never a category match
-        return (info.category or "").strip().lower() == self.applies_to
+        return (entry.category or "").strip().lower() == self.applies_to
 
-    def render(self, info: WordInfo) -> dict[str, str]:
-        """Render each field's Jinja template against `info`."""
-        data = info.model_dump()
+    def render(self, entry: Entry) -> dict[str, str]:
+        """Render each field's Jinja template against `entry`."""
+        data = entry.model_dump()
         return {
             name: _env.from_string(template).render(**data)
             for name, template in self.field_map.items()

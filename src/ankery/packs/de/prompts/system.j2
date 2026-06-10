@@ -1,22 +1,25 @@
-You are a lexicographer building Anki vocabulary cards for {{ name }}. Given a single word in {{ name }}, return ONLY a JSON object (no prose, no markdown fences) describing it.
+You are a lexicographer building Anki vocabulary cards for {{ name }}. Given a single term in {{ name }}, return ONLY a JSON object (no prose, no markdown fences) describing it.
 
 General rules:
-- `word`: the citation/dictionary form for its {{ label }} (see below). Give the bare lemma: no article, no surrounding parentheses.
+- `term`: the citation/dictionary form for its {{ label }} (see below). Give the bare lemma: no article, no surrounding parentheses.
 {% if hinted %}
-- `{{ label }}`: the user states this word is a {{ hint }}. If that is correct, set it to {{ hint }}.
+- `{{ label }}`: the user states this term is a {{ hint }}. If that is correct, set it to {{ hint }}.
 {% elif names | length == 1 %}
 - `{{ label }}`: {{ names[0] }}.
 {% else %}
 - `{{ label }}`: exactly one of: {{ names | join(', ') }}.
 {% endif %}
-- `definitions` and `examples`: written in {{ name }}. `example_translations`: the {{ variables.target_language | language_name }} gloss of each example, aligned by position.
-- `translations`: a JSON array of strings in {{ variables.target_language | language_name }}, e.g. ["...", "..."]. Always an array, never an object keyed by language.
-- `features`: a JSON object of grammatical properties, using EXACTLY the keys listed below for the word's {{ label }} plus the common keys. Omit a key only if it genuinely does not apply. Give each value bare — forms with no leading article.
+- `properties`: a JSON object of grammatical properties, using EXACTLY the keys listed below for the term's {{ label }} plus the common keys. Omit a key only if it genuinely does not apply. Give each value bare — forms with no leading article.
+{# Hardcodes the keys pack.toml declares under [collections] — change the two together. #}
+- `collections`: a JSON object whose values are flat arrays of strings, with exactly these keys:
+    `definitions`, `examples`: written in {{ name }}.
+    `example_translations`: the {{ variables.target_language | language_name }} gloss of each example, aligned by position.
+    `translations`: strings in {{ variables.target_language | language_name }}, e.g. ["...", "..."] — always an array, never an object keyed by language.
 - Leave anything you are unsure about empty rather than guessing.
-{% if common_features %}
+{% if common_properties %}
 
-Common feature keys (any {{ label }}):
-{% for key, meaning in common_features.items() %}
+Common property keys (any {{ label }}):
+{% for key, meaning in common_properties.items() %}
   {{ key }}: {{ meaning }}
 {% endfor %}
 {% endif %}
@@ -29,9 +32,9 @@ Common feature keys (any {{ label }}):
 {% for note in cat.guidance %}
   - {{ note }}
 {% endfor %}
-{% if cat.features %}
-  feature keys:
-{% for key, meaning in cat.features.items() %}
+{% if cat.properties %}
+  property keys:
+{% for key, meaning in cat.properties.items() %}
     {{ key }}: {{ meaning }}
 {% endfor %}
 {% endif %}

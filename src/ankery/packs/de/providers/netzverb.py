@@ -42,7 +42,7 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from ankery.languages import language_code
-from ankery.models import WordInfo
+from ankery.models import Entry
 from ankery.providers.retry import request_with_retry
 from ankery.providers.base import ProviderError
 
@@ -162,7 +162,7 @@ class NetzverbProvider:
         self._target_language = target_language
         self._timeout = timeout
 
-    def fetch(self, word: str, category_hint: str | None = None) -> WordInfo | None:
+    def fetch(self, word: str, category_hint: str | None = None) -> Entry | None:
         pos = self._resolve_pos(word, category_hint)
         # A hint for a POS no site here serves (or any POS at all when none of the
         # no-hint priors apply): miss cleanly rather than scrape the wrong page shape.
@@ -275,8 +275,8 @@ _FEATURE_EXTRAS: dict[str, Callable[[dict[str, str], _ParseCtx], None]] = {
 def _parse(
     word: str, soup: BeautifulSoup, route: "_Route", target_language: str,
     source: str, pos: str,
-) -> WordInfo | None:
-    """Parse one page into a WordInfo, for every POS — the Steckbrief summary
+) -> Entry | None:
+    """Parse one page into an Entry, for every POS — the Steckbrief summary
     panel is read identically whether it stands alone (most POS) or is embedded
     in the verb's full conjugation page. The POS-specific parts degrade away on
     their own: a POS with no _KEY_FORMS entry yields no irregular forms, a
@@ -300,23 +300,27 @@ def _parse(
     if extra is not None:
         extra(features, _ParseCtx(soup, src, steckbrief, lemma_el))
 
-    info = WordInfo(
-        word=_lemma(lemma_el, fallback=word),
+    translations = _translations(steckbrief, target_language)
+    definitions = _definition(steckbrief)
+    entry = Entry(
+        term=_lemma(lemma_el, fallback=word),
         category=pos,
-        translations=_translations(steckbrief, target_language),
         audio_url=_audio_url(lemma_el),
-        definitions=_definition(steckbrief),
-        examples=examples,
-        example_translations=example_translations,
-        features=features,
+        properties=features,
+        collections={
+            "translations": translations,
+            "definitions": definitions,
+            "examples": examples,
+            "example_translations": example_translations,
+        },
         source=source,
         pack="de",
         variables={"target_language": target_language},
     )
-    if not info.translations and not info.definitions:
+    if not translations and not definitions:
         logger.info("netzverb: page parsed but no gloss or definition -> miss")
         return None
-    return info
+    return entry
 
 
 

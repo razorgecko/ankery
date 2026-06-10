@@ -6,7 +6,7 @@ check.
 """
 
 from ankery import defaults
-from ankery.models import WordInfo
+from ankery.models import Entry
 
 
 def test_default_style_is_shipped_and_nonempty():
@@ -27,7 +27,7 @@ def test_exactly_one_catch_all_note_is_shipped():
 
 def test_catch_all_is_an_owned_model_with_one_forward_card():
     # The catch-all is an ankery-provisioned model: Front/Back fields and a single
-    # forward card (word -> info dump). No reverse card — reversing a structured
+    # forward card (term -> info dump). No reverse card — reversing a structured
     # dump makes a poor flashcard.
     note = defaults.default_catch_all()
     assert note.fields == ["Front", "Back"]
@@ -52,7 +52,7 @@ def test_prompt_templates_are_shipped():
     assert defaults.SYSTEM_TEMPLATE_PATH.is_file()
     assert defaults.USER_TEMPLATE_PATH.is_file()
     assert "{{ name }}" in defaults.default_system_template()
-    assert "{{ word }}" in defaults.default_user_template()
+    assert "{{ term }}" in defaults.default_user_template()
 
 
 # ---------------------------------------------------------------------------
@@ -61,58 +61,62 @@ def test_prompt_templates_are_shipped():
 
 
 def test_catch_all_is_neutral():
-    # Carries no domain knowledge: front is the bare word (no article), and every
-    # declared feature shows in the back as key: value.
-    info = WordInfo(
-        word="Buch",
+    # Carries no domain knowledge: front is the bare term, and each non-empty
+    # section (items joined by <br>, in insertion order) plus every declared
+    # feature shows in the back, blocks separated by <hr>.
+    entry = Entry(
+        term="Buch",
         source="test",
-        translations=["book", "tome"],
-        definitions=["gebundene Seiten"],
-        features={"gender": "das", "nominative_pl": "Bücher"},
+        collections={"translations": ["book", "tome"], "definitions": ["gebundene Seiten"]},
+        properties={"gender": "das", "nominative_pl": "Bücher"},
     )
-    fields = defaults.default_catch_all().render(info)
+    fields = defaults.default_catch_all().render(entry)
 
     assert fields["Front"] == "Buch"
     assert fields["Back"] == (
-        "book, tome<hr>gebundene Seiten<hr>gender: das<br>nominative_pl: Bücher"
+        "book<br>tome<hr>gebundene Seiten<hr>gender: das<br>nominative_pl: Bücher"
     )
 
 
-def test_catch_all_sections_are_separated_only_when_present():
-    # No leading/trailing/doubled <hr>: a single present section yields no rule.
-    only_examples = WordInfo(
-        word="x", source="test",
-        examples=["Ein Satz.", "Noch einer."],
-        example_translations=["A sentence."],
+def test_catch_all_dumps_each_section_independently_without_pairing():
+    # No leading/trailing/doubled <hr>: blocks separated only between two present
+    # collections. The neutral catch-all pairs no collections by index (that is a pack-
+    # note convention) — examples and their glosses are separate blocks.
+    entry = Entry(
+        term="x", source="test",
+        collections={
+            "examples": ["Ein Satz.", "Noch einer."],
+            "example_translations": ["A sentence."],
+        },
     )
-    back = defaults.default_catch_all().render(only_examples)["Back"]
-    # Index-aligned glosses; a missing gloss (shorter list) leaves the example bare.
-    assert back == "<i>Ein Satz.</i> — A sentence.<br><i>Noch einer.</i>"
+    back = defaults.default_catch_all().render(entry)["Back"]
+    assert back == "Ein Satz.<br>Noch einer.<hr>A sentence."
     assert not back.startswith("<hr>") and not back.endswith("<hr>")
 
 
 def test_catch_all_escapes_provider_html_but_keeps_structure():
-    info = WordInfo(
-        word="x",
+    entry = Entry(
+        term="x",
         source="test",
-        translations=["<script>alert(1)</script>"],
-        examples=["a <b>bold</b> sentence"],
-        example_translations=["a gloss"],
+        collections={
+            "translations": ["<script>alert(1)</script>"],
+            "examples": ["a <b>bold</b> sentence"],
+        },
     )
-    back = defaults.default_catch_all().render(info)["Back"]
+    back = defaults.default_catch_all().render(entry)["Back"]
 
     # Provider values are escaped...
     assert "<script>" not in back
     assert "&lt;script&gt;" in back
     assert "<b>bold</b>" not in back
     # ...but our own structural tags survive.
-    assert "<i>" in back and "<hr>" in back
+    assert "<hr>" in back
 
 
-def test_catch_all_escapes_the_front_word():
-    # Unlike the old imperative map (which emitted the bare word), the templated
-    # catch-all escapes Front like every other note — autoescape applies uniformly.
+def test_catch_all_escapes_the_front_term():
+    # The templated catch-all escapes Front like every other note — autoescape
+    # applies uniformly.
     fields = defaults.default_catch_all().render(
-        WordInfo(word="<b>x</b>", source="test")
+        Entry(term="<b>x</b>", source="test")
     )
     assert fields["Front"] == "&lt;b&gt;x&lt;/b&gt;"

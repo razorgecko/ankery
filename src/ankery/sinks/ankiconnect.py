@@ -39,7 +39,7 @@ class AnkiConnectSink:
             "fields": fields,
             "options": {
                 "allowDuplicate": self.allow_duplicate,
-                # Scope dedup to the target deck so the same word can live in
+                # Scope dedup to the target deck so the same term can live in
                 # another deck; without this AnkiConnect checks the whole
                 # collection for the note type and blocks cross-deck repeats.
                 "duplicateScope": "deck",

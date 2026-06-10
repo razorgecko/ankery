@@ -3,7 +3,7 @@
 Imports must be absolute — this file is loaded by path.
 """
 
-from ankery.models import WordInfo
+from ankery.models import Entry
 
 _ARTICLES = {"der", "die", "das", "des", "dem", "den"}
 
@@ -13,8 +13,8 @@ def _strip_leading_article(form: str) -> str:
     return rest if head.lower() in _ARTICLES and rest else form
 
 
-def normalize(info: WordInfo) -> WordInfo:
-    info.features = {
-        key: _strip_leading_article(value) for key, value in info.features.items()
+def normalize(entry: Entry) -> Entry:
+    entry.properties = {
+        key: _strip_leading_article(value) for key, value in entry.properties.items()
     }
-    return info
+    return entry

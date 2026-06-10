@@ -2,7 +2,7 @@
 
 The provider is pack-local code loaded by path, so the test loads the module the
 same way the pack loader does and exercises the class and helpers directly. Its
-output goes into the language-neutral `features` dict (gender, ipa, declension,
+output goes into the language-neutral `properties` dict (gender, ipa, declension,
 conjugation) rather than dedicated German fields.
 """
 
@@ -46,22 +46,22 @@ def _provider(target_language: str = "en") -> "NetzverbProvider":
 # ---------------------------------------------------------------------------
 
 
-def test_noun_fetch_returns_wordinfo(httpx_mock):
+def test_noun_fetch_returns_entry(httpx_mock):
     httpx_mock.add_response(url=NOUN_URL, text=_fixture("verbformen_noun_Haus.html"))
 
     info = _provider().fetch("Haus")
 
     assert info is not None
-    assert info.word == "Haus"
+    assert info.term == "Haus"
     assert info.category == "noun"
     assert info.source == "netzverb"
     assert info.pack == "de"
     assert info.variables == {"target_language": "en"}
-    assert info.features["gender"] == "das"
-    assert info.features["ipa"] == "/haʊs/"
-    assert info.definitions and "erbautes Gebäude" in info.definitions[0]
-    assert info.examples == ["Ich geh nach Hause."]
-    assert info.example_translations == ["I'm going home."]
+    assert info.properties["gender"] == "das"
+    assert info.properties["ipa"] == "/haʊs/"
+    assert info.collections["definitions"] and "erbautes Gebäude" in info.collections["definitions"][0]
+    assert info.collections["examples"] == ["Ich geh nach Hause."]
+    assert info.collections["example_translations"] == ["I'm going home."]
     assert (
         info.audio_url
         == "https://www.verbformen.de/deklination/substantive/grundform/der_Haus.mp3"
@@ -77,7 +77,7 @@ def test_word_taken_from_page_headword_not_request(httpx_mock):
     info = _provider().fetch("Hause")
 
     assert info is not None
-    assert info.word == "Haus"
+    assert info.term == "Haus"
 
 
 def test_noun_key_forms_go_into_features(httpx_mock):
@@ -89,11 +89,11 @@ def test_noun_key_forms_go_into_features(httpx_mock):
     # read bare from the compact "Hauses · Häuser" line alongside gender/ipa. The
     # rule-derivable cases (dative, accusative, the plural genitive/accusative)
     # are deliberately not parsed.
-    assert info.features["genitive_sg"] == "Hauses"
-    assert info.features["nominative_pl"] == "Häuser"
-    assert info.features["gender"] == "das"
-    assert "dative_pl" not in info.features
-    assert "accusative_sg" not in info.features
+    assert info.properties["genitive_sg"] == "Hauses"
+    assert info.properties["nominative_pl"] == "Häuser"
+    assert info.properties["gender"] == "das"
+    assert "dative_pl" not in info.properties
+    assert "accusative_sg" not in info.properties
 
 
 def test_nested_span_translations_not_truncated(httpx_mock):
@@ -104,8 +104,8 @@ def test_nested_span_translations_not_truncated(httpx_mock):
 
     info = _provider().fetch("Haus")
 
-    assert info.translations[0] == "house"
-    assert "domicile" in info.translations
+    assert info.collections["translations"][0] == "house"
+    assert "domicile" in info.collections["translations"]
 
 
 # ---------------------------------------------------------------------------
@@ -113,20 +113,20 @@ def test_nested_span_translations_not_truncated(httpx_mock):
 # ---------------------------------------------------------------------------
 
 
-def test_verb_fetch_returns_wordinfo(httpx_mock):
+def test_verb_fetch_returns_entry(httpx_mock):
     httpx_mock.add_response(url=VERB_URL, text=_fixture("verbformen_verb_einkaufen.html"))
 
     info = _provider().fetch("einkaufen")
 
     assert info is not None
-    assert info.word == "einkaufen"
+    assert info.term == "einkaufen"
     assert info.category == "verb"
-    assert info.features["separable"] == "true"
-    assert info.features["ipa"] == "/ˈaɪ̯nˌkaʊ̯fən/"
-    assert info.translations[0] == "buy"
-    assert "do the shopping" in info.translations
-    assert info.examples == ["Wir kaufen ein."]
-    assert info.example_translations == ["We are shopping."]
+    assert info.properties["separable"] == "true"
+    assert info.properties["ipa"] == "/ˈaɪ̯nˌkaʊ̯fən/"
+    assert info.collections["translations"][0] == "buy"
+    assert "do the shopping" in info.collections["translations"]
+    assert info.collections["examples"] == ["Wir kaufen ein."]
+    assert info.collections["example_translations"] == ["We are shopping."]
     assert (
         info.audio_url
         == "https://www.verbformen.de/konjugation/infinitiv/einkaufen.mp3"
@@ -153,7 +153,7 @@ def test_verb_conjugation_goes_into_features(httpx_mock):
         "perfect": "hat eingekauft",
         "auxiliary": "haben",
     }
-    assert conjugation.items() <= info.features.items()
+    assert conjugation.items() <= info.properties.items()
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +175,7 @@ def test_noun_translations_follow_target_language(httpx_mock, target, fixture, e
 
     info = _provider(target).fetch("Haus")
 
-    assert info.translations[: len(expected_head)] == expected_head
+    assert info.collections["translations"][: len(expected_head)] == expected_head
 
 
 @pytest.mark.parametrize(
@@ -190,7 +190,7 @@ def test_verb_translations_follow_target_language(httpx_mock, target, fixture, e
 
     info = _provider(target).fetch("einkaufen")
 
-    assert info.translations[: len(expected_head)] == expected_head
+    assert info.collections["translations"][: len(expected_head)] == expected_head
 
 
 def test_target_language_does_not_bleed_other_languages(httpx_mock):
@@ -198,9 +198,9 @@ def test_target_language_does_not_bleed_other_languages(httpx_mock):
 
     info = _provider("fr").fetch("Haus")
 
-    assert "maison" in info.translations
-    assert "house" not in info.translations
-    assert "casa" not in info.translations
+    assert "maison" in info.collections["translations"]
+    assert "house" not in info.collections["translations"]
+    assert "casa" not in info.collections["translations"]
 
 
 def test_unavailable_target_language_yields_no_translations(httpx_mock):
@@ -212,8 +212,8 @@ def test_unavailable_target_language_yields_no_translations(httpx_mock):
     info = _provider("de").fetch("Haus")
 
     assert info is not None
-    assert info.translations == []
-    assert info.definitions and "erbautes Gebäude" in info.definitions[0]
+    assert info.collections["translations"] == []
+    assert info.collections["definitions"] and "erbautes Gebäude" in info.collections["definitions"][0]
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +354,7 @@ def test_zu_infinitive_retries_base_form(httpx_mock):
     info = _provider().fetch("einzukaufen")
 
     assert info is not None
-    assert info.word == "einkaufen"
+    assert info.term == "einkaufen"
 
 
 def test_non_zu_miss_does_not_retry(httpx_mock):
@@ -425,10 +425,10 @@ def test_adjective_keeps_only_comparison_forms(httpx_mock):
     info = _provider().fetch("hoch", category_hint="adjective")
 
     assert info is not None
-    assert info.word == "hoch"
+    assert info.term == "hoch"
     assert info.category == "adjective"
-    assert info.features["comparative"] == "höher"
-    assert info.features["superlative"] == "am höchsten"
+    assert info.properties["comparative"] == "höher"
+    assert info.properties["superlative"] == "am höchsten"
     assert info.audio_url and info.audio_url.endswith(".mp3")
 
 
@@ -454,9 +454,9 @@ def test_pronoun_and_article_carry_no_inflection_features(httpx_mock):
 
     assert pronoun is not None and pronoun.category == "pronoun"
     assert article is not None and article.category == "article"
-    assert "gender" not in article.features
+    assert "gender" not in article.properties
     for info in (pronoun, article):
-        assert set(info.features) <= {"ipa"}  # gloss-level only, no inflection
+        assert set(info.properties) <= {"ipa"}  # gloss-level only, no inflection
 
 
 def test_verben_de_uninflected_pos_route_to_verben_host(httpx_mock):
@@ -470,8 +470,8 @@ def test_verben_de_uninflected_pos_route_to_verben_host(httpx_mock):
     info = _provider().fetch("mit", category_hint="preposition")
 
     assert info is not None
-    assert info.word == "mit"
+    assert info.term == "mit"
     assert info.category == "preposition"
-    assert "with" in info.translations
+    assert "with" in info.collections["translations"]
     assert info.audio_url is None  # verben.de pages carry no headword audio
     assert str(httpx_mock.get_requests()[0].url) == "https://www.verben.de/prepositions/steckbrief-info/mit.htm"

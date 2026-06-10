@@ -1,3 +1,3 @@
-from ankery.models import WordInfo
+from ankery.models import Entry
 
-__all__ = ["WordInfo"]
+__all__ = ["Entry"]

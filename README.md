@@ -181,9 +181,11 @@ notes_dir = "~/.config/ankery/notes"
 ```
 
 A layout file gives the Anki note type a name, the part of speech it serves
-(`applies_to`), how each field is filled from the looked-up word (`[map]`, whose
-values are [Jinja](https://jinja.palletsprojects.com) over the word's data and
-whose key order is the Anki field order), and one or more card templates:
+(`applies_to`), how each field is filled from the looked-up entry (`[map]`, whose
+values are [Jinja](https://jinja.palletsprojects.com) over the entry's data and
+whose key order is the Anki field order), and one or more card templates. The
+entry carries `term`, a scalar `properties` bag, and a list-valued `collections` bag
+(both keyed by the names the pack declares):
 
 ```toml
 # ~/.config/ankery/notes/adjective.toml
@@ -191,9 +193,9 @@ name = "Adjective"
 applies_to = "adjective"
 
 [map]
-Word        = "{{ word }}"
-Translation = "{{ translations | join(', ') }}"
-Example     = "{{ examples[0] }}"
+Word        = "{{ term }}"
+Translation = "{{ collections.translations | join(', ') }}"
+Example     = "{{ collections.examples[0] }}"
 
 [[cards]]
 name = "Recognition"

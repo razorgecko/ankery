@@ -1,7 +1,7 @@
 import pytest
 
 from ankery.defaults import default_system_template, default_user_template
-from ankery.models import WordInfo
+from ankery.models import Entry
 from ankery.pack import PackError, load_pack
 
 
@@ -33,17 +33,29 @@ def test_bundled_de_pack_loads():
 def test_de_categories_declare_feature_keys():
     pack = load_pack("de")
 
-    assert "gender" in pack.categories["noun"].features
-    assert "present_1sg" in pack.categories["verb"].features
-    assert "literal" in pack.categories["phrase"].features
-    assert "ipa" in pack.common_features  # common to every category
+    assert "gender" in pack.categories["noun"].properties
+    assert "present_1sg" in pack.categories["verb"].properties
+    assert "literal" in pack.categories["phrase"].properties
+    assert "ipa" in pack.common_properties  # common to every category
+
+
+def test_de_declares_common_sections():
+    # The list-valued lexical fields are pack-declared collections, common to every
+    # category, mirroring properties.
+    pack = load_pack("de")
+
+    assert set(pack.common_collections) == {
+        "definitions", "examples", "example_translations", "translations",
+    }
+    # No per-category collections in this pack; the per-category bag stays empty.
+    assert pack.categories["noun"].collections == {}
 
 
 def test_de_pack_ships_its_own_system_template():
     # The German pack carries the language-specific prompt; the engine default is
     # neutral, so this content lives in the pack, not the defaults.
     pack = load_pack("de")
-    assert "written in {{ name }}" in pack.system_template
+    assert "variables.target_language | language_name" in pack.system_template
     assert pack.system_template != default_system_template()
 
 
@@ -72,8 +84,8 @@ def test_pack_supplied_prompt_template_is_loaded(tmp_path):
 
 def test_de_filter_hook_is_loaded_and_active():
     normalize = load_pack("de").normalize
-    info = WordInfo(word="Haus", source="t", features={"genitive_sg": "des Hauses"})
-    assert normalize(info).features["genitive_sg"] == "Hauses"
+    entry = Entry(term="Haus", source="t", properties={"genitive_sg": "des Hauses"})
+    assert normalize(entry).properties["genitive_sg"] == "Hauses"
 
 
 def test_de_provider_builder_is_registered():
@@ -108,7 +120,7 @@ def test_user_pack_overrides_bundled_by_code(tmp_path):
     _write_pack(
         tmp_path,
         "de",
-        'name = "German (custom)"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\n[pos.noun.features]\ngender = "the article"\n',
+        'name = "German (custom)"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\n[pos.noun.properties]\ngender = "the article"\n',
     )
     pack = load_pack("de", packs_dir=tmp_path)
 
@@ -120,15 +132,15 @@ def test_brand_new_user_pack_loads_with_no_engine_change(tmp_path):
     _write_pack(
         tmp_path,
         "xx",
-        'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\ncitation = "the lemma"\n[pos.noun.features]\nplural = "plural form"\n',
+        'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n[pos.noun]\ncitation = "the lemma"\n[pos.noun.properties]\nplural = "plural form"\n',
     )
     pack = load_pack("xx", packs_dir=tmp_path)
 
     assert pack.name == "Examplish"
-    assert pack.categories["noun"].features == {"plural": "plural form"}
+    assert pack.categories["noun"].properties == {"plural": "plural form"}
     # No filter.py / providers/ => identity normalize and no pack-local providers.
-    info = WordInfo(word="x", source="t", features={"plural": "xs"})
-    assert pack.normalize(info) is info
+    entry = Entry(term="x", source="t", properties={"plural": "xs"})
+    assert pack.normalize(entry) is entry
     assert pack.provider_builders == {}
 
 

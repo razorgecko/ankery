@@ -364,7 +364,7 @@ def _write_note(directory: Path, stem: str, name: str, applies_to: str | None):
     directory.mkdir(parents=True, exist_ok=True)
     applies = f'applies_to = "{applies_to}"\n' if applies_to is not None else ""
     (directory / f"{stem}.toml").write_text(
-        f'name = "{name}"\n{applies}[map]\nFront = "{{{{ word }}}}"\n', "utf-8"
+        f'name = "{name}"\n{applies}[map]\nFront = "{{{{ term }}}}"\n', "utf-8"
     )
 
 
@@ -438,7 +438,7 @@ def test_pack_selects_a_user_pack_via_packs_dir(tmp_path):
     # variables, so a pack riding it needs none to render.
     (pack_dir / "pack.toml").write_text(
         'name = "Examplish"\nproviders = ["llm"]\n[category]\nname = "pos"\n'
-        '[pos.noun]\n[pos.noun.features]\nplural = "plural"\n',
+        '[pos.noun]\n[pos.noun.properties]\nplural = "plural"\n',
         "utf-8",
     )
     builder = build_deck_builder(Config(pack="xx", packs_dir=tmp_path))

@@ -1,7 +1,7 @@
 You are an expert assistant building Anki cards for {{ name }}. Given a single entry, return ONLY a JSON object (no prose, no markdown fences) describing it.
 
 General rules:
-- `word`: the canonical form for its {{ label }} (see below). Give the bare form with no surrounding punctuation.
+- `term`: the canonical form for its {{ label }} (see below). Give the bare form with no surrounding punctuation.
 {% if hinted %}
 - `{{ label }}`: the user states this entry is a {{ hint }}. If that is correct, set it to {{ hint }}.
 {% elif names | length == 1 %}
@@ -9,14 +9,20 @@ General rules:
 {% else %}
 - `{{ label }}`: exactly one of: {{ names | join(', ') }}.
 {% endif %}
-- `definitions`: definitions of the entry. `examples`: representative examples of it in use. `example_translations`: an optional translation of each example, aligned by position.
-- `translations`: a JSON array of strings. Always an array, never an object keyed by language.
-- `features`: a JSON object of properties, using EXACTLY the keys listed below for the entry's {{ label }} plus the common keys. Omit a key only if it genuinely does not apply.
+- `properties`: a JSON object of scalar values, using EXACTLY the keys listed below for the entry's {{ label }} plus the common keys. Omit a key only if it genuinely does not apply.
+- `collections`: a JSON object whose values are arrays of strings, using EXACTLY the collection keys listed below for the entry's {{ label }} plus the common keys. Omit a key only if it genuinely does not apply.
 - Leave anything you are unsure about empty rather than guessing.
-{% if common_features %}
+{% if common_properties %}
 
-Common feature keys (any {{ label }}):
-{% for key, meaning in common_features.items() %}
+Common property keys (any {{ label }}):
+{% for key, meaning in common_properties.items() %}
+  {{ key }}: {{ meaning }}
+{% endfor %}
+{% endif %}
+{% if common_collections %}
+
+Common collection keys (any {{ label }}):
+{% for key, meaning in common_collections.items() %}
   {{ key }}: {{ meaning }}
 {% endfor %}
 {% endif %}
@@ -29,9 +35,15 @@ Common feature keys (any {{ label }}):
 {% for note in cat.guidance %}
   - {{ note }}
 {% endfor %}
-{% if cat.features %}
-  feature keys:
-{% for key, meaning in cat.features.items() %}
+{% if cat.properties %}
+  property keys:
+{% for key, meaning in cat.properties.items() %}
+    {{ key }}: {{ meaning }}
+{% endfor %}
+{% endif %}
+{% if cat.collections %}
+  collection keys:
+{% for key, meaning in cat.collections.items() %}
     {{ key }}: {{ meaning }}
 {% endfor %}
 {% endif %}
