@@ -62,11 +62,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="path to an auth TOML holding the api key (overrides ANKERY_AUTH; "
         "default ~/.config/ankery/auth.toml)",
     )
-    parser.add_argument(
+    chain = parser.add_mutually_exclusive_group()
+    chain.add_argument(
         "--provider",
         metavar="NAMES",
         help="comma-separated providers in fallback order, overriding the pack's "
         "default chain.",
+    )
+    chain.add_argument(
+        "--llm",
+        action="store_true",
+        help="shorthand for --provider llm: ask the LLM only, with no fallback",
     )
     parser.add_argument("--deck", help="destination deck")
     parser.add_argument(
@@ -137,6 +143,8 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     overrides: dict[str, object] = {}
     if args.provider:
         overrides["providers"] = tuple(p.strip() for p in args.provider.split(","))
+    elif args.llm:
+        overrides["providers"] = ("llm",)
     if args.deck is not None:
         overrides["deck"] = args.deck
     if args.pack is not None:

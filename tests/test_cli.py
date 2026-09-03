@@ -321,6 +321,20 @@ def test_provider_flag_overrides_chain(patched):
     assert captured["config"].providers == ("netzverb", "llm")
 
 
+def test_llm_flag_is_shorthand_for_the_llm_only_chain(patched):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
+
+    cli.main(["--llm", "Buch"])
+
+    assert captured["config"].providers == ("llm",)
+
+
+def test_llm_flag_conflicts_with_provider(patched):
+    with pytest.raises(SystemExit):
+        cli.main(["--llm", "--provider", "netzverb", "Buch"])
+
+
 def test_packs_dir_flag_sets_user_pack_dir(patched):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=1, term="Buch")})

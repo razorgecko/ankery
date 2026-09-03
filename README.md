@@ -31,7 +31,8 @@ covers German vocabulary; a pack for any other subject is dropped in the same wa
 
 A provider is a source of information about a term. The configured providers are
 tried in order; the first to return an answer wins. Override the list for a single
-run with `--provider`.
+run with `--provider`, or use `--llm` as a shorthand for `--provider llm` when you
+want the model alone and no fallback.
 
 - **llm** — asks an OpenAI-compatible language model to fill in the structured
   fields the pack declares. Works with any pack.
@@ -143,6 +144,7 @@ The LLM API key is the one setting that is **not** allowed here (see
 |---|---|---|---|
 | `deck` | `--deck` | `"Default"` | Destination deck. |
 | `providers` | `--provider` | per pack | Lookup sources, tried in fallback order. Empty uses the default chain for the chosen pack. The flag takes a comma-separated list. |
+| — | `--llm` | — | Shorthand for `--provider llm`: ask the language model only, with no fallback. Cannot be combined with `--provider`. |
 | `pack` | `--pack` | `"de"` | Pack to load, keyed by code. Taken literally — never normalized — so the code is used exactly as written. |
 | `[variables]` table | `--var KEY=VALUE` | per pack | Opaque values the pack consumes (e.g. `target_language`). Each pack declares the keys it accepts and their defaults; an undeclared key is an error. The flag is repeatable. |
 | `packs_dir` | `--packs-dir` | — | Directory of custom packs; one here overrides a built-in of the same code. |
