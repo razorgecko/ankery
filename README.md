@@ -224,15 +224,11 @@ Later edits to a pack's card templates or `style.css` are pushed explicitly:
 ankery sync-note-types --pack chem
 ```
 
-This creates the pack's missing note types and overwrites the card templates and
-styling of its existing ones with the pack's versions, **discarding any changes
-made in Anki's note type editor**. Only the pack's own layouts are synced: custom
-layouts from `notes_dir` and ankery's built-in "Ankery Basic" are left alone.
-Fields are never touched, and card types are never added or removed: if a
-layout's fields or card names differ from the note type in Anki, the sync refuses
-and changes nothing. `ankery sync-note-types -h` lists the options it takes; the
-other settings come from `config.toml`. To add a term that is spelled like the
-command, put `--` before it: `ankery -- sync-note-types`.
+The sync creates missing note types and overwrites the templates and styling of
+existing ones, **discarding edits made in Anki**. It covers only the pack's own
+layouts, not `notes_dir` layouts or `Ankery Basic`. Fields and card types are
+never changed; on a mismatch the sync aborts with Anki untouched. A term spelled
+like the command needs `--`: `ankery -- sync-note-types`.
 
 ### Adding a pack
 

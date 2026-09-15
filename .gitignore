@@ -20,8 +20,8 @@ dist/
 # Environment variables
 .env
 
-# Claude files
-CLAUDE.md
+# Style
+doc-style/
 
 # TODO list
 todo.md

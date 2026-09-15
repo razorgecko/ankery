@@ -286,6 +286,18 @@ def test_var_flag_is_repeatable_and_passes_values_raw(patched):
     }
 
 
+def test_var_flag_replaces_config_variables(patched, monkeypatch):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
+    loaded = Config(variables={"target_language": "ru", "tone": "formal"})
+    monkeypatch.setattr(Config, "load", classmethod(lambda cls, *a, **k: loaded))
+
+    cli.main(["--var", "tone=casual", "Buch"])
+
+    # target_language from config.toml is dropped, not merged.
+    assert captured["config"].variables == {"tone": "casual"}
+
+
 def test_var_flag_without_equals_is_a_config_error(capsys):
     code = cli.main(["--var", "noequals", "Buch"])
 
