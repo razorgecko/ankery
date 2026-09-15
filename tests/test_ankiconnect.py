@@ -4,7 +4,7 @@ import pytest
 
 from ankery.notedef import Card, NoteDefinition
 from ankery.sinks.ankiconnect import AnkiConnectSink
-from ankery.sinks.base import SinkError
+from ankery.sinks.base import SinkError, SyncResult
 
 URL = "http://localhost:8765"
 
@@ -222,7 +222,7 @@ def test_verify_rejects_different_fields(httpx_mock):
     httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
     httpx_mock.add_response(url=URL, json={"result": ["Word", "Plural"], "error": None})
 
-    with pytest.raises(SinkError, match="different fields"):
+    with pytest.raises(SinkError, match="fields differ"):
         _sink().verify_note_types([_note_def()])
 
 
@@ -233,7 +233,7 @@ def test_verify_rejects_superset_model(httpx_mock):
         url=URL, json={"result": ["Word", "Article", "Notes"], "error": None}
     )
 
-    with pytest.raises(SinkError, match="different fields"):
+    with pytest.raises(SinkError, match="fields differ"):
         _sink().verify_note_types([_note_def()])
 
 
@@ -242,5 +242,145 @@ def test_verify_rejects_field_order_difference(httpx_mock):
     httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
     httpx_mock.add_response(url=URL, json={"result": ["Article", "Word"], "error": None})
 
-    with pytest.raises(SinkError, match="different fields"):
+    with pytest.raises(SinkError, match="fields differ"):
         _sink().verify_note_types([_note_def()])
+
+
+def test_verify_checks_every_model_before_creating_any(httpx_mock):
+    absent = NoteDefinition(
+        name="Ankery DE: Verb", field_map={"Infinitive": "{{ term }}"}, applies_to="verb"
+    )
+    httpx_mock.add_response(url=URL, json={"result": ["Ankery DE: Noun"], "error": None})
+    httpx_mock.add_response(url=URL, json={"result": ["Word"], "error": None})
+
+    with pytest.raises(SinkError, match="fields differ"):
+        _sink().verify_note_types([absent, _note_def()])
+
+    assert _actions(httpx_mock) == ["modelNames", "modelFieldNames"]
+
+
+# ---------------------------------------------------------------------------
+# sync_note_types
+# ---------------------------------------------------------------------------
+
+_LIVE_FIELDS = ["Word", "Article"]
+_LIVE_TEMPLATES = {"N1": {"Front": "{{Article}} {{Word}}", "Back": "{{FrontSide}}"}}
+
+
+def _respond(httpx_mock, result) -> None:
+    httpx_mock.add_response(url=URL, json={"result": result, "error": None})
+
+
+def _verb_def(**overrides) -> NoteDefinition:
+    return NoteDefinition(
+        name="Ankery DE: Verb",
+        field_map={"Infinitive": "{{ term }}"},
+        applies_to="verb",
+        cards=(Card("V1", "{{Infinitive}}", "{{FrontSide}}"),),
+        **overrides,
+    )
+
+
+def test_sync_in_sync_model_writes_nothing(httpx_mock):
+    _respond(httpx_mock, ["Ankery DE: Noun"])  # modelNames
+    _respond(httpx_mock, _LIVE_FIELDS)  # modelFieldNames
+    _respond(httpx_mock, _LIVE_TEMPLATES)  # modelTemplates
+    _respond(httpx_mock, {"css": ".card { color: blue; }"})  # modelStyling
+
+    result = _sink().sync_note_types([_note_def()])
+
+    assert result == SyncResult([], {})
+    assert _actions(httpx_mock) == [
+        "modelNames", "modelFieldNames", "modelTemplates", "modelStyling",
+    ]
+
+
+def test_sync_updates_changed_templates_only(httpx_mock):
+    _respond(httpx_mock, ["Ankery DE: Noun"])  # modelNames
+    _respond(httpx_mock, _LIVE_FIELDS)  # modelFieldNames
+    _respond(httpx_mock, {"N1": {"Front": "old", "Back": "{{FrontSide}}"}})  # modelTemplates
+    _respond(httpx_mock, {"css": ".card { color: blue; }"})  # modelStyling
+    _respond(httpx_mock, None)  # updateModelTemplates
+
+    result = _sink().sync_note_types([_note_def()])
+
+    assert result == SyncResult([], {"Ankery DE: Noun": ["templates"]})
+    assert _actions(httpx_mock)[-1] == "updateModelTemplates"
+    params = json.loads(httpx_mock.get_requests()[-1].content)["params"]
+    assert params == {"model": {"name": "Ankery DE: Noun", "templates": _LIVE_TEMPLATES}}
+
+
+def test_sync_updates_changed_styling_only(httpx_mock):
+    _respond(httpx_mock, ["Ankery DE: Noun"])  # modelNames
+    _respond(httpx_mock, _LIVE_FIELDS)  # modelFieldNames
+    _respond(httpx_mock, _LIVE_TEMPLATES)  # modelTemplates
+    _respond(httpx_mock, {"css": ".card { color: red; }"})  # modelStyling
+    _respond(httpx_mock, None)  # updateModelStyling
+
+    result = _sink().sync_note_types([_note_def()])
+
+    assert result == SyncResult([], {"Ankery DE: Noun": ["styling"]})
+    assert _actions(httpx_mock)[-1] == "updateModelStyling"
+    params = json.loads(httpx_mock.get_requests()[-1].content)["params"]
+    assert params == {"model": {"name": "Ankery DE: Noun", "css": ".card { color: blue; }"}}
+
+
+def test_sync_styleless_definition_uses_default_css(httpx_mock):
+    _respond(httpx_mock, ["Ankery DE: Noun"])  # modelNames
+    _respond(httpx_mock, _LIVE_FIELDS)  # modelFieldNames
+    _respond(httpx_mock, _LIVE_TEMPLATES)  # modelTemplates
+    _respond(httpx_mock, {"css": ".old {}"})  # modelStyling
+    _respond(httpx_mock, None)  # updateModelStyling
+
+    _sink().sync_note_types([_styleless_def()], default_css=".pack {}")
+
+    params = json.loads(httpx_mock.get_requests()[-1].content)["params"]
+    assert params["model"]["css"] == ".pack {}"
+
+
+def test_sync_creates_missing_models_with_default_css(httpx_mock):
+    _respond(httpx_mock, [])  # modelNames
+    _respond(httpx_mock, 1)  # createModel (noun)
+    _respond(httpx_mock, 2)  # createModel (verb)
+
+    result = _sink().sync_note_types([_note_def(), _verb_def()], default_css=".pack {}")
+
+    assert result == SyncResult(["Ankery DE: Noun", "Ankery DE: Verb"], {})
+    assert _actions(httpx_mock) == ["modelNames", "createModel", "createModel"]
+    noun, verb = (json.loads(r.content)["params"] for r in httpx_mock.get_requests()[1:])
+    assert noun["css"] == ".card { color: blue; }"
+    assert verb["css"] == ".pack {}"
+
+
+def test_sync_creates_missing_before_updating_existing(httpx_mock):
+    _respond(httpx_mock, ["Ankery DE: Noun"])  # modelNames
+    _respond(httpx_mock, _LIVE_FIELDS)  # modelFieldNames (noun)
+    _respond(httpx_mock, {"N1": {"Front": "old", "Back": "old"}})  # modelTemplates (noun)
+    _respond(httpx_mock, {"css": ".card { color: blue; }"})  # modelStyling (noun)
+    _respond(httpx_mock, 1)  # createModel (verb)
+    _respond(httpx_mock, None)  # updateModelTemplates (noun)
+
+    result = _sink().sync_note_types([_note_def(), _verb_def()])
+
+    assert result == SyncResult(["Ankery DE: Verb"], {"Ankery DE: Noun": ["templates"]})
+    assert _actions(httpx_mock)[-2:] == ["createModel", "updateModelTemplates"]
+
+
+@pytest.mark.parametrize(
+    ("responses", "match"),
+    [
+        ([["Word"]], "fields differ"),
+        ([_LIVE_FIELDS, {"N1": {}, "N2": {}}], "card types differ"),
+    ],
+)
+def test_sync_rejects_mismatch_before_writing_anything(httpx_mock, responses, match):
+    _respond(httpx_mock, ["Ankery DE: Noun"])  # modelNames; the verb model is absent
+    for result in responses:  # modelFieldNames[, modelTemplates] (noun)
+        _respond(httpx_mock, result)
+
+    with pytest.raises(SinkError, match=match):
+        _sink().sync_note_types([_verb_def(), _note_def()])
+
+    assert not any(
+        a.startswith(("update", "create")) for a in _actions(httpx_mock)
+    )

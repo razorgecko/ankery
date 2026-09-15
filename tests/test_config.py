@@ -9,12 +9,15 @@ from ankery.config import (
     ConfigError,
     _config_dir,
     build_deck_builder,
+    build_sink,
     resolve_variables,
+    sync_note_types,
 )
 from ankery.pack import load_pack
 from ankery.manager import DeckBuilder
 from ankery.providers.llm import LLMProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
+from ankery.sinks.base import SyncResult
 
 
 @pytest.fixture(autouse=True)
@@ -243,6 +246,20 @@ def test_load_missing_auth_file_leaves_key_unset(tmp_path):
         environ={},
     )
 
+    assert config.llm_api_key is None
+
+
+def test_load_without_auth_skips_auth_file_and_env_secret(tmp_path):
+    path = _write(tmp_path, 'deck = "German"\n')
+    auth = _write_auth(tmp_path, "llm_api_key = \n")  # malformed: would raise if read
+    config = Config.load(
+        path=path,
+        auth_path=auth,
+        environ={"ANKERY_LLM_API_KEY": "sk-from-env"},
+        with_auth=False,
+    )
+
+    assert config.deck == "German"
     assert config.llm_api_key is None
 
 
@@ -544,3 +561,37 @@ def test_build_silent_for_api_key_over_https():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         build_deck_builder(config)
+
+
+def test_build_sink_passes_anki_settings():
+    sink = build_sink(
+        Config(anki_url="http://anki.local:8765", anki_timeout=3.0, allow_duplicate=True)
+    )
+
+    assert isinstance(sink, AnkiConnectSink)
+    assert sink.base_url == "http://anki.local:8765"
+    assert sink.timeout == 3.0
+    assert sink.allow_duplicate is True
+
+
+def test_sync_note_types_syncs_the_packs_notes_with_its_style(monkeypatch):
+    seen: dict[str, object] = {}
+
+    def fake_sync(self, definitions, *, default_css=""):
+        seen["definitions"] = list(definitions)
+        seen["default_css"] = default_css
+        return SyncResult(["created"], {})
+
+    monkeypatch.setattr(AnkiConnectSink, "sync_note_types", fake_sync)
+    pack = load_pack("de")
+
+    result = sync_note_types(Config(pack="de"))
+
+    assert result == SyncResult(["created"], {})
+    assert [d.name for d in seen["definitions"]] == [d.name for d in pack.notes]
+    assert seen["default_css"] == pack.style_css
+
+
+def test_sync_note_types_unknown_pack_raises_config_error():
+    with pytest.raises(ConfigError, match="zz"):
+        sync_note_types(Config(pack="zz"))

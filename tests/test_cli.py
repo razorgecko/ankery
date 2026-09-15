@@ -7,7 +7,7 @@ from ankery import __main__ as cli
 from ankery.config import Config, ConfigError
 from ankery.manager import AddResult
 from ankery.providers.base import ProviderError
-from ankery.sinks.base import SinkError
+from ankery.sinks.base import SinkError, SyncResult
 
 
 class FakeBuilder:
@@ -59,8 +59,8 @@ def patched(monkeypatch):
             return builder
 
         monkeypatch.setattr(cli, "build_deck_builder", fake_build)
-        # Keep env out of the picture so defaults are predictable.
-        monkeypatch.setattr(Config, "from_env", classmethod(lambda cls, *a, **k: cls()))
+        # Keep config files and env out of the picture so defaults are predictable.
+        monkeypatch.setattr(Config, "load", classmethod(lambda cls, *a, **k: cls()))
         return builder
 
     return captured, factory
@@ -385,9 +385,10 @@ def _capture_load_path(monkeypatch) -> dict:
     """Patch Config.load to record the paths it was called with."""
     seen: dict = {}
 
-    def fake_load(cls, *, path=None, auth_path=None, **kwargs):
+    def fake_load(cls, *, path=None, auth_path=None, with_auth=True, **kwargs):
         seen["path"] = path
         seen["auth_path"] = auth_path
+        seen["with_auth"] = with_auth
         return cls()
 
     monkeypatch.setattr(Config, "load", classmethod(fake_load))
@@ -402,6 +403,7 @@ def test_config_flag_sets_load_path(patched, monkeypatch):
     cli.main(["--config", "/tmp/custom.toml", "Buch"])
 
     assert seen["path"] == Path("/tmp/custom.toml")
+    assert seen["with_auth"] is True
 
 
 def test_config_flag_passed_through_even_with_env_set(patched, monkeypatch):
@@ -611,3 +613,120 @@ def test_missing_word_argument_is_an_argparse_error(capsys):
 
     assert exc.value.code == 2  # argparse's usage-error exit code
     assert "the following arguments are required: terms" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Note type sync
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sync_patched(monkeypatch):
+    """Patch the sync; return a dict of what it saw."""
+    seen: dict[str, object] = {"result": SyncResult([], {}), "calls": 0}
+
+    def fake_sync(config):
+        seen["calls"] += 1
+        seen["config"] = config
+        if isinstance(seen["result"], Exception):
+            raise seen["result"]
+        return seen["result"]
+
+    def no_builder(config):
+        pytest.fail("sync mode must not build a DeckBuilder")
+
+    monkeypatch.setattr(cli, "sync_note_types", fake_sync)
+    monkeypatch.setattr(cli, "build_deck_builder", no_builder)
+    monkeypatch.setattr(Config, "load", classmethod(lambda cls, *a, **k: cls()))
+    return seen
+
+
+def test_sync_runs_and_reports_changes(sync_patched, capsys):
+    sync_patched["result"] = SyncResult(
+        ["Ankery DE: Verb"], {"Ankery DE: Noun": ["templates", "styling"]}
+    )
+
+    code = cli.main(["sync-note-types", "--pack", "de"])
+
+    assert code == 0
+    assert sync_patched["config"].pack == "de"
+    out = capsys.readouterr().out
+    assert "created note type: Ankery DE: Verb" in out
+    assert "updated note type: Ankery DE: Noun (templates, styling)" in out
+
+
+def test_sync_failure_exits_1(sync_patched, capsys):
+    sync_patched["result"] = SinkError("card types differ")
+
+    code = cli.main(["sync-note-types", "--pack", "de"])
+
+    assert code == 1
+    assert "note type sync failed: card types differ" in capsys.readouterr().err
+
+
+def test_sync_unknown_pack_exits_2(sync_patched, capsys):
+    sync_patched["result"] = ConfigError("unknown pack 'xx'")
+
+    code = cli.main(["sync-note-types", "--pack", "xx"])
+
+    assert code == 2
+    assert "unknown pack 'xx'" in capsys.readouterr().err
+
+
+def test_sync_requires_pack(sync_patched, capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["sync-note-types"])
+
+    assert exc.value.code == 2
+    assert "the following arguments are required: --pack" in capsys.readouterr().err
+    assert sync_patched["calls"] == 0
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["Buch"],
+        ["-n"],
+        ["-q"],
+        ["--deck", "German"],
+        ["--notes-dir", "notes"],
+        ["--auth", "auth.toml"],
+    ],
+)
+def test_sync_rejects_terms_and_other_flags(sync_patched, capsys, extra):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["sync-note-types", "--pack", "de", *extra])
+
+    assert exc.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
+    assert sync_patched["calls"] == 0
+
+
+def test_sync_command_only_selected_by_first_token(sync_patched, patched):
+    captured, set_results = patched
+    builder = set_results(
+        {"sync-note-types": AddResult(note_id=1, term="sync-note-types", note_type="N", fields={})}
+    )
+
+    code = cli.main(["--", "sync-note-types"])
+
+    assert code == 0
+    assert builder.calls == ["sync-note-types"]
+    assert sync_patched["calls"] == 0
+
+
+def test_sync_accepts_config_packs_dir_and_anki_url(sync_patched, monkeypatch):
+    seen = _capture_load_path(monkeypatch)
+
+    code = cli.main([
+        "sync-note-types", "--pack", "de",
+        "--config", "/tmp/custom.toml", "--packs-dir", "/tmp/packs",
+        "--anki-url", "http://anki.local:8765",
+    ])
+
+    assert code == 0
+    assert sync_patched["calls"] == 1
+    assert seen["path"] == Path("/tmp/custom.toml")
+    assert seen["with_auth"] is False
+    assert sync_patched["config"].packs_dir == Path("/tmp/packs")
+    assert sync_patched["config"].anki_url == "http://anki.local:8765"

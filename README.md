@@ -217,6 +217,24 @@ term → info-dump card). Point `--note-type` at a foreign model (e.g. Anki's st
 `Basic`) to write there instead. The card `qfmt`/`afmt` are Anki's own template
 syntax, not Jinja — only the `[map]` values are rendered here.
 
+ankery creates a note type in Anki the first time it's needed and never changes
+it afterwards, so later edits to a layout's card templates or the pack's
+`style.css` don't reach Anki on their own. To push them, run:
+
+```bash
+ankery sync-note-types --pack chem
+```
+
+This creates the pack's missing note types and overwrites the card templates and
+styling of its existing ones with the pack's versions, **discarding any changes
+made in Anki's note type editor**. Only the pack's own layouts are synced: custom
+layouts from `notes_dir` and ankery's built-in "Ankery Basic" are left alone.
+Fields are never touched, and card types are never added or removed: if a
+layout's fields or card names differ from the note type in Anki, the sync refuses
+and changes nothing. `ankery sync-note-types -h` lists the options it takes; the
+other settings come from `config.toml`. To add a term that is spelled like the
+command, put `--` before it: `ankery -- sync-note-types`.
+
 ### Adding a pack
 
 A pack is a self-contained description of one subject — a directory named by its

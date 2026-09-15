@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from ankery.config import Config, ConfigError, build_deck_builder
+from ankery.config import Config, ConfigError, build_deck_builder, sync_note_types
 from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
 
@@ -46,17 +46,36 @@ def resolve_category_hint(hint: str, category_names: Sequence[str]) -> str:
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="ankery",
-        description="Look up terms and add them to an Anki deck.",
-    )
-    parser.add_argument("terms", nargs="+", help="one or more terms to add")
+SYNC_COMMAND = "sync-note-types"
+
+
+def _shared_parser() -> argparse.ArgumentParser:
+    """Options accepted both when adding terms and by the sync command."""
+    parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "--config",
         help="path to a config TOML (overrides ANKERY_CONFIG; "
         "default ~/.config/ankery/config.toml)",
     )
+    parser.add_argument(
+        "--packs-dir", help="user pack directory; a pack here overrides the bundled one"
+    )
+    parser.add_argument("--anki-url", help="base URL of the AnkiConnect endpoint")
+    return parser
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="ankery",
+        parents=[_shared_parser()],
+        description="Look up terms and add them to an Anki deck.",
+        epilog=f"commands:\n  {SYNC_COMMAND}  push the pack's card templates and "
+        f"styling to Anki (see: ankery {SYNC_COMMAND} -h)\n\n"
+        f"To add a term spelled like a command, put -- before it: "
+        f"ankery -- {SYNC_COMMAND}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("terms", nargs="+", help="one or more terms to add")
     parser.add_argument(
         "--auth",
         help="path to an auth TOML holding the api key (overrides ANKERY_AUTH; "
@@ -88,9 +107,6 @@ def build_parser() -> argparse.ArgumentParser:
         "The pack declares and consumes these.",
     )
     parser.add_argument(
-        "--packs-dir", help="user pack directory; a pack here overrides the bundled one"
-    )
-    parser.add_argument(
         "--notes-dir",
         help="directory of extra note layouts (*.toml) merged over the pack's "
         "notes by category",
@@ -98,7 +114,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--note-type", help="Anki note type")
     parser.add_argument("--llm-url", help="OpenAI-compatible base URL for the LLM provider")
     parser.add_argument("--llm-model", help="model name sent to the LLM provider")
-    parser.add_argument("--anki-url", help="base URL of the AnkiConnect endpoint")
     parser.add_argument(
         "--allow-duplicate",
         action="store_true",
@@ -127,6 +142,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_sync_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog=f"ankery {SYNC_COMMAND}",
+        parents=[_shared_parser()],
+        description="Create the pack's missing note types and overwrite the card "
+        "templates and styling of existing ones with the pack's (discards edits made "
+        "in Anki). Fields are never changed.",
+    )
+    parser.add_argument(
+        "--pack",
+        required=True,
+        help="pack whose note types to sync, keyed by code (e.g. de); taken "
+        "literally, not normalized",
+    )
+    return parser
+
+
 def _parse_vars(tokens: list[str]) -> dict[str, str]:
     """Parse repeated `KEY=VALUE` flag tokens into a dict; the value is kept as
     given. A token with no `=` is an error. A repeated key wins last."""
@@ -139,40 +171,72 @@ def _parse_vars(tokens: list[str]) -> dict[str, str]:
     return variables
 
 
-def _config_from_args(args: argparse.Namespace) -> Config:
+def _shared_overrides(args: argparse.Namespace) -> dict[str, object]:
+    """Config overrides from the options both parsers define, plus --pack."""
     overrides: dict[str, object] = {}
+    if args.pack is not None:
+        # Kept as given — the pack code is the operator's literal choice and must
+        # not be rewritten (a pack named `english` stays `english`, not `en`).
+        overrides["pack"] = args.pack
+    if args.packs_dir is not None:
+        overrides["packs_dir"] = Path(args.packs_dir).expanduser()
+    if args.anki_url is not None:
+        overrides["anki_url"] = args.anki_url
+    return overrides
+
+
+def _config_path(args: argparse.Namespace) -> Path | None:
+    return Path(args.config).expanduser() if args.config else None
+
+
+def _config_from_args(args: argparse.Namespace) -> Config:
+    overrides = _shared_overrides(args)
     if args.provider:
         overrides["providers"] = tuple(p.strip() for p in args.provider.split(","))
     elif args.llm:
         overrides["providers"] = ("llm",)
     if args.deck is not None:
         overrides["deck"] = args.deck
-    if args.pack is not None:
-        # Kept as given — the pack code is the operator's literal choice and must
-        # not be rewritten (a pack named `english` stays `english`, not `en`).
-        overrides["pack"] = args.pack
     if args.var:
         overrides["variables"] = _parse_vars(args.var)
     if args.note_type is not None:
         overrides["note_type"] = args.note_type
-    if args.packs_dir is not None:
-        overrides["packs_dir"] = Path(args.packs_dir).expanduser()
     if args.notes_dir is not None:
         overrides["notes_dir"] = Path(args.notes_dir).expanduser()
     if args.llm_url is not None:
         overrides["llm_base_url"] = args.llm_url
     if args.llm_model is not None:
         overrides["llm_model"] = args.llm_model
-    if args.anki_url is not None:
-        overrides["anki_url"] = args.anki_url
     if args.allow_duplicate:
         overrides["allow_duplicate"] = True
 
-    path = Path(args.config).expanduser() if args.config else None
     auth = Path(args.auth).expanduser() if args.auth else None
 
-    config = Config.load(path=path, auth_path=auth)
+    config = Config.load(path=_config_path(args), auth_path=auth)
     return replace(config, **overrides) if overrides else config
+
+
+def _sync_main(argv: list[str]) -> int:
+    args = build_sync_parser().parse_args(argv)
+    try:
+        config = Config.load(path=_config_path(args), with_auth=False)
+    except ConfigError as exc:
+        _error(str(exc))
+        return 2
+    config = replace(config, **_shared_overrides(args))
+    try:
+        synced = sync_note_types(config)
+    except ConfigError as exc:
+        _error(str(exc))
+        return 2
+    except SinkError as exc:
+        _error(f"note type sync failed: {exc}")
+        return 1
+    for name in synced.created:
+        print(f"created note type: {name}")
+    for name, parts in synced.updated.items():
+        print(f"updated note type: {name} ({', '.join(parts)})")
+    return 0
 
 
 def _show_warning(message, category, filename, lineno, file=None, line=None) -> None:
@@ -218,8 +282,7 @@ def _report_added(result, term: str, level: int, *, dry_run: bool = False) -> No
         print(f"  {name}: {value}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    warnings.showwarning = _show_warning
+def _add_main(argv: list[str]) -> int:
     args = build_parser().parse_args(argv)
     # 0 = quiet, 1 = default, 2 = note content (-v), 3 = engine trace (-vv).
     level = 0 if args.quiet else 1 + min(args.verbose, 2)
@@ -281,6 +344,16 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 _report_added(result, term, level, dry_run=args.dry_run)
     return exit_code
+
+
+def main(argv: list[str] | None = None) -> int:
+    warnings.showwarning = _show_warning
+    argv = sys.argv[1:] if argv is None else list(argv)
+    # Only the first token selects a command, so `ankery -- sync-note-types` adds
+    # that literal term.
+    if argv[:1] == [SYNC_COMMAND]:
+        return _sync_main(argv[1:])
+    return _add_main(argv)
 
 
 if __name__ == "__main__":

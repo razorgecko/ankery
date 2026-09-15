@@ -1,11 +1,19 @@
 from collections.abc import Iterable
-from typing import Protocol, runtime_checkable
+from typing import NamedTuple, Protocol, runtime_checkable
 
 from ankery.notedef import NoteDefinition
 
 
 class SinkError(Exception):
     """Failed to write a note (transport error or application-level error from the target)."""
+
+
+class SyncResult(NamedTuple):
+    """Outcome of syncing note types: the names created and each updated name
+    mapped to the parts written."""
+
+    created: list[str]
+    updated: dict[str, list[str]]
 
 
 @runtime_checkable
@@ -30,4 +38,15 @@ class AnkiSink(Protocol):
     ) -> list[str]:
         """Create missing note types and return the names created; raise SinkError
         if an existing type has wrong fields."""
+        ...
+
+    def sync_note_types(
+        self,
+        definitions: Iterable[NoteDefinition],
+        *,
+        default_css: str = "",
+    ) -> SyncResult:
+        """Create missing note types and overwrite templates and styling of existing
+        ones. Raise SinkError, before writing anything, if an existing type's fields
+        or card types differ."""
         ...

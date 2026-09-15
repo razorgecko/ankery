@@ -4,7 +4,7 @@ from collections.abc import Iterable
 import httpx
 
 from ankery.notedef import NoteDefinition
-from ankery.sinks.base import SinkError
+from ankery.sinks.base import SinkError, SyncResult
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,8 @@ class AnkiConnectSink:
         if fields don't match an existing model.
 
         Field order is contractual: Anki keys duplicate detection and empty-note
-        guard on the first field. Never mutates an existing model. Safe to re-run.
+        guard on the first field. Never mutates an existing model, and checks every
+        existing model before creating any. Safe to re-run.
         """
         definitions = list(definitions)
         logger.info(
@@ -76,22 +77,100 @@ class AnkiConnectSink:
         )
         existing = self._model_names()
         fallback_css = self._catch_all_css(catch_all, default_css, existing)
-        created: list[str] = []
+        missing: list[NoteDefinition] = []
+        for note_def in definitions:
+            if note_def.name in existing:
+                self._check_fields(note_def)
+            else:
+                missing.append(note_def)
+        for note_def in missing:
+            self._create_model(note_def, css=note_def.css or fallback_css)
+        return [note_def.name for note_def in missing]
+
+    def sync_note_types(
+        self,
+        definitions: Iterable[NoteDefinition],
+        *,
+        default_css: str = "",
+    ) -> SyncResult:
+        """Create missing models and overwrite the card templates and styling of
+        existing ones from their definitions; return the names created and each
+        changed model's name mapped to the parts written ("templates", "styling").
+
+        A field or card-name mismatch raises SinkError; every model is checked
+        before any is written, so a mismatch leaves Anki unchanged.
+        """
+        definitions = list(definitions)
+        logger.info(
+            "ankiconnect: syncing note types: %s",
+            ", ".join(repr(d.name) for d in definitions) or "(none)",
+        )
+        existing = self._model_names()
+        missing: list[NoteDefinition] = []
+        plan: list[tuple[str, dict[str, dict[str, str]] | None, str | None]] = []
         for note_def in definitions:
             if note_def.name not in existing:
-                self._create_model(note_def, css=note_def.css or fallback_css)
-                created.append(note_def.name)
+                missing.append(note_def)
                 continue
-            actual = self._model_field_names(note_def.name)
-            if actual != note_def.fields:
+            self._check_fields(note_def)
+            live_templates = self._model_templates(note_def.name)
+            templates = {
+                card.name: {"Front": card.qfmt, "Back": card.afmt}
+                for card in note_def.cards
+            }
+            if set(live_templates) != set(templates):
                 raise SinkError(
-                    f"note type {note_def.name!r} already exists in Anki with "
-                    f"different fields: found {actual}, expected {note_def.fields}. "
-                    "Refusing to modify a note type that may already have notes; "
-                    "reconcile the fields in Anki or rename the note type."
+                    f"note type {note_def.name!r} card types differ: "
+                    f"found {sorted(live_templates)}, expected {sorted(templates)}"
                 )
-            logger.info("ankiconnect: note type %r exists, fields match", note_def.name)
-        return created
+            css = note_def.css or default_css
+            plan.append((
+                note_def.name,
+                templates if templates != live_templates else None,
+                css if css != self._model_css(note_def.name) else None,
+            ))
+
+        for note_def in missing:
+            self._create_model(note_def, css=note_def.css or default_css)
+        updated: dict[str, list[str]] = {}
+        for name, templates, css in plan:
+            parts: list[str] = []
+            if templates is not None:
+                logger.info("ankiconnect: updating templates of %r", name)
+                self._invoke(
+                    "updateModelTemplates", model={"name": name, "templates": templates}
+                )
+                parts.append("templates")
+            if css is not None:
+                logger.info("ankiconnect: updating styling of %r", name)
+                self._invoke("updateModelStyling", model={"name": name, "css": css})
+                parts.append("styling")
+            if parts:
+                updated[name] = parts
+            else:
+                logger.info("ankiconnect: note type %r already in sync", name)
+        return SyncResult([note_def.name for note_def in missing], updated)
+
+    def _check_fields(self, note_def: NoteDefinition) -> None:
+        actual = self._model_field_names(note_def.name)
+        if actual != note_def.fields:
+            raise SinkError(
+                f"note type {note_def.name!r} fields differ: "
+                f"found {actual}, expected {note_def.fields}"
+            )
+        logger.info("ankiconnect: note type %r exists, fields match", note_def.name)
+
+    def _model_templates(self, note_type: str) -> dict[str, dict[str, str]]:
+        result = self._invoke("modelTemplates", modelName=note_type)
+        if not isinstance(result, dict):
+            raise SinkError(f"modelTemplates returned an unexpected result: {result!r}")
+        return result
+
+    def _model_css(self, note_type: str) -> str:
+        result = self._invoke("modelStyling", modelName=note_type)
+        if not isinstance(result, dict) or not isinstance(result.get("css"), str):
+            raise SinkError(f"modelStyling returned an unexpected result: {result!r}")
+        return result["css"]
 
     def _catch_all_css(
         self, catch_all: str | None, default_css: str, existing: set[str]

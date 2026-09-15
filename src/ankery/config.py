@@ -20,6 +20,7 @@ from ankery.prompts import render_system_prompt, render_user_prompt
 from ankery.providers.base import Provider
 from ankery.providers.llm import LLMProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
+from ankery.sinks.base import SyncResult
 
 ENV_PREFIX = "ANKERY_"
 
@@ -78,19 +79,23 @@ class Config:
         path: Path | None = None,
         auth_path: Path | None = None,
         environ: dict[str, str] | None = None,
+        with_auth: bool = True,
     ) -> "Config":
-        """Resolve config: defaults < config.toml < auth.toml < env."""
+        """Resolve config: defaults < config.toml < auth.toml < env. Without
+        `with_auth`, stops at config.toml: no auth file is read and no secret set."""
         env = os.environ if environ is None else environ
         if path is None:
             raw = env.get(ENV_PREFIX + "CONFIG")
             path = Path(raw).expanduser() if raw else None
+        config_path = _config_dir() / "config.toml" if path is None else path
+        base = replace(cls(), **_load_config_file(config_path))
+        if not with_auth:
+            return base
         if auth_path is None:
             raw = env.get(ENV_PREFIX + "AUTH")
             auth_path = Path(raw).expanduser() if raw else None
-        config_path = _config_dir() / "config.toml" if path is None else path
         auth_path = _config_dir() / "auth.toml" if auth_path is None else auth_path
-        overrides = {**_load_config_file(config_path), **_load_auth_file(auth_path)}
-        return cls.from_env(environ, base=replace(cls(), **overrides))
+        return cls.from_env(environ, base=replace(base, **_load_auth_file(auth_path)))
 
     @classmethod
     def from_env(
@@ -251,12 +256,30 @@ PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
 }
 
 
-def build_deck_builder(config: Config) -> DeckBuilder:
-    """Resolve the pack from `pack` and wire providers, notes, sink, and builder."""
+def _load_pack(config: Config) -> Pack:
     try:
-        pack = load_pack(config.pack, config.packs_dir)
+        return load_pack(config.pack, config.packs_dir)
     except PackError as exc:
         raise ConfigError(str(exc)) from exc
+
+
+def build_sink(config: Config) -> AnkiConnectSink:
+    return AnkiConnectSink(
+        base_url=config.anki_url,
+        timeout=config.anki_timeout,
+        allow_duplicate=config.allow_duplicate,
+    )
+
+
+def sync_note_types(config: Config) -> SyncResult:
+    """Sync the selected pack's own note definitions, styled with its style.css."""
+    pack = _load_pack(config)
+    return build_sink(config).sync_note_types(pack.notes, default_css=pack.style_css)
+
+
+def build_deck_builder(config: Config) -> DeckBuilder:
+    """Resolve the pack from `pack` and wire providers, notes, sink, and builder."""
+    pack = _load_pack(config)
 
     # Resolve variables against the pack now that it is loaded — validation needs
     # its declarations.
@@ -287,14 +310,9 @@ def build_deck_builder(config: Config) -> DeckBuilder:
             raise ConfigError(str(exc)) from exc
         notes = merge_note_definitions(pack.notes, extra)
 
-    sink = AnkiConnectSink(
-        base_url=config.anki_url,
-        timeout=config.anki_timeout,
-        allow_duplicate=config.allow_duplicate,
-    )
     return DeckBuilder(
         providers,
-        sink,
+        build_sink(config),
         deck=config.deck,
         note_type=config.note_type,
         style_css=pack.style_css,
