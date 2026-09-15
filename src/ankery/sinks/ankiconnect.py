@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import httpx
 
@@ -9,6 +10,23 @@ from ankery.sinks.base import SinkError, SyncResult
 logger = logging.getLogger(__name__)
 
 ANKICONNECT_VERSION = 6
+
+
+@dataclass(frozen=True)
+class _ModelUpdate:
+    """Writes one existing model needs; a None part is already in sync."""
+
+    name: str
+    templates: dict[str, dict[str, str]] | None
+    css: str | None
+
+    @property
+    def parts(self) -> list[str]:
+        return [
+            part
+            for part, value in (("templates", self.templates), ("styling", self.css))
+            if value is not None
+        ]
 
 
 class AnkiConnectSink:
@@ -77,12 +95,7 @@ class AnkiConnectSink:
         )
         existing = self._model_names()
         fallback_css = self._catch_all_css(catch_all, default_css, existing)
-        missing: list[NoteDefinition] = []
-        for note_def in definitions:
-            if note_def.name in existing:
-                self._check_fields(note_def)
-            else:
-                missing.append(note_def)
+        _, missing = self._split_existing(definitions, existing)
         for note_def in missing:
             self._create_model(note_def, css=note_def.css or fallback_css)
         return [note_def.name for note_def in missing]
@@ -105,51 +118,68 @@ class AnkiConnectSink:
             "ankiconnect: syncing note types: %s",
             ", ".join(repr(d.name) for d in definitions) or "(none)",
         )
-        existing = self._model_names()
-        missing: list[NoteDefinition] = []
-        plan: list[tuple[str, dict[str, dict[str, str]] | None, str | None]] = []
-        for note_def in definitions:
-            if note_def.name not in existing:
-                missing.append(note_def)
-                continue
-            self._check_fields(note_def)
-            live_templates = self._model_templates(note_def.name)
-            templates = {
-                card.name: {"Front": card.qfmt, "Back": card.afmt}
-                for card in note_def.cards
-            }
-            if set(live_templates) != set(templates):
-                raise SinkError(
-                    f"note type {note_def.name!r} card types differ: "
-                    f"found {sorted(live_templates)}, expected {sorted(templates)}"
-                )
-            css = note_def.css or default_css
-            plan.append((
-                note_def.name,
-                templates if templates != live_templates else None,
-                css if css != self._model_css(note_def.name) else None,
-            ))
-
+        present, missing = self._split_existing(definitions, self._model_names())
+        # A list, not a generator: every plan must be built (and may raise) before
+        # the first write below.
+        updates = [
+            self._plan_update(note_def, css=note_def.css or default_css)
+            for note_def in present
+        ]
         for note_def in missing:
             self._create_model(note_def, css=note_def.css or default_css)
-        updated: dict[str, list[str]] = {}
-        for name, templates, css in plan:
-            parts: list[str] = []
-            if templates is not None:
-                logger.info("ankiconnect: updating templates of %r", name)
-                self._invoke(
-                    "updateModelTemplates", model={"name": name, "templates": templates}
-                )
-                parts.append("templates")
-            if css is not None:
-                logger.info("ankiconnect: updating styling of %r", name)
-                self._invoke("updateModelStyling", model={"name": name, "css": css})
-                parts.append("styling")
-            if parts:
-                updated[name] = parts
+        for update in updates:
+            self._apply_update(update)
+        return SyncResult(
+            [note_def.name for note_def in missing],
+            {update.name: update.parts for update in updates if update.parts},
+        )
+
+    def _split_existing(
+        self, definitions: list[NoteDefinition], existing: set[str]
+    ) -> tuple[list[NoteDefinition], list[NoteDefinition]]:
+        """Return (present, missing); raise SinkError if a present model's fields differ."""
+        present: list[NoteDefinition] = []
+        missing: list[NoteDefinition] = []
+        for note_def in definitions:
+            if note_def.name in existing:
+                self._check_fields(note_def)
+                present.append(note_def)
             else:
-                logger.info("ankiconnect: note type %r already in sync", name)
-        return SyncResult([note_def.name for note_def in missing], updated)
+                missing.append(note_def)
+        return present, missing
+
+    def _plan_update(self, note_def: NoteDefinition, *, css: str) -> _ModelUpdate:
+        """Diff one existing model against its definition; raise SinkError if its
+        card names differ."""
+        live = self._model_templates(note_def.name)
+        templates = {
+            card.name: {"Front": card.qfmt, "Back": card.afmt} for card in note_def.cards
+        }
+        if set(live) != set(templates):
+            raise SinkError(
+                f"note type {note_def.name!r} card types differ: "
+                f"found {sorted(live)}, expected {sorted(templates)}"
+            )
+        return _ModelUpdate(
+            note_def.name,
+            templates if templates != live else None,
+            css if css != self._model_css(note_def.name) else None,
+        )
+
+    def _apply_update(self, update: _ModelUpdate) -> None:
+        if update.templates is not None:
+            logger.info("ankiconnect: updating templates of %r", update.name)
+            self._invoke(
+                "updateModelTemplates",
+                model={"name": update.name, "templates": update.templates},
+            )
+        if update.css is not None:
+            logger.info("ankiconnect: updating styling of %r", update.name)
+            self._invoke(
+                "updateModelStyling", model={"name": update.name, "css": update.css}
+            )
+        if not update.parts:
+            logger.info("ankiconnect: note type %r already in sync", update.name)
 
     def _check_fields(self, note_def: NoteDefinition) -> None:
         actual = self._model_field_names(note_def.name)
