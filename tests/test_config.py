@@ -69,7 +69,7 @@ def test_from_env_uses_defaults_when_unset():
     assert config.note_type == "Ankery Basic"
     assert config.tags == ()
     assert config.allow_duplicate is False
-    assert config.pack == "de"
+    assert config.pack is None  # the operator must choose one
     assert config.variables == {}  # seeded from the pack only at build time
     assert config.providers == ()  # empty => use the pack's preferred chain
 
@@ -336,12 +336,13 @@ def test_api_key_read_from_env_only():
 
 
 def test_build_deck_builder_passes_api_key():
-    builder = build_deck_builder(Config(llm_api_key="sk-123", providers=("llm",)))
+    builder = build_deck_builder(Config(pack="de", llm_api_key="sk-123", providers=("llm",)))
     assert _provider_named(builder, "llm").api_key == "sk-123"
 
 
 def test_build_deck_builder_wires_provider_and_sink():
     config = Config(
+        pack="de",
         providers=("llm",),
         llm_base_url="http://llm.local/v1",
         llm_model="my-model",
@@ -369,7 +370,7 @@ def test_build_deck_builder_wires_provider_and_sink():
 
 
 def test_build_deck_builder_loads_the_packs_notes_and_style():
-    builder = build_deck_builder(Config())  # default pack "de"
+    builder = build_deck_builder(Config(pack="de"))
 
     assert [d.name for d in builder.note_definitions] == [
         "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Phrase", "Ankery DE: Verb",
@@ -390,7 +391,7 @@ def test_notes_dir_merges_over_the_packs_notes_by_category(tmp_path):
     # category (adjective) is added; the pack's verb is left in place.
     _write_note(tmp_path, "noun", "Simple Noun", "noun")
     _write_note(tmp_path, "adj", "Simple Adjective", "adjective")
-    builder = build_deck_builder(Config(notes_dir=tmp_path))
+    builder = build_deck_builder(Config(pack="de", notes_dir=tmp_path))
 
     names = [d.name for d in builder.note_definitions]
     assert names == [
@@ -400,7 +401,7 @@ def test_notes_dir_merges_over_the_packs_notes_by_category(tmp_path):
 
 
 def test_notes_dir_unset_leaves_the_packs_notes_alone():
-    builder = build_deck_builder(Config())  # notes_dir is None by default
+    builder = build_deck_builder(Config(pack="de"))  # notes_dir is None by default
 
     assert [d.name for d in builder.note_definitions] == [
         "Ankery DE: Word", "Ankery DE: Noun", "Ankery DE: Phrase", "Ankery DE: Verb",
@@ -411,36 +412,41 @@ def test_notes_dir_with_duplicate_category_surfaces_as_config_error(tmp_path):
     _write_note(tmp_path, "a_noun", "Noun A", "noun")
     _write_note(tmp_path, "b_noun", "Noun B", "noun")
     with pytest.raises(ConfigError, match="both serve category 'noun'"):
-        build_deck_builder(Config(notes_dir=tmp_path))
+        build_deck_builder(Config(pack="de", notes_dir=tmp_path))
 
 
 def test_empty_chain_falls_back_to_the_packs_preferred_chain():
     # config.providers is () by default, so the pack's chain is used.
-    builder = build_deck_builder(Config())
+    builder = build_deck_builder(Config(pack="de"))
 
     assert [p.name for p in builder.providers] == ["netzverb", "llm"]
 
 
 def test_build_deck_builder_honors_provider_order():
-    builder = build_deck_builder(Config(providers=("llm", "netzverb")))
+    builder = build_deck_builder(Config(pack="de", providers=("llm", "netzverb")))
 
     assert [p.name for p in builder.providers] == ["llm", "netzverb"]
 
 
 def test_pack_local_provider_gets_options_from_lang_toml():
     # netzverb's timeout comes from the de pack's [provider_options], not Config.
-    builder = build_deck_builder(Config(providers=("netzverb",)))
+    builder = build_deck_builder(Config(pack="de", providers=("netzverb",)))
     assert _provider_named(builder, "netzverb")._timeout == 15.0
 
 
 def test_llm_provider_gets_the_pack_rendered_prompt():
-    builder = build_deck_builder(Config(providers=("llm",)))
+    builder = build_deck_builder(Config(pack="de", providers=("llm",)))
     assert "German" in _provider_named(builder, "llm").system_prompt_for(None)
 
 
 def test_build_deck_builder_rejects_unknown_provider():
     with pytest.raises(ConfigError, match="unknown provider 'nope'"):
-        build_deck_builder(Config(providers=("nope",)))
+        build_deck_builder(Config(pack="de", providers=("nope",)))
+
+
+def test_build_deck_builder_requires_a_pack():
+    with pytest.raises(ConfigError, match="no pack chosen"):
+        build_deck_builder(Config())
 
 
 def test_build_deck_builder_rejects_unknown_pack():
@@ -499,13 +505,13 @@ def test_resolve_variables_rejects_undeclared_key():
 
 def test_build_deck_builder_resolves_variables_into_providers():
     # The resolved bag (pack default for target_language) reaches the llm provider.
-    builder = build_deck_builder(Config(providers=("llm",)))
+    builder = build_deck_builder(Config(pack="de", providers=("llm",)))
     assert _provider_named(builder, "llm").variables == {"target_language": "en"}
 
 
 def test_build_deck_builder_override_variable_reaches_provider():
     builder = build_deck_builder(
-        Config(providers=("llm",), variables={"target_language": "french"})
+        Config(pack="de", providers=("llm",), variables={"target_language": "french"})
     )
     assert _provider_named(builder, "llm").variables == {"target_language": "french"}
 
@@ -533,6 +539,7 @@ def test_load_silent_when_auth_file_locked_down(tmp_path):
 
 def test_build_warns_on_api_key_over_plaintext_http_to_remote():
     config = Config(
+        pack="de",
         providers=("llm",),
         llm_base_url="http://example.com:8080/v1",
         llm_api_key="sk-secret",
@@ -543,6 +550,7 @@ def test_build_warns_on_api_key_over_plaintext_http_to_remote():
 
 def test_build_silent_for_api_key_over_http_to_localhost():
     config = Config(
+        pack="de",
         providers=("llm",),
         llm_base_url="http://localhost:8080/v1",
         llm_api_key="sk-secret",
@@ -554,6 +562,7 @@ def test_build_silent_for_api_key_over_http_to_localhost():
 
 def test_build_silent_for_api_key_over_https():
     config = Config(
+        pack="de",
         providers=("llm",),
         llm_base_url="https://example.com/v1",
         llm_api_key="sk-secret",
@@ -590,6 +599,11 @@ def test_sync_note_types_syncs_the_packs_notes_with_its_style(monkeypatch):
     assert result == SyncResult(["created"], {})
     assert [d.name for d in seen["definitions"]] == [d.name for d in pack.notes]
     assert seen["default_css"] == pack.style_css
+
+
+def test_sync_note_types_requires_a_pack():
+    with pytest.raises(ConfigError, match="no pack chosen"):
+        sync_note_types(Config())
 
 
 def test_sync_note_types_unknown_pack_raises_config_error():

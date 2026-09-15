@@ -65,7 +65,7 @@ This drops a launcher at `~/.local/bin/ankery`, available from any directory.
 ankery <term>                    # add a single term
 ankery <term1> <term2> <term3>   # add several at once
 ankery --deck MyDeck <term>      # choose the destination deck
-ankery --pack <code> <term>      # load a pack by code (the bundled one is `de`)
+ankery --pack <code> <term>      # load a pack by code (e.g. the bundled `de`)
 ankery --var KEY=VALUE <term>    # set a pack variable
 ankery -n <term>                 # dry run: show the card, write nothing
 ankery -q <term>                 # quiet: no output, errors still on stderr
@@ -145,7 +145,7 @@ The LLM API key is the one setting that is **not** allowed here (see
 | `deck` | `--deck` | `"Default"` | Destination deck. |
 | `providers` | `--provider` | per pack | Lookup sources, tried in fallback order. Empty uses the default chain for the chosen pack. The flag takes a comma-separated list. |
 | — | `--llm` | — | Shorthand for `--provider llm`: ask the language model only, with no fallback. Cannot be combined with `--provider`. |
-| `pack` | `--pack` | `"de"` | Pack to load, keyed by code. Taken literally — never normalized — so the code is used exactly as written. |
+| `pack` | `--pack` | — (required) | Pack to load, keyed by code. Required: there is no default pack. Taken literally — never normalized — so the code is used exactly as written. |
 | `[variables]` table | `--var KEY=VALUE` | per pack | Opaque values the pack consumes (e.g. `target_language`). Each pack declares the keys it accepts and their defaults; an undeclared key is an error. The flag is repeatable. |
 | `packs_dir` | `--packs-dir` | — | Directory of custom packs; one here overrides a built-in of the same code. |
 | `note_type` | `--note-type` | `"Ankery Basic"` | Catch-all model for terms with no dedicated layout. Defaults to ankery's own provisioned model; point it at a foreign model (e.g. Anki's stock `Basic`) to write there instead. |
@@ -217,9 +217,8 @@ term → info-dump card). Point `--note-type` at a foreign model (e.g. Anki's st
 `Basic`) to write there instead. The card `qfmt`/`afmt` are Anki's own template
 syntax, not Jinja — only the `[map]` values are rendered here.
 
-ankery creates a note type in Anki the first time it's needed and never changes
-it afterwards, so later edits to a layout's card templates or the pack's
-`style.css` don't reach Anki on their own. To push them, run:
+A note type is created in Anki on first use and never modified afterwards.
+Later edits to a pack's card templates or `style.css` are pushed explicitly:
 
 ```bash
 ankery sync-note-types --pack chem

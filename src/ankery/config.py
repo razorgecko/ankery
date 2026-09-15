@@ -67,7 +67,8 @@ class Config:
     notes_dir: Path | None = None
 
     # The pack selector — a pack code, taken literally (not a language code).
-    pack: str = "de"
+    # None until the operator chooses one; there is no default pack.
+    pack: str | None = None
     # Opaque operator-supplied variables the pack consumes.
     variables: dict[str, str] = field(default_factory=dict)
     packs_dir: Path | None = None
@@ -257,6 +258,8 @@ PROVIDER_REGISTRY: dict[str, ProviderBuilder] = {
 
 
 def _load_pack(config: Config) -> Pack:
+    if config.pack is None:
+        raise ConfigError("no pack chosen; pass --pack <code> or set `pack` in config.toml")
     try:
         return load_pack(config.pack, config.packs_dir)
     except PackError as exc:

@@ -96,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--deck", help="destination deck")
     parser.add_argument(
         "--pack",
-        help="language pack to load, keyed by code (e.g. de); taken literally, "
+        help="pack to load, keyed by code (e.g. de); taken literally, "
         "not normalized",
     )
     parser.add_argument(
@@ -198,6 +198,7 @@ def _config_from_args(args: argparse.Namespace) -> Config:
     if args.deck is not None:
         overrides["deck"] = args.deck
     if args.var:
+        # Replaces config.toml's [variables] whole, not per key: one source of values.
         overrides["variables"] = _parse_vars(args.var)
     if args.note_type is not None:
         overrides["note_type"] = args.note_type

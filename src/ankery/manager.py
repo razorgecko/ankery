@@ -175,4 +175,4 @@ class DeckBuilder:
         try:
             return self.normalize(entry)
         except Exception as exc:
-            raise ProviderError(f"language pack normalize hook failed: {exc}") from exc
+            raise ProviderError(f"pack normalize hook failed: {exc}") from exc
