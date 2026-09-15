@@ -1,0 +1,22 @@
+.card {
+  font-family: arial;
+  font-size: 20px;
+  line-height: 1.5;
+  text-align: center;
+  color: black;
+  background-color: white;
+}
+
+.nightMode.card {
+  color: white;
+  background-color: black;
+}
+
+/* Gender classes are g-<Article field value>, set in noun_de.toml card templates. */
+.g-der { color: #1f5fbf; }
+.g-die { color: #c0392b; }
+.g-das { color: #2e8b57; }
+
+.nightMode .g-der { color: #6fa8ff; }
+.nightMode .g-die { color: #ff7b6e; }
+.nightMode .g-das { color: #6fd39a; }
