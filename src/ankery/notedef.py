@@ -52,6 +52,12 @@ class NoteDefinition:
     cards: tuple[Card, ...] = ()
     css: str = ""
 
+    def __post_init__(self) -> None:
+        # Stored in the form `applies` compares entry categories in, so routing,
+        # the duplicate check and the merge all key on one spelling.
+        if self.applies_to is not None:
+            object.__setattr__(self, "applies_to", self.applies_to.strip().lower())
+
     @property
     def fields(self) -> list[str]:
         return list(self.field_map)

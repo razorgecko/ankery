@@ -223,6 +223,21 @@ def test_two_default_notes_in_a_directory_raise(tmp_path):
         load_notes_from_dir(tmp_path)
 
 
+def test_applies_to_matches_the_category_regardless_of_case():
+    # A pack may declare `[kind.Element]`; hints and the model then yield "Element".
+    note = NoteDefinition(name="Element", field_map={"Front": "{{ term }}"}, applies_to="Element")
+
+    assert note.applies(Entry(term="Fe", source="test", category="Element"))
+    assert note.applies(Entry(term="Fe", source="test", category="element"))
+
+
+def test_notes_differing_only_in_applies_to_case_collide(tmp_path):
+    _write_note(tmp_path, "a_element", "Element A", "Element")
+    _write_note(tmp_path, "b_element", "Element B", "element")
+    with pytest.raises(NoteDefinitionError, match="both serve category 'element'"):
+        load_notes_from_dir(tmp_path)
+
+
 def test_notes_without_applies_to_do_not_collide(tmp_path):
     # A note with no applies_to matches nothing, so two of them are not a clash.
     _write_note(tmp_path, "a", "Catchall A", None)
@@ -242,6 +257,13 @@ def test_merge_override_replaces_same_category_in_place():
 
     # The override's noun takes the base noun's slot; the verb is untouched.
     assert [d.name for d in merged] == ["Simple Noun", "Ankery DE: Verb"]
+
+
+def test_merge_replaces_a_category_spelled_in_another_case():
+    base = [_note("Element", "Element")]
+    override = [_note("Simple Element", "element")]
+
+    assert [d.name for d in merge_note_definitions(base, override)] == ["Simple Element"]
 
 
 def test_merge_appends_a_new_category():
