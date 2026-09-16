@@ -17,6 +17,12 @@ from ankery.notedef import NoteDefinition, load_notes_from_dir
 
 _BUNDLED_PACKS = Path(__file__).parent / "packs"
 
+# Top-level pack.toml keys load_pack reads; the [category] name may not be one.
+_RESERVED_TOP_LEVEL = frozenset({
+    "name", "providers", "provider_options", "category",
+    "properties", "collections", "derived", "variables",
+})
+
 # Typed loosely to avoid an import cycle with config.py.
 Normalize = Callable[[Entry], Entry]
 ProviderBuilder = Callable[..., object]
@@ -33,6 +39,12 @@ class CategorySpec:
     guidance: tuple[str, ...]
     properties: dict[str, str]  # scalar key -> meaning
     collections: dict[str, str]  # list-valued key -> meaning
+
+
+@dataclass(frozen=True)
+class DerivedKeys:
+    properties: dict[str, str]  # filter-set scalar key -> description
+    collections: dict[str, str]  # filter-set list-valued key -> description
 
 
 @dataclass(frozen=True)
@@ -53,6 +65,9 @@ class Pack:
     name: str
     common_properties: dict[str, str]
     common_collections: dict[str, str]
+    common_derived: DerivedKeys
+    # Every declared category value -> its derived keys.
+    derived: dict[str, DerivedKeys]
     # Variables this pack declares for the operator to set, keyed by name.
     variables: dict[str, VariableSpec]
     # The human label for the routing dimension (e.g. "part of speech").
@@ -84,6 +99,8 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
     raw = _read_pack_toml(directory / "pack.toml")
 
     category_label, categories = _parse_categories(raw, directory)
+    common_derived, derived = _parse_derived(raw, categories)
+    _check_derived_not_prompted(raw, categories, common_derived, derived, directory)
     variables = _parse_variables(raw)
     notes_dir = directory / "notes"
     try:
@@ -110,6 +127,8 @@ def load_pack(code: str, packs_dir: Path | None = None) -> Pack:
         name=raw.get("name", code),
         common_properties=dict(raw.get("properties", {})),
         common_collections=dict(raw.get("collections", {})),
+        common_derived=common_derived,
+        derived=derived,
         variables=variables,
         category_label=category_label,
         categories=categories,
@@ -157,6 +176,10 @@ def _parse_categories(raw: dict, directory: Path) -> tuple[str, dict[str, Catego
             f"pack at {directory}: pack.toml declares no [category] name."
         )
     name = declaration["name"]
+    if name in _RESERVED_TOP_LEVEL:
+        raise PackError(
+            f"pack at {directory}: [category] name {name!r} is reserved."
+        )
     label = declaration.get("label", name)
     table = raw.get(name, {})
     if not table:
@@ -173,6 +196,57 @@ def _parse_categories(raw: dict, directory: Path) -> tuple[str, dict[str, Catego
             collections=dict(spec.get("collections", {})),
         )
     return label, categories
+
+
+def _derived_keys(table: dict) -> DerivedKeys:
+    return DerivedKeys(
+        properties=dict(table.get("properties", {})),
+        collections=dict(table.get("collections", {})),
+    )
+
+
+def _parse_derived(
+    raw: dict, categories: dict[str, CategorySpec]
+) -> tuple[DerivedKeys, dict[str, DerivedKeys]]:
+    """Parse [derived.*] and each [<name>.<value>.derived.*]. Expects
+    `_parse_categories` to have validated the [category] name."""
+    table = raw[raw["category"]["name"]]
+    common = _derived_keys(raw.get("derived", {}))
+    per_category = {
+        value: _derived_keys(table[value].get("derived", {})) for value in categories
+    }
+    return common, per_category
+
+
+def _check_derived_not_prompted(
+    raw: dict,
+    categories: dict[str, CategorySpec],
+    common_derived: DerivedKeys,
+    derived: dict[str, DerivedKeys],
+    directory: Path,
+) -> None:
+    """Raise if a key declared as derived is also declared as prompted in the same
+    bag, for any category: common keys count toward every category."""
+    for spec in categories.values():
+        own = derived[spec.value]
+        for bag, prompted, derived_keys in (
+            (
+                "properties",
+                raw.get("properties", {}).keys() | spec.properties.keys(),
+                common_derived.properties.keys() | own.properties.keys(),
+            ),
+            (
+                "collections",
+                raw.get("collections", {}).keys() | spec.collections.keys(),
+                common_derived.collections.keys() | own.collections.keys(),
+            ),
+        ):
+            overlap = sorted(prompted & derived_keys)
+            if overlap:
+                raise PackError(
+                    f"pack at {directory}: {spec.value!r} declares {bag} "
+                    f"{', '.join(overlap)} both as derived and as prompted keys."
+                )
 
 
 def _parse_variables(raw: dict) -> dict[str, VariableSpec]:

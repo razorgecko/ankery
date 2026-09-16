@@ -30,9 +30,11 @@ builder.
 The engine default is domain-neutral: it names no language, reads no variable,
 and lists each declared property/collection key with its meaning, common and
 per-category alike. A non-language pack renders on it unchanged; a pack that
-declares no collections shows none. The German pack ships its own
-`prompts/system.j2`, which states the source/target language split once as a
-rule line and otherwise loops the same declared keys.
+declares no collections shows none. The template context carries no derived
+keys ([packs.md](./packs.md#2-packtoml)): they live on `Pack.common_derived` and
+`Pack.derived`, which `_system_context` does not read. The German pack ships its
+own `prompts/system.j2`, which states the source/target language split once as
+a rule line and otherwise loops the same declared keys.
 
 Templates may name languages with the `language_name`/`language_code` filters
 (`{{ variables.target_language | language_name }}` → "English").
@@ -44,7 +46,7 @@ reach the template, over a sub-surface: `name`, `label`, `variables` (same
 filters). The sub-surface omits `categories`, `common_properties` and
 `common_collections`, because those are the outputs of rendering the meanings.
 `_system_context` builds the template context as the sub-surface plus those
-derived keys.
+rendered keys.
 
 ## 4. `defaults/`
 

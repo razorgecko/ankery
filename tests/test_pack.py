@@ -2,7 +2,7 @@ import pytest
 
 from ankery.defaults import default_system_template, default_user_template
 from ankery.models import Entry
-from ankery.pack import PackError, load_pack
+from ankery.pack import DerivedKeys, PackError, load_pack
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +158,21 @@ def test_category_naming_an_absent_table_raises(tmp_path):
         load_pack("yy", packs_dir=tmp_path)
 
 
+@pytest.mark.parametrize(
+    "reserved",
+    ["name", "providers", "provider_options", "category",
+     "properties", "collections", "derived", "variables"],
+)
+def test_category_named_a_top_level_key_raises(tmp_path, reserved):
+    _write_pack(
+        tmp_path,
+        "yy",
+        f'[category]\nname = "{reserved}"\n[{reserved}.verb]\ncitation = "c"\n',
+    )
+    with pytest.raises(PackError, match=f"'{reserved}' is reserved"):
+        load_pack("yy", packs_dir=tmp_path)
+
+
 def test_pack_chooses_its_own_category_name(tmp_path):
     # The routing dimension is pack-declared: a non-language pack can name it
     # "kind" (with a [kind.*] table) instead of "pos" — no engine change.
@@ -183,3 +198,60 @@ def test_provider_name_collision_across_modules_raises(tmp_path):
 
     with pytest.raises(PackError, match="registered by more than one"):
         load_pack("zz", packs_dir=tmp_path)
+
+
+_DERIVED_PACK = (
+    'name = "X"\n[category]\nname = "pos"\n'
+    '[derived.properties]\nstem = "the term without its ending"\n'
+    '[derived.collections]\nparts = "the term split on hyphens"\n'
+    '[pos.verb]\n[pos.verb.properties]\npast = "past form"\n'
+    '[pos.verb.derived.properties]\nbase = "the term without its particle"\n'
+    '[pos.noun]\n'
+)
+
+
+def test_derived_keys_parse_common_and_per_category(tmp_path):
+    _write_pack(tmp_path, "xx", _DERIVED_PACK)
+    pack = load_pack("xx", packs_dir=tmp_path)
+
+    assert pack.common_derived == DerivedKeys(
+        properties={"stem": "the term without its ending"},
+        collections={"parts": "the term split on hyphens"},
+    )
+    assert pack.categories["verb"].properties == {"past": "past form"}
+    assert pack.derived["verb"] == DerivedKeys(
+        properties={"base": "the term without its particle"}, collections={}
+    )
+    assert pack.derived["noun"] == DerivedKeys(properties={}, collections={})
+
+
+def test_key_both_derived_and_prompted_in_a_category_raises(tmp_path):
+    _write_pack(
+        tmp_path,
+        "xx",
+        'name = "X"\n[category]\nname = "pos"\n[pos.verb]\n'
+        '[pos.verb.properties]\nbase = "b"\n[pos.verb.derived.properties]\nbase = "b"\n',
+    )
+    with pytest.raises(PackError, match="'verb' declares properties base both as derived"):
+        load_pack("xx", packs_dir=tmp_path)
+
+
+def test_common_prompted_key_derived_in_a_category_raises(tmp_path):
+    _write_pack(
+        tmp_path,
+        "xx",
+        'name = "X"\n[category]\nname = "pos"\n[collections]\nparts = "p"\n'
+        '[pos.verb]\n[pos.verb.derived.collections]\nparts = "p"\n',
+    )
+    with pytest.raises(PackError, match="declares collections parts both as derived"):
+        load_pack("xx", packs_dir=tmp_path)
+
+
+def test_same_key_derived_in_one_bag_and_prompted_in_the_other_loads(tmp_path):
+    _write_pack(
+        tmp_path,
+        "xx",
+        'name = "X"\n[category]\nname = "pos"\n[pos.verb]\n'
+        '[pos.verb.collections]\nbase = "b"\n[pos.verb.derived.properties]\nbase = "b"\n',
+    )
+    assert load_pack("xx", packs_dir=tmp_path).derived["verb"].properties == {"base": "b"}

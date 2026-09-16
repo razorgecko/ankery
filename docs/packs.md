@@ -26,11 +26,13 @@ packs/de/
 ## 2. `pack.toml`
 
 **Routing dimension.** A `[category]` table: `name` is the table that enumerates
-the category values (the German pack uses `name = "pos"`, so `[pos.*]`); `label`
-(default = `name`) is the phrase the LLM prompt uses and the JSON key the model
-fills, mapped onto `Entry.category` by the `llm` provider. The category-value set
-is also the closed vocabulary the LLM classifies into, so routing lines up with
-what was requested.
+the category values (the German pack uses `name = "pos"`, so `[pos.*]`). The
+name may not be a top-level key the engine reads (`name`, `providers`,
+`provider_options`, `category`, `properties`, `collections`, `derived`,
+`variables`; `PackError`). `label` (default = `name`) is the phrase the LLM
+prompt uses and the JSON key the model fills, mapped onto `Entry.category` by
+the `llm` provider. The category-value set is also the closed vocabulary the LLM
+classifies into, so routing lines up with what was requested.
 
 **Keys.** Each is `key -> meaning`:
 
@@ -41,10 +43,16 @@ what was requested.
 - `[<name>.<value>]` — one table per category value, with a `citation` form,
   optional `guidance`, and `[<name>.<value>.properties]` /
   `[<name>.<value>.collections]` for keys specific to that value.
+- `[derived.properties]` / `[derived.collections]`, and
+  `[<name>.<value>.derived.properties]` /
+  `[<name>.<value>.derived.collections]` — keys the pack's `filter.py` sets,
+  each with a plain-text description (not Jinja). A key may not be both
+  derived and prompted in the same bag for any category, counting common keys
+  (`PackError`). The engine does not check that the filter actually sets them.
 
-TOML ordering: `[category]`, `[properties]`, `[collections]` and the category
-tables must follow the bare top-level keys (`name`, `providers`), because a table
-header captures every key after it.
+TOML ordering: `[category]`, `[properties]`, `[collections]`, `[derived.*]` and
+the category tables must follow the bare top-level keys (`name`, `providers`),
+because a table header captures every key after it.
 
 Notes read keys via Jinja (`{{ properties.gender }}`,
 `{{ collections.translations }}`); absent or undeclared keys render empty

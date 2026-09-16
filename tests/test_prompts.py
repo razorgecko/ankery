@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from ankery.pack import load_pack
 from ankery.prompts import render_system_prompt, render_user_prompt
 
@@ -149,3 +151,52 @@ def test_omitting_the_template_renders_the_domain_neutral_default():
     # the template, so it threads through even under the neutral default.
     assert "written in German" in prompt
     assert "the English translation of each example" in prompt
+
+
+_DERIVED_MARKERS = (
+    "common_marker", "COMMON-DERIVED", "base_marker",
+    "CATEGORY-DERIVED", "list_marker", "LIST-DERIVED",
+)
+
+
+def _load_derived_pack(tmp_path):
+    pack_dir = tmp_path / "xx"
+    (pack_dir / "notes").mkdir(parents=True)
+    (pack_dir / "pack.toml").write_text(
+        'name = "X"\n[category]\nname = "pos"\n'
+        '[derived.properties]\ncommon_marker = "COMMON-DERIVED"\n'
+        '[pos.verb]\n[pos.verb.properties]\npast = "past form"\n'
+        '[pos.verb.derived.properties]\nbase_marker = "CATEGORY-DERIVED"\n'
+        '[pos.verb.derived.collections]\nlist_marker = "LIST-DERIVED"\n',
+        "utf-8",
+    )
+    return load_pack("xx", packs_dir=tmp_path)
+
+
+@pytest.mark.parametrize("use_de_template", [False, True])
+def test_derived_keys_are_not_rendered_into_the_prompt(tmp_path, use_de_template):
+    pack = _load_derived_pack(tmp_path)
+    template = load_pack("de").system_template if use_de_template else None
+
+    for hint in (None, "verb"):
+        prompt = render_system_prompt(
+            pack, hint, variables={"target_language": "en"}, template=template
+        )
+        assert "past form" in prompt
+        for marker in _DERIVED_MARKERS:
+            assert marker not in prompt
+
+
+def test_prompt_context_carries_no_derived_keys(tmp_path):
+    pack = _load_derived_pack(tmp_path)
+    template = (
+        "{% for cat in categories %}{{ cat.value }} {{ cat.derived_properties }} "
+        "{{ cat.derived_collections }} {{ cat.derived }}{% endfor %}\n"
+        "{{ common_derived }} {{ derived }} {{ common_derived_properties }}"
+    )
+
+    for hint in (None, "verb"):
+        prompt = render_system_prompt(pack, hint, variables={}, template=template)
+        assert "verb" in prompt
+        for marker in _DERIVED_MARKERS:
+            assert marker not in prompt

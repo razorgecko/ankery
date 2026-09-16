@@ -95,6 +95,12 @@ its tables are `[pos.noun]`, `[pos.verb]`, and so on. The set of these tables is
 also the closed list of values the LLM may classify into, so routing always lines
 up with what the model can return.
 
+`name` cannot be one of the top-level keys ankery itself reads from `pack.toml`:
+`name`, `providers`, `provider_options`, `category`, `properties`, `collections`,
+`derived`, `variables`. Each of those already has its own meaning, so a category
+table under the same name would collide with it; loading the pack fails with a
+"reserved" error. Any other word (`kind`, `pos`, `type`) is fine.
+
 ## Step 3 — common keys (`[properties]`, `[collections]`)
 
 Next we declare the open-bag keys shared by **every** category. Each entry maps a
@@ -271,6 +277,18 @@ def normalize(entry: Entry) -> Entry:
     return entry
 ```
 
+A filter may also compute new keys from the ones the lookup returned. Declare
+those under `derived` instead of `properties`/`collections`, so the model is not
+asked for them. A note reads a derived key like any other
+(`{{ properties.element_count }}`).
+
+```toml
+[kind.compound.derived.properties]
+element_count = "number of distinct elements in formula, counted by filter.py"
+```
+
+A key cannot be declared both ways; loading the pack fails if it is.
+
 ## Step 8 — `providers/` and `prompts/` (optional)
 
 The cross-subject `llm` source comes for free; for many packs it is enough. A pack
@@ -313,4 +331,5 @@ Anki running with the AnkiConnect add-on). Select the pack permanently with `pac
 - [ ] `[map]` reads entry keys via Jinja; `qfmt`/`afmt` reference field names.
 - [ ] First field chosen as the duplicate-detection key.
 - [ ] Optional: `filter.py`, `providers/`, `prompts/`, `notes/style.css`.
+- [ ] Keys set by `filter.py` declared under `derived`.
 - [ ] `ankery --pack <code> -n -v <term>` renders the expected fields.

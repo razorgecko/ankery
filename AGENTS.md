@@ -69,12 +69,18 @@ mechanics are in [docs/](./docs/).
   untrusted HTML in a card (`test_field_map_escapes_provider_html`,
   `test_catch_all_escapes_provider_html_but_keeps_structure`). Card
   `qfmt`/`afmt` are Anki mustache and never go through Jinja.
-- **The meaning sub-surface omits derived keys.** Meanings render over `name`,
+- **The meaning sub-surface omits its own outputs.** Meanings render over `name`,
   `label`, `variables` only; `categories`/`common_*` are outputs of that render
   and would be circular.
 - **Ask the model only for what code cannot derive.** Compute the rest in the
   pack's `filter.py`; prefer a natural form over an abstract label, and add no
   key an existing field already shows.
+- **Derived keys never reach the prompt.** A key the filter sets is declared
+  under `derived`, not `properties`/`collections`; declaring it both ways is a
+  load error (`test_key_both_derived_and_prompted_in_a_category_raises`,
+  `test_common_prompted_key_derived_in_a_category_raises`,
+  `test_derived_keys_are_not_rendered_into_the_prompt`,
+  `test_prompt_context_carries_no_derived_keys`).
 - **The German prompt has byte-for-byte goldens** in `tests/fixtures/`. A change
   to `packs/de/pack.toml` meanings or `packs/de/prompts/system.j2` changes them;
   update them deliberately (`test_unhinted_prompt_matches_golden_byte_for_byte`).
