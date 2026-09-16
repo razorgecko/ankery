@@ -72,6 +72,9 @@ mechanics are in [docs/](./docs/).
 - **The meaning sub-surface omits derived keys.** Meanings render over `name`,
   `label`, `variables` only; `categories`/`common_*` are outputs of that render
   and would be circular.
+- **Ask the model only for what code cannot derive.** Compute the rest in the
+  pack's `filter.py`; prefer a natural form over an abstract label, and add no
+  key an existing field already shows.
 - **The German prompt has byte-for-byte goldens** in `tests/fixtures/`. A change
   to `packs/de/pack.toml` meanings or `packs/de/prompts/system.j2` changes them;
   update them deliberately (`test_unhinted_prompt_matches_golden_byte_for_byte`).
