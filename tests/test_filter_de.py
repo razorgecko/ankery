@@ -40,3 +40,13 @@ def test_is_idempotent():
     once = normalize(_noun({"genitive_sg": "des Hauses"}))
     twice = normalize(once)
     assert twice.properties["genitive_sg"] == "Hauses"
+
+
+def test_article_stripping_applies_only_to_nouns():
+    verb = Entry(term="sehen", source="test", category="verb", properties={"perfect": "die Häuser"})
+    assert normalize(verb).properties["perfect"] == "die Häuser"
+
+
+def test_entry_without_category_is_unchanged():
+    entry = Entry(term="Haus", source="test", properties={"genitive_sg": "des Hauses"})
+    assert normalize(entry).properties["genitive_sg"] == "des Hauses"

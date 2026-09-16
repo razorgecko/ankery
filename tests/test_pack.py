@@ -86,7 +86,7 @@ def test_pack_supplied_prompt_template_is_loaded(tmp_path):
 
 def test_de_filter_hook_is_loaded_and_active():
     normalize = load_pack("de").normalize
-    entry = Entry(term="Haus", source="t", properties={"genitive_sg": "des Hauses"})
+    entry = Entry(term="Haus", source="t", category="noun", properties={"genitive_sg": "des Hauses"})
     assert normalize(entry).properties["genitive_sg"] == "Hauses"
 
 
