@@ -91,7 +91,7 @@ def test_render_copies_forms_verbatim_no_stripping():
 def test_verb_render_fills_present_forms_as_separate_fields():
     fields = _defs()["Ankery DE: Verb"].render(_verb())
 
-    assert fields["Infinitive"] == "sehen"
+    assert fields["Headword"] == "sehen"
     assert fields["Aux"] == "haben"
     assert fields["Preterite"] == "sah"
     assert fields["Perfect"] == "hat gesehen"
@@ -116,6 +116,38 @@ def test_verb_render_uses_empty_string_for_missing_present_forms():
     assert fields["Present3sg"] == "ist"
     assert fields["Present2sg"] == ""
     assert fields["Present3pl"] == ""
+
+
+def test_verb_definition_field_order():
+    assert _defs()["Ankery DE: Verb"].fields == [
+        "Headword", "Infinitive", "Translation", "Aux",
+        "Present1sg", "Present2sg", "Present3sg", "Present1pl", "Present2pl", "Present3pl",
+        "Preterite", "Perfect", "Example", "Preposition", "Case",
+    ]
+
+
+def test_verb_render_keeps_the_preposition_in_headword_only():
+    entry = Entry(
+        term="sich freuen auf", source="test", category="verb",
+        properties={"base": "sich freuen", "preposition": "auf", "preposition_case": "Akk"},
+    )
+    fields = _defs()["Ankery DE: Verb"].render(entry)
+
+    assert fields["Headword"] == "sich freuen auf"
+    assert fields["Infinitive"] == "sich freuen"
+    assert fields["Preposition"] == "auf"
+    assert fields["Case"] == "Akk"
+
+
+def test_verb_render_for_a_plain_verb():
+    entry = _verb()
+    entry.properties.update(base="sehen", preposition="", preposition_case="")
+    fields = _defs()["Ankery DE: Verb"].render(entry)
+
+    assert fields["Headword"] == "sehen"
+    assert fields["Infinitive"] == "sehen"
+    assert fields["Preposition"] == ""
+    assert fields["Case"] == ""
 
 
 def test_render_tolerates_absent_data_without_literal_none():

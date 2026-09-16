@@ -21,7 +21,48 @@ def _strip_articles(entry: Entry) -> Entry:
     return entry
 
 
-_BY_CATEGORY = {"noun": _strip_articles}
+# Preposition -> the case it fixes, or None for a two-way preposition, whose case
+# depends on the verb.
+_PREPOSITIONS = {
+    "mit": "Dat", "von": "Dat", "bei": "Dat", "zu": "Dat", "aus": "Dat", "nach": "Dat",
+    "für": "Akk", "um": "Akk", "durch": "Akk", "gegen": "Akk", "ohne": "Akk",
+    "an": None, "auf": None, "in": None, "über": None, "vor": None,
+    "hinter": None, "neben": None, "unter": None, "zwischen": None,
+}
+
+_CASES = {
+    "akk": "Akk", "akkusativ": "Akk", "acc": "Akk", "accusative": "Akk",
+    "dat": "Dat", "dativ": "Dat", "dative": "Dat",
+}
+
+
+def _split_preposition(entry: Entry) -> Entry:
+    """Set `preposition` and `base` from the term's last word, and `preposition_case`
+    from the preposition, or, for a two-way preposition, from the provider's value
+    mapped through _CASES.
+
+    Without a preposition the infinitive ends the term, and a separable particle is
+    joined to it (aufregen), so a final word in _PREPOSITIONS can only be a governed
+    preposition. All three keys are always written, so a provider value for
+    `preposition` or `base` never survives.
+    """
+    head, _, last = entry.term.rpartition(" ")
+    properties = dict(entry.properties)
+    if head and last in _PREPOSITIONS:
+        fixed = _PREPOSITIONS[last]
+        written = properties.get("preposition_case", "").strip().rstrip(".").lower()
+        properties.update(
+            preposition=last,
+            base=head.rstrip(),
+            preposition_case=fixed or _CASES.get(written, ""),
+        )
+    else:
+        properties.update(preposition="", base=entry.term, preposition_case="")
+    entry.properties = properties
+    return entry
+
+
+_BY_CATEGORY = {"noun": _strip_articles, "verb": _split_preposition}
 
 
 def normalize(entry: Entry) -> Entry:

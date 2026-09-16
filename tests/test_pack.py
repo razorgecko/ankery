@@ -39,6 +39,14 @@ def test_de_categories_declare_feature_keys():
     assert "ipa" in pack.common_properties  # common to every category
 
 
+def test_de_verb_preposition_keys_split_between_derived_and_prompted():
+    pack = load_pack("de")
+
+    assert set(pack.derived["verb"].properties) == {"base", "preposition"}
+    assert "preposition_case" in pack.categories["verb"].properties
+    assert "preposition" not in pack.categories["verb"].properties
+
+
 def test_de_declares_common_sections():
     # The list-valued lexical fields are pack-declared collections, common to every
     # category, mirroring properties.

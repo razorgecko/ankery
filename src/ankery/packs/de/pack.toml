@@ -68,12 +68,14 @@ nominative_pl = "nominative plural form (bare, no article)"
 genitive_sg = "genitive singular form (bare, no article)"
 
 [pos.verb]
-citation = "the infinitive"
+citation = "the infinitive, preceded by sich when the sense is reflexive and followed by the governed preposition when the sense has one: sich freuen auf, denken an, sich merken"
 guidance = [
     "Fill all six present-tense forms even when the verb is regular; per-person stem changes cannot be recovered from a single form.",
     "preterite is the 1st/3rd person singular form.",
     "perfect is the full compound form (auxiliary + past participle).",
     "For separable/prefixed verbs, give each form as it appears in a sentence.",
+    "For a reflexive sense, include the reflexive pronoun in every present form, the preterite, and the perfect: freue mich, freust dich, freute sich, hat sich gefreut. A separable reflexive verb keeps sentence order: rege mich auf.",
+    "If the given term ends in a preposition (sich freuen auf, denken an), that preposition selects the sense: describe only that sense in the translations and examples.",
 ]
 [pos.verb.properties]
 present_1sg = "1st person singular present (ich)"
@@ -86,6 +88,10 @@ preterite = "preterite, 1st/3rd person singular"
 perfect = "perfect tense: auxiliary + past participle"
 auxiliary = "perfect-tense auxiliary, haben or sein"
 separable = "\"true\" if the verb has a separable prefix, else \"false\""
+preposition_case = "the case the governed preposition takes in this sense, Akk or Dat; omit if the term has no preposition"
+[pos.verb.derived.properties]
+preposition = "the governed preposition: the last word of the term when it is a preposition, else empty"
+base = "the term without its governed preposition"
 
 [pos.adjective]
 citation = "the base (positive) form, uninflected (no declension ending)"
@@ -168,6 +174,7 @@ citation = "the full phrase in its canonical form: verbal idioms in the infiniti
 guidance = [
     "Classify as phrase only a multi-word expression: an idiom, a fixed expression, a proverb, or a strong collocation. A single word is never a phrase — give it its actual part of speech.",
     "Keep every word that belongs to the expression, including its articles; the bare-lemma/no-article rule applies to single words, not to phrases.",
+    "A verb with sich and/or a governed preposition (sich freuen auf, denken an, sich merken) is a verb, not a phrase.",
 ]
 [pos.phrase.properties]
 literal = "word-by-word literal gloss of the phrase, in the same language as the translations; give it only when the phrase is idiomatic (its literal reading differs from the actual meaning), omit it for transparent phrases"

@@ -59,6 +59,7 @@ Part of speech: phrase
   citation form: the full phrase in its canonical form: verbal idioms in the infinitive (jemandem die Daumen drücken), open slots as jemand/jemandem/jemanden or etwas
   - Classify as phrase only a multi-word expression: an idiom, a fixed expression, a proverb, or a strong collocation. A single word is never a phrase — give it its actual part of speech.
   - Keep every word that belongs to the expression, including its articles; the bare-lemma/no-article rule applies to single words, not to phrases.
+  - A verb with sich and/or a governed preposition (sich freuen auf, denken an, sich merken) is a verb, not a phrase.
   property keys:
     literal: word-by-word literal gloss of the phrase, in the same language as the translations; give it only when the phrase is idiomatic (its literal reading differs from the actual meaning), omit it for transparent phrases
 
@@ -74,11 +75,13 @@ Part of speech: pronoun
   - A possessive standing alone (meiner, deins) is a pronoun; the bare possessive lemma used before a noun (mein, dein, sein) is an article.
 
 Part of speech: verb
-  citation form: the infinitive
+  citation form: the infinitive, preceded by sich when the sense is reflexive and followed by the governed preposition when the sense has one: sich freuen auf, denken an, sich merken
   - Fill all six present-tense forms even when the verb is regular; per-person stem changes cannot be recovered from a single form.
   - preterite is the 1st/3rd person singular form.
   - perfect is the full compound form (auxiliary + past participle).
   - For separable/prefixed verbs, give each form as it appears in a sentence.
+  - For a reflexive sense, include the reflexive pronoun in every present form, the preterite, and the perfect: freue mich, freust dich, freute sich, hat sich gefreut. A separable reflexive verb keeps sentence order: rege mich auf.
+  - If the given term ends in a preposition (sich freuen auf, denken an), that preposition selects the sense: describe only that sense in the translations and examples.
   property keys:
     present_1sg: 1st person singular present (ich)
     present_2sg: 2nd person singular present (du)
@@ -90,3 +93,4 @@ Part of speech: verb
     perfect: perfect tense: auxiliary + past participle
     auxiliary: perfect-tense auxiliary, haben or sein
     separable: "true" if the verb has a separable prefix, else "false"
+    preposition_case: the case the governed preposition takes in this sense, Akk or Dat; omit if the term has no preposition

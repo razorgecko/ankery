@@ -4,8 +4,13 @@ applies_to = "verb"
 # The six present forms are separate fields; the "ich .. / du .." layout lives in
 # the card templates below, not in the map. Keys read from properties (declared in
 # ../pack.toml [pos.verb]).
+#
+# Headword keeps the governed preposition (sich freuen auf), so Anki's first-field
+# duplicate check treats each prepositional sense as its own note; Infinitive is
+# the term without it.
 [map]
-Infinitive  = "{{ term }}"
+Headword    = "{{ term }}"
+Infinitive  = "{{ properties.base }}"
 Translation = "{{ collections.translations | join(', ') }}"
 Aux         = "{{ properties.auxiliary }}"
 Present1sg  = "{{ properties.present_1sg }}"
@@ -17,18 +22,27 @@ Present3pl  = "{{ properties.present_3pl }}"
 Preterite   = "{{ properties.preterite }}"
 Perfect     = "{{ properties.perfect }}"
 Example     = "{{ collections.examples[0] }}{% if collections.example_translations %} — {{ collections.example_translations[0] }}{% endif %}"
+Preposition = "{{ properties.preposition }}"
+Case        = "{{ properties.preposition_case }}"
 
 [[cards]]
 name = "V1 Recognition"
-qfmt = "{{Infinitive}}"
-afmt = "{{FrontSide}}<hr id=answer>{{Translation}}<br><br>Präsens<br>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<br>Prät. {{Preterite}} &nbsp; Perf. {{Perfect}}<br><br>{{Example}}"
+qfmt = "{{Headword}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Translation}}{{#Preposition}}<br>{{Preposition}}{{#Case}} + {{Case}}{{/Case}}{{/Preposition}}<br><br>Präsens<br>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<br>Prät. {{Preterite}} &nbsp; Perf. {{Perfect}}<br><br>{{Example}}"
 
 [[cards]]
 name = "V2 Production"
 qfmt = "{{Translation}} (verb)"
-afmt = "{{FrontSide}}<hr id=answer>{{Infinitive}} ({{Aux}})"
+afmt = "{{FrontSide}}<hr id=answer>{{Headword}}{{#Case}} + {{Case}}{{/Case}} ({{Aux}})<br>ich {{Present1sg}}"
 
 [[cards]]
 name = "V3 Forms recall"
-qfmt = "{{Infinitive}} – {{Translation}}<br>conjugate: present (all six)"
+qfmt = "{{Headword}} – {{Translation}}<br>conjugate: present (all six)"
 afmt = "{{FrontSide}}<hr id=answer>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<hr>not graded: Prät. {{Preterite}} / Perf. {{Perfect}} ({{Aux}})"
+
+# The whole front sits inside the Preposition section, so Anki generates this
+# card only for notes with a preposition.
+[[cards]]
+name = "V4 Preposition"
+qfmt = "{{#Preposition}}{{Translation}}<br>{{Infinitive}} ___ + ?{{/Preposition}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Preposition}}{{#Case}} + {{Case}}{{/Case}}{{#Example}}<br>{{Example}}{{/Example}}"

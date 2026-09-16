@@ -85,6 +85,14 @@ def test_renders_common_properties_and_guidance():
     assert "Fill all six present-tense forms" in prompt
 
 
+def test_de_verb_derived_keys_stay_out_of_the_prompt():
+    prompt = _render_de("verb")
+
+    assert "preposition_case:" in prompt
+    assert "base:" not in prompt
+    assert "    preposition:" not in prompt
+
+
 def test_names_the_pack_language():
     assert "German" in _render_de()
 
