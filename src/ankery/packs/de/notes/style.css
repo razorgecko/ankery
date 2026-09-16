@@ -4,12 +4,10 @@
   line-height: 1.5;
   text-align: center;
   color: black;
-  background-color: white;
 }
 
 .nightMode.card {
   color: white;
-  background-color: black;
 }
 
 /* Gender classes are g-<Article field value>, set in noun_de.toml card templates. */
