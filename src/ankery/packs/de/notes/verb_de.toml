@@ -28,7 +28,7 @@ Case        = "{{ properties.preposition_case }}"
 [[cards]]
 name = "V1 Recognition"
 qfmt = "{{Headword}}"
-afmt = "{{FrontSide}}<hr id=answer>{{Translation}}{{#Preposition}}<br>{{Preposition}}{{#Case}} + {{Case}}{{/Case}}{{/Preposition}}<br><br>Präsens<br>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<br>Prät. {{Preterite}} &nbsp; Perf. {{Perfect}}<br><br>{{Example}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Translation}}{{#Preposition}}<br>{{Preposition}}{{#Case}} + {{Case}}{{/Case}}{{/Preposition}}<br><br>Präsens<br>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<br>Prät. {{Preterite}}<br>Perf. {{Perfect}}<br><br>{{Example}}"
 
 [[cards]]
 name = "V2 Production"
@@ -38,7 +38,7 @@ afmt = "{{FrontSide}}<hr id=answer>{{Headword}}{{#Case}} + {{Case}}{{/Case}} ({{
 [[cards]]
 name = "V3 Forms recall"
 qfmt = "{{Headword}} – {{Translation}}<br>conjugate: present (all six)"
-afmt = "{{FrontSide}}<hr id=answer>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<hr>not graded: Prät. {{Preterite}} / Perf. {{Perfect}} ({{Aux}})"
+afmt = "{{FrontSide}}<hr id=answer>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<hr>Prät. {{Preterite}}<br>Perf. {{Perfect}}"
 
 # The whole front sits inside the Preposition section, so Anki generates this
 # card only for notes with a preposition.
