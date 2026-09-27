@@ -75,8 +75,8 @@ same note type). For each matching note whose first field differs, it emits one
 is added regardless. A match with an identical first field is skipped, since
 Anki refuses that add. `preview` (dry run) does not query.
 
-The match is Anki's whole-field comparison, ignoring case: `Jungen` does not
-match a stored `Jungen/Jungs`.
+The match is Anki's comparison: case-insensitive, over the whole field, so
+`Jungen` does not match a stored `Jungen/Jungs`.
 
 ## 4. AnkiConnect (`sinks/ankiconnect.py`)
 

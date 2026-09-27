@@ -9,10 +9,6 @@ applies_to = "verb"
 # preposition, plus the perfect (ziehen, ist gezogen), so each prepositional sense
 # and each sense with its own perfect is its own note. No card shows it; the
 # fronts compose the term from Infinitive and Preposition.
-#
-# Adding a note whose Infinitive or Perfect another note in the deck already has,
-# under a different Headword, prints a warning: the same verb looked up with
-# other forms, or another sense of it.
 warn_if_shared = ["Infinitive", "Perfect"]
 
 [map]

@@ -30,7 +30,8 @@ def _noun_headword(entry: Entry) -> Entry:
     gender.
 
     A missing gender marks a noun with no singular, whose term is its plural, so
-    `nominative_pl` is set to the term.
+    `nominative_pl` is set to the term. The noun note's fronts spell that case
+    "die term (Pl.)" to match (notes/noun_de.toml).
     """
     properties = dict(entry.properties)
     gender = properties.get("gender", "").strip()

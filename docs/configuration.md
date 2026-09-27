@@ -67,6 +67,9 @@ Levels 0–2 are CLI formatting. The trace is `logging` under the `"ankery"`
 logger tree, scoped so httpx stays quiet. Flow events log at INFO, payloads
 (prompts, LLM response) at DEBUG.
 
+Warnings (`warnings.warn`) print to stderr as `ankery: warning: …` at every
+level.
+
 ## 4. `sync-note-types`
 
 `ankery sync-note-types` has its own parser (`build_sync_parser`).

@@ -78,8 +78,8 @@ netzverb scraper to pick the language of translations and glosses.
   `ankery.pack.de.netzverb`), since `__name__` of a path-loaded module is not in
   the `ankery` tree and would miss the `-vv` trace.
 - A failure in `normalize` is wrapped as a `ProviderError`.
-- `warnings.warn` reports a problem without failing the lookup; the CLI prints
-  it as `ankery: warning: …`.
+- `warnings.warn` reports a problem without failing the lookup
+  ([output format](./configuration.md#3-add-command-flags)).
 
 Loading a pack executes its author's code unsandboxed, with full network and
 filesystem access. This is documented for users in the README's "Adding a pack"
