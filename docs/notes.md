@@ -68,12 +68,14 @@ Anki's duplicate check compares only the first field, exactly. A note whose firs
 field differs but whose other fields match an existing note may be the same term
 with other forms or another sense of it; only the user can tell.
 
-`DeckBuilder.add_term`, before `add_note`, queries the sink for each
+`DeckBuilder.add_term`, after a successful `add_note`, queries the sink for each
 `warn_if_shared` field with a non-empty rendered value (`find_notes`: same deck,
 same note type). For each matching note whose first field differs, it emits one
-`warnings.warn` naming the note, its first field and the shared fields. The note
-is added regardless. A match with an identical first field is skipped, since
-Anki refuses that add. `preview` (dry run) does not query.
+`warnings.warn` naming the note, its first field and the shared fields. The
+warning never blocks the add. An add Anki rejects, as a duplicate or otherwise,
+raises before any query, so it is not warned about. A match with an identical
+first field is skipped: it is the note just added, or a duplicate left to Anki's
+check. `preview` (dry run) does not query.
 
 The match is Anki's comparison: case-insensitive, over the whole field, so
 `Jungen` does not match a stored `Jungen/Jungs`.

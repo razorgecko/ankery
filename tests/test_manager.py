@@ -6,6 +6,7 @@ from ankery.manager import DeckBuilder
 from ankery.models import Entry
 from ankery.notedef import NoteDefinition
 from ankery.providers.base import ProviderError
+from ankery.sinks.base import SinkError
 
 
 class FakeProvider:
@@ -457,6 +458,21 @@ def test_note_with_the_same_first_field_is_not_warned_about(recwarn):
 
     _noun_builder(sink).add_term("Junge")
 
+    assert len(recwarn) == 0
+
+
+def test_rejected_add_is_not_warned_about(recwarn):
+    class RejectingSink(FakeSink):
+        def add_note(self, **kwargs) -> int:
+            raise SinkError("cannot create note because it is a duplicate")
+
+    sink = RejectingSink()
+    sink.existing[("Word", "Junge")] = {7: {"Headword": "Junge (die), Jungen"}}
+
+    with pytest.raises(SinkError):
+        _noun_builder(sink).add_term("Junge")
+
+    assert sink.queries == []
     assert len(recwarn) == 0
 
 

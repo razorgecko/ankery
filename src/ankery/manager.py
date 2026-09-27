@@ -88,7 +88,6 @@ class DeckBuilder:
         if rendered is None:
             return None
         result, note_def = rendered
-        self._warn_shared(result, note_def)
         logger.info("adding %r to deck %r as %r", result.term, self.deck, result.note_type)
         note_id = self.sink.add_note(
             deck=self.deck,
@@ -96,6 +95,8 @@ class DeckBuilder:
             fields=result.fields,
             tags=self.tags,
         )
+        # After the add, so a note Anki rejects as a duplicate is not warned about.
+        self._warn_shared(result, note_def)
         return result._replace(note_id=note_id)
 
     def _render(
@@ -114,7 +115,8 @@ class DeckBuilder:
     def _warn_shared(self, result: AddResult, note_def: NoteDefinition) -> None:
         """Warn for each note in the deck that shares a `warn_if_shared` field
         value with `result` but has a different first field. A note with the same
-        first field is skipped: Anki refuses that add as a duplicate."""
+        first field is skipped: it is the note just added, or a duplicate left to
+        Anki's check."""
         key = note_def.fields[0]
         shared: dict[int, list[str]] = {}
         headwords: dict[int, str] = {}
