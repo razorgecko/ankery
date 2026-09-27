@@ -45,8 +45,9 @@ Part of speech: conjunction
 Part of speech: noun
   citation form: nominative singular; for a noun with no singular (Ferien), the nominative plural; the bare lemma with no article
   - If the gender varies without a change in meaning, give the standard gender only. For a noun whose gender follows the person it names (Angestellte, Deutsche), give der.
-  - If the plural varies without a change in meaning, give the standard plural. If only some senses have a plural (Glas), give it.
-  - If the noun's senses differ in gender or plural (der/die See, Mütter/Muttern), describe only the most common sense: its gender, plural, translations and examples. Never mix translations across such senses.
+  - If the plural varies without a change in meaning, give the standard plural. If only some senses have a plural (Glas), give that plural.
+  - If the noun's senses differ in gender or in the form of their plural (der/die See, Mütter/Muttern), describe only the most common sense; every key, translations and examples included, describes that sense alone.
+  - If the given term starts with an article (die See), that article selects the sense: describe only that sense.
   property keys:
     gender: the definite article der/die/das that marks grammatical gender; omit for a noun with no singular
     nominative_pl: nominative plural form (bare, no article)
@@ -63,7 +64,7 @@ Part of speech: phrase
   - Classify as phrase only a multi-word expression: an idiom, a fixed expression, a proverb, or a strong collocation. A single word is never a phrase — give it its actual part of speech.
   - Keep every word that belongs to the expression, including its articles; the bare-lemma/no-article rule applies to single words, not to phrases.
   - A verb with sich and/or a governed preposition (sich freuen auf, denken an, sich merken) is a verb, not a phrase, unless it has a fixed impersonal es subject.
-  - An expression with a fixed impersonal es subject (es gibt, es geht um, es handelt sich um) is a phrase; keep es in it.
+  - An expression with a fixed impersonal es subject (es gibt, es geht um, es handelt sich um) is a phrase; cite it with es and the 3rd person singular, not the infinitive.
   property keys:
     literal: word-by-word literal gloss of the phrase, in the same language as the translations; give it only when the phrase is idiomatic (its literal reading differs from the actual meaning), omit it for transparent phrases
 
@@ -86,7 +87,8 @@ Part of speech: verb
   - For separable/prefixed verbs, give each form as it appears in a sentence.
   - For a reflexive sense, include the reflexive pronoun in every present form, the preterite, and the perfect: freue mich, freust dich, freute sich, hat sich gefreut. A separable reflexive verb keeps sentence order: rege mich auf.
   - If the given term ends in a preposition (sich freuen auf, denken an), that preposition selects the sense: describe only that sense in the translations and examples.
-  - If the verb's senses differ in auxiliary or past forms (ziehen: ist/hat gezogen; bewegen: bewegte/bewog), describe only the most common sense: its forms, translations and examples. Never mix translations across such senses.
+  - If the verb's senses differ in auxiliary or past forms (ziehen: ist/hat gezogen; bewegen: bewegte/bewog), describe only the most common sense among those the term allows; every key, translations and examples included, describes that sense alone.
+  - If the auxiliary varies by region without a change in meaning (stehen, sitzen), give haben.
   property keys:
     present_1sg: 1st person singular present (ich)
     present_2sg: 2nd person singular present (du)
