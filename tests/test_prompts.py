@@ -93,6 +93,10 @@ def test_de_verb_derived_keys_stay_out_of_the_prompt():
     assert "    preposition:" not in prompt
 
 
+def test_de_headword_stays_out_of_the_prompt():
+    assert "headword" not in _render_de()
+
+
 def test_names_the_pack_language():
     assert "German" in _render_de()
 

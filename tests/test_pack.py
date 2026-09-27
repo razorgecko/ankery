@@ -39,10 +39,17 @@ def test_de_categories_declare_feature_keys():
     assert "ipa" in pack.common_properties  # common to every category
 
 
+def test_de_noun_headword_is_derived():
+    pack = load_pack("de")
+
+    assert set(pack.derived["noun"].properties) == {"headword"}
+    assert "headword" not in pack.categories["noun"].properties
+
+
 def test_de_verb_preposition_keys_split_between_derived_and_prompted():
     pack = load_pack("de")
 
-    assert set(pack.derived["verb"].properties) == {"base", "preposition"}
+    assert set(pack.derived["verb"].properties) == {"base", "preposition", "headword"}
     assert "preposition_case" in pack.categories["verb"].properties
     assert "preposition" not in pack.categories["verb"].properties
 

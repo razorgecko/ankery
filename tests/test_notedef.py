@@ -26,7 +26,10 @@ def _noun() -> Entry:
         source="test",
         category="noun",
         collections={"translations": ["house", "home"], "examples": ["Das Haus ist groß."]},
-        properties={"gender": "das", "nominative_pl": "Häuser", "genitive_sg": "Hauses"},
+        properties={
+            "gender": "das", "nominative_pl": "Häuser", "genitive_sg": "Hauses",
+            "headword": "Haus (das), Häuser",
+        },
     )
 
 
@@ -46,6 +49,7 @@ def _verb() -> Entry:
             "preterite": "sah",
             "perfect": "hat gesehen",
             "auxiliary": "haben",
+            "headword": "sehen, hat gesehen",
         },
     )
 
@@ -55,8 +59,10 @@ def test_bundled_definitions_load_with_names_and_field_order():
 
     noun = defs["Ankery DE: Noun"]
     assert noun.applies_to == "noun"
-    # Word leads: Anki keys duplicate detection on the first field.
-    assert noun.fields[0] == "Word"
+    # Headword leads: Anki keys duplicate detection on the first field.
+    assert noun.fields == [
+        "Headword", "Word", "Article", "Plural", "GenitiveSg", "Translation", "Example",
+    ]
     assert defs["Ankery DE: Verb"].applies_to == "verb"
 
 
@@ -64,6 +70,7 @@ def test_noun_render_fills_the_noun_model_fields():
     fields = _defs()["Ankery DE: Noun"].render(_noun())
 
     assert fields == {
+        "Headword": "Haus (das), Häuser",
         "Article": "das",
         "Word": "Haus",
         "Plural": "Häuser",
@@ -91,7 +98,7 @@ def test_render_copies_forms_verbatim_no_stripping():
 def test_verb_render_fills_present_forms_as_separate_fields():
     fields = _defs()["Ankery DE: Verb"].render(_verb())
 
-    assert fields["Headword"] == "sehen"
+    assert fields["Headword"] == "sehen, hat gesehen"
     assert fields["Aux"] == "haben"
     assert fields["Preterite"] == "sah"
     assert fields["Perfect"] == "hat gesehen"
@@ -126,14 +133,17 @@ def test_verb_definition_field_order():
     ]
 
 
-def test_verb_render_keeps_the_preposition_in_headword_only():
+def test_verb_render_reads_headword_and_split_preposition_from_properties():
     entry = Entry(
         term="sich freuen auf", source="test", category="verb",
-        properties={"base": "sich freuen", "preposition": "auf", "preposition_case": "Akk"},
+        properties={
+            "base": "sich freuen", "preposition": "auf", "preposition_case": "Akk",
+            "headword": "sich freuen auf, hat sich gefreut",
+        },
     )
     fields = _defs()["Ankery DE: Verb"].render(entry)
 
-    assert fields["Headword"] == "sich freuen auf"
+    assert fields["Headword"] == "sich freuen auf, hat sich gefreut"
     assert fields["Infinitive"] == "sich freuen"
     assert fields["Preposition"] == "auf"
     assert fields["Case"] == "Akk"
@@ -144,7 +154,7 @@ def test_verb_render_for_a_plain_verb():
     entry.properties.update(base="sehen", preposition="", preposition_case="")
     fields = _defs()["Ankery DE: Verb"].render(entry)
 
-    assert fields["Headword"] == "sehen"
+    assert fields["Headword"] == "sehen, hat gesehen"
     assert fields["Infinitive"] == "sehen"
     assert fields["Preposition"] == ""
     assert fields["Case"] == ""
@@ -157,6 +167,7 @@ def test_render_tolerates_absent_data_without_literal_none():
     fields = _defs()["Ankery DE: Noun"].render(bare)
 
     assert fields == {
+        "Headword": "",
         "Word": "Ding",
         "Article": "",
         "Plural": "",

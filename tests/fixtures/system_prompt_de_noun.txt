@@ -17,10 +17,13 @@ Collection keys (any part of speech):
   translations: the word's translations into English
 
 Part of speech: noun
-  citation form: nominative singular; the bare lemma with no article
+  citation form: nominative singular; for a noun with no singular (Ferien), the nominative plural; the bare lemma with no article
+  - If the gender varies without a change in meaning, give the standard gender only. For a noun whose gender follows the person it names (Angestellte, Deutsche), give der.
+  - If the plural varies without a change in meaning, give the standard plural. If only some senses have a plural (Glas), give it.
+  - If the noun's senses differ in gender or plural (der/die See, Mütter/Muttern), describe only the most common sense: its gender, plural, translations and examples. Never mix translations across such senses.
   property keys:
-    gender: the definite article der/die/das that marks grammatical gender
+    gender: the definite article der/die/das that marks grammatical gender; omit for a noun with no singular
     nominative_pl: nominative plural form (bare, no article)
-    genitive_sg: genitive singular form (bare, no article)
+    genitive_sg: genitive singular form (bare, no article); omit for a noun with no singular
 
 If the entry is NOT actually a noun, do not force a reading or relabel it — return an empty JSON object {} and nothing else.

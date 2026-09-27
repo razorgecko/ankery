@@ -265,7 +265,8 @@ add `compound.toml` (`applies_to = "compound"`) and skip a default.
 If a source returns values that need cleanup, the pack can ship a `filter.py`. It
 runs once on each looked-up entry, after the lookup and before routing, and returns
 the cleaned-up entry. The German pack's strips stray articles ("des Hauses" →
-"Hauses"). A pack with nothing to clean omits the file.
+"Hauses") and builds the first field of its noun and verb notes. A pack with
+nothing to clean omits the file.
 
 ```python
 # chem/filter.py — imports MUST be absolute; this file is loaded by path.
@@ -280,7 +281,10 @@ def normalize(entry: Entry) -> Entry:
 A filter may also compute new keys from the ones the lookup returned. Declare
 those under `derived` instead of `properties`/`collections`, so the model is not
 asked for them. A note reads a derived key like any other
-(`{{ properties.element_count }}`).
+(`{{ properties.element_count }}`). A derived key suits a note's first field
+when one term has senses that differ in grammar: the German pack's `headword`
+(`Mutter (die), Muttern`, `ziehen, ist gezogen`) makes each such sense a
+separate note, and its cards compose their fronts from the other fields.
 
 ```toml
 [kind.compound.derived.properties]

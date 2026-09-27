@@ -18,7 +18,7 @@ def _noun(properties: dict[str, str]) -> Entry:
 
 
 def test_strips_leading_definite_article_from_forms():
-    entry = normalize(_noun({"genitive_sg": "des Hauses", "nominative_pl": "die Häuser"}))
+    entry = normalize(_noun({"gender": "das", "genitive_sg": "des Hauses", "nominative_pl": "die Häuser"}))
     assert entry.properties["genitive_sg"] == "Hauses"
     assert entry.properties["nominative_pl"] == "Häuser"
 
@@ -52,6 +52,48 @@ def test_article_stripping_applies_only_to_nouns():
 def test_entry_without_category_is_unchanged():
     entry = Entry(term="Haus", source="test", properties={"genitive_sg": "des Hauses"})
     assert normalize(entry).properties["genitive_sg"] == "des Hauses"
+
+
+@pytest.mark.parametrize(
+    ("term", "properties", "headword"),
+    [
+        ("Mutter", {"gender": "die", "nominative_pl": "Muttern"}, "Mutter (die), Muttern"),
+        ("Milch", {"gender": "die"}, "Milch (die)"),
+        ("Mutter", {"gender": "die", "nominative_pl": "die Muttern"}, "Mutter (die), Muttern"),
+        ("die See", {"gender": "die", "nominative_pl": "Seen"}, "See (die), Seen"),
+    ],
+)
+def test_noun_headword_is_term_gender_and_bare_plural(term, properties, headword):
+    entry = normalize(Entry(term=term, source="test", category="noun", properties=properties))
+    assert entry.properties["headword"] == headword
+
+
+def test_noun_article_is_stripped_from_the_term():
+    entry = normalize(Entry(term="die See", source="test", category="noun", properties={"gender": "die"}))
+    assert entry.term == "See"
+
+
+@pytest.mark.parametrize("plural", [{}, {"nominative_pl": "Ferien"}, {"nominative_pl": "x"}])
+def test_noun_without_gender_is_plural_only(plural):
+    entry = normalize(Entry(term="Ferien", source="test", category="noun", properties=plural))
+    assert entry.properties["headword"] == "Ferien (Pl.)"
+    assert entry.properties["nominative_pl"] == "Ferien"
+
+
+def test_noun_headword_overwrites_the_models():
+    entry = normalize(_noun({"gender": "das", "nominative_pl": "Häuser", "headword": "das Haus"}))
+    assert entry.properties["headword"] == "Haus (das), Häuser"
+
+
+@pytest.mark.parametrize(
+    ("term", "properties"),
+    [("die See", {"gender": "die", "nominative_pl": "die Seen"}), ("Ferien", {})],
+)
+def test_noun_step_is_idempotent(term, properties):
+    once = normalize(Entry(term=term, source="test", category="noun", properties=properties))
+    twice = normalize(once.model_copy(deep=True))
+    assert twice.term == once.term
+    assert twice.properties == once.properties
 
 
 def _verb(term: str, **properties: str) -> Entry:
@@ -96,15 +138,29 @@ def test_verb_without_preposition_overwrites_model_supplied_keys():
     assert entry.properties["preposition_case"] == ""
 
 
+@pytest.mark.parametrize(
+    ("term", "properties", "headword"),
+    [
+        ("sich freuen auf", {"perfect": "hat sich gefreut"}, "sich freuen auf, hat sich gefreut"),
+        ("sehen", {"perfect": "hat gesehen"}, "sehen, hat gesehen"),
+        ("sehen", {}, "sehen"),
+        ("sehen", {"perfect": "hat gesehen", "headword": "sehen"}, "sehen, hat gesehen"),
+    ],
+)
+def test_verb_headword_is_term_and_perfect(term, properties, headword):
+    assert normalize(_verb(term, **properties)).properties["headword"] == headword
+
+
 def test_verb_step_is_idempotent():
     once = normalize(_verb("sich freuen auf", preposition_case="Akkusativ", perfect="hat sich gefreut"))
     twice = normalize(once.model_copy(deep=True))
     assert twice.properties == once.properties
 
 
-def test_verb_step_applies_only_to_verbs():
-    phrase = Entry(term="Lust haben auf", source="test", category="phrase")
-    assert "preposition" not in normalize(phrase).properties
-
-    noun = normalize(_noun({"genitive_sg": "des Hauses"}))
-    assert noun.properties.keys() == {"genitive_sg"}
+def test_phrase_passes_through_unchanged():
+    # The noun step would strip the leading article from the term, and the verb
+    # step would add its keys.
+    phrase = Entry(term="die Katze im Sack kaufen", source="test", category="phrase")
+    out = normalize(phrase.model_copy(deep=True))
+    assert out.term == "die Katze im Sack kaufen"
+    assert out.properties == {}

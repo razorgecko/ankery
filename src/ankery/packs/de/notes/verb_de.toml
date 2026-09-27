@@ -5,11 +5,12 @@ applies_to = "verb"
 # the card templates below, not in the map. Keys read from properties (declared in
 # ../pack.toml [pos.verb]).
 #
-# Headword keeps the governed preposition (sich freuen auf), so Anki's first-field
-# duplicate check treats each prepositional sense as its own note; Infinitive is
-# the term without it.
+# Headword is Anki's first-field duplicate key: the term with its governed
+# preposition, plus the perfect (ziehen, ist gezogen), so each prepositional sense
+# and each sense with its own perfect is its own note. No card shows it; the
+# fronts compose the term from Infinitive and Preposition.
 [map]
-Headword    = "{{ term }}"
+Headword    = "{{ properties.headword }}"
 Infinitive  = "{{ properties.base }}"
 Translation = "{{ collections.translations | join(', ') }}"
 Aux         = "{{ properties.auxiliary }}"
@@ -27,17 +28,17 @@ Case        = "{{ properties.preposition_case }}"
 
 [[cards]]
 name = "V1 Recognition"
-qfmt = "{{Headword}}"
+qfmt = "{{Infinitive}}{{#Preposition}} {{Preposition}}{{/Preposition}}{{#Perfect}}<br>{{Perfect}}{{/Perfect}}"
 afmt = "{{FrontSide}}<hr id=answer>{{Translation}}{{#Preposition}}<br>{{Preposition}}{{#Case}} + {{Case}}{{/Case}}{{/Preposition}}<br><br>Präsens<br>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<br>Prät. {{Preterite}}<br>Perf. {{Perfect}}<br><br>{{Example}}"
 
 [[cards]]
 name = "V2 Production"
 qfmt = "{{Translation}} (verb)"
-afmt = "{{FrontSide}}<hr id=answer>{{Headword}}{{#Case}} + {{Case}}{{/Case}} ({{Aux}})<br>ich {{Present1sg}}"
+afmt = "{{FrontSide}}<hr id=answer>{{Infinitive}}{{#Preposition}} {{Preposition}}{{/Preposition}}{{#Case}} + {{Case}}{{/Case}} ({{Aux}})<br>ich {{Present1sg}}"
 
 [[cards]]
 name = "V3 Forms recall"
-qfmt = "{{Headword}} – {{Translation}}<br>conjugate: present (all six)"
+qfmt = "{{Infinitive}}{{#Preposition}} {{Preposition}}{{/Preposition}} – {{Translation}}<br>conjugate: present (all six)"
 afmt = "{{FrontSide}}<hr id=answer>ich {{Present1sg}} / du {{Present2sg}} / er {{Present3sg}} / wir {{Present1pl}} / ihr {{Present2pl}} / sie {{Present3pl}}<hr>Prät. {{Preterite}}<br>Perf. {{Perfect}}"
 
 # The whole front sits inside the Preposition section, so Anki generates this

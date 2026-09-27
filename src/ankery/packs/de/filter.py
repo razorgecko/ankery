@@ -14,11 +14,37 @@ def _strip_leading_article(form: str) -> str:
 
 
 def _strip_articles(entry: Entry) -> Entry:
-    """Strip leading definite articles from property values ("des Hauses" -> "Hauses")."""
+    """Strip leading definite articles from the term and property values
+    ("des Hauses" -> "Hauses")."""
+    entry.term = _strip_leading_article(entry.term)
     entry.properties = {
         key: _strip_leading_article(value) for key, value in entry.properties.items()
     }
     return entry
+
+
+def _noun_headword(entry: Entry) -> Entry:
+    """Set `headword` to "term (gender), plural", or "term (Pl.)" when there is no
+    gender.
+
+    A missing gender marks a noun with no singular, whose term is its plural, so
+    `nominative_pl` is set to the term.
+    """
+    properties = dict(entry.properties)
+    gender = properties.get("gender", "").strip()
+    if gender:
+        plural = properties.get("nominative_pl", "").strip()
+        headword = f"{entry.term} ({gender})" + (f", {plural}" if plural else "")
+    else:
+        properties["nominative_pl"] = entry.term
+        headword = f"{entry.term} (Pl.)"
+    properties["headword"] = headword
+    entry.properties = properties
+    return entry
+
+
+def _normalize_noun(entry: Entry) -> Entry:
+    return _noun_headword(_strip_articles(entry))
 
 
 # Preposition -> the case it fixes, or None for a two-way preposition, whose case
@@ -62,7 +88,19 @@ def _split_preposition(entry: Entry) -> Entry:
     return entry
 
 
-_BY_CATEGORY = {"noun": _strip_articles, "verb": _split_preposition}
+def _verb_headword(entry: Entry) -> Entry:
+    """Set `headword` to "term, perfect", or the term alone when there is no perfect."""
+    perfect = entry.properties.get("perfect", "").strip()
+    headword = ", ".join(part for part in (entry.term, perfect) if part)
+    entry.properties = {**entry.properties, "headword": headword}
+    return entry
+
+
+def _normalize_verb(entry: Entry) -> Entry:
+    return _verb_headword(_split_preposition(entry))
+
+
+_BY_CATEGORY = {"noun": _normalize_noun, "verb": _normalize_verb}
 
 
 def normalize(entry: Entry) -> Entry:
