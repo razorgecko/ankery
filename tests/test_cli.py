@@ -48,7 +48,12 @@ class FakeBuilder:
 @pytest.fixture
 def patched(monkeypatch):
     """Patch build_deck_builder; return (captured, set_results)."""
-    captured: dict[str, object] = {}
+    captured: dict[str, object] = {"collection_syncs": 0}
+
+    def fake_sync_collection(config):
+        captured["collection_syncs"] += 1
+        if "sync_error" in captured:
+            raise captured["sync_error"]
 
     def factory(results):
         builder = FakeBuilder(results)
@@ -59,53 +64,12 @@ def patched(monkeypatch):
             return builder
 
         monkeypatch.setattr(cli, "build_deck_builder", fake_build)
+        monkeypatch.setattr(cli, "sync_collection", fake_sync_collection)
         # Keep config files and env out of the picture so defaults are predictable.
         monkeypatch.setattr(Config, "load", classmethod(lambda cls, *a, **k: cls()))
         return builder
 
     return captured, factory
-
-
-# ---------------------------------------------------------------------------
-# Category-hint parsing and resolution
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "raw, expected",
-    [
-        ("Buch", ("Buch", None)),
-        ("schnell:adj", ("schnell", "adj")),
-        ("  Haus : noun ", ("Haus", "noun")),
-        (":noun", ("", "noun")),
-        ("auf:", ("auf", "")),
-    ],
-)
-def test_split_category_hint(raw, expected):
-    assert cli.split_category_hint(raw) == expected
-
-
-def test_resolve_category_hint_exact_and_prefix():
-    names = ["adjective", "adverb", "noun", "preposition", "verb"]
-    assert cli.resolve_category_hint("noun", names) == "noun"  # exact
-    assert cli.resolve_category_hint("v", names) == "verb"  # unique prefix
-    assert cli.resolve_category_hint("adj", names) == "adjective"
-    assert cli.resolve_category_hint("PREP", names) == "preposition"  # case-insensitive
-
-
-def test_resolve_category_hint_rejects_unknown():
-    with pytest.raises(ValueError, match="unknown category"):
-        cli.resolve_category_hint("xyz", ["noun", "verb"])
-
-
-def test_resolve_category_hint_rejects_ambiguous_prefix():
-    with pytest.raises(ValueError, match="ambiguous"):
-        cli.resolve_category_hint("ad", ["adjective", "adverb"])
-
-
-def test_resolve_category_hint_rejects_empty():
-    with pytest.raises(ValueError, match="empty"):
-        cli.resolve_category_hint("", ["noun"])
 
 
 def test_colon_hint_is_resolved_and_passed_to_add_term(patched):
@@ -617,6 +581,90 @@ def test_quiet_dry_run_prints_nothing(patched, capsys):
 
     assert code == 0
     assert capsys.readouterr().out == ""  # explicit -q beats the implied -v
+
+
+def test_dry_run_rejects_sync(patched, capsys):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=None, term="Buch")})
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--dry-run", "--sync", "Buch"])
+
+    assert exc.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+    assert captured["collection_syncs"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Collection sync (--sync)
+# ---------------------------------------------------------------------------
+
+
+def test_sync_flag_syncs_once_after_all_terms(patched, capsys):
+    captured, set_results = patched
+    set_results(
+        {"a": AddResult(note_id=1, term="a"), "b": AddResult(note_id=2, term="b")}
+    )
+
+    code = cli.main(["--sync", "a", "b"])
+
+    assert code == 0
+    assert captured["collection_syncs"] == 1
+    assert capsys.readouterr().out.splitlines()[-1] == "sync requested"
+
+
+def test_sync_flag_still_syncs_after_a_failed_term(patched):
+    captured, set_results = patched
+    set_results({"a": AddResult(note_id=1, term="a"), "b": None})
+
+    code = cli.main(["--sync", "a", "b"])
+
+    assert code == 1  # the miss still marks the run as failed
+    assert captured["collection_syncs"] == 1
+
+
+def test_no_sync_without_the_flag(patched):
+    captured, set_results = patched
+    set_results({"a": AddResult(note_id=1, term="a")})
+
+    cli.main(["a"])
+
+    assert captured["collection_syncs"] == 0
+
+
+def test_no_sync_when_note_type_setup_fails(patched):
+    captured, set_results = patched
+    builder = set_results({"a": AddResult(note_id=1, term="a")})
+    builder.verify_error = SinkError("field mismatch")
+
+    code = cli.main(["--sync", "a"])
+
+    assert code == 1
+    assert captured["collection_syncs"] == 0
+
+
+def test_collection_sync_failure_exits_1(patched, capsys):
+    captured, set_results = patched
+    set_results({"a": AddResult(note_id=1, term="a")})
+    captured["sync_error"] = SinkError("AnkiConnect error: sync: auth not configured")
+
+    code = cli.main(["--sync", "a"])
+
+    assert code == 1
+    assert "sync failed: AnkiConnect error: sync: auth not configured" in (
+        capsys.readouterr().err
+    )
+
+
+def test_quiet_sync_prints_nothing(patched, capsys):
+    captured, set_results = patched
+    set_results({"a": AddResult(note_id=1, term="a")})
+
+    code = cli.main(["-q", "--sync", "a"])
+
+    assert code == 0
+    assert captured["collection_syncs"] == 1
+    assert capsys.readouterr().out == ""
 
 
 def test_missing_word_argument_is_an_argparse_error(capsys):

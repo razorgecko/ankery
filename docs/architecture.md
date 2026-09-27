@@ -99,7 +99,7 @@ else the pack's `providers`.
 
 ```
 models.py         Entry (the contract)
-config.py         Config, layered resolution, resolve_variables, wiring, sync_note_types, PROVIDER_REGISTRY
+config.py         Config, layered resolution, resolve_variables, wiring, sync_note_types, sync_collection, PROVIDER_REGISTRY
 pack.py           Pack + load_pack (resolve, parse categories/derived keys/variables, load filter/providers)
 prompts.py        render_system_prompt(pack, category_hint?, *, variables, template?), render_user_prompt
 languages.py      language_name/language_code: code<->English-name, exposed as Jinja filters

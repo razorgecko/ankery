@@ -54,6 +54,12 @@ Anki is needed. The `-v` preview prints as `would add` (an explicit `-q` still
 silences it). Lookup misses and failures keep their stderr and exit codes, so a
 quiet dry run works as a validation pass.
 
+**`--sync`** asks Anki to sync its collection with AnkiWeb once, after the term
+loop, whatever the terms' outcomes; it is skipped when note type provisioning
+fails. It prints `sync requested` (not at `-q`); a failure prints `sync failed:
+…` and exits 1. Argparse rejects it with `--dry-run`. Semantics:
+[notes.md](./notes.md#4-ankiconnect-sinksankiconnectpy).
+
 **Verbosity** (`-q` / default / `-v` / `-vv`; `-q` and `-v` mutually exclusive):
 
 | level | stdout | stderr |

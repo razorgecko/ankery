@@ -54,6 +54,7 @@ class Config:
 
     anki_url: str = "http://localhost:8765"
     anki_timeout: float = 10.0
+    anki_sync_timeout: float = 60.0
     allow_duplicate: bool = False
 
     # `note_type` is the catch-all model for terms that match no pack note
@@ -142,7 +143,7 @@ def _load_config_file(path: Path) -> dict:
     for key in ("tags", "providers"):
         if isinstance(raw.get(key), list):
             raw[key] = tuple(raw[key])
-    for key in ("llm_timeout", "anki_timeout"):
+    for key in ("llm_timeout", "anki_timeout", "anki_sync_timeout"):
         if key in raw:
             raw[key] = float(raw[key])
     for key in ("packs_dir", "notes_dir"):
@@ -270,6 +271,7 @@ def build_sink(config: Config) -> AnkiConnectSink:
     return AnkiConnectSink(
         base_url=config.anki_url,
         timeout=config.anki_timeout,
+        sync_timeout=config.anki_sync_timeout,
         allow_duplicate=config.allow_duplicate,
     )
 
@@ -278,6 +280,11 @@ def sync_note_types(config: Config) -> SyncResult:
     """Sync the selected pack's own note definitions, styled with its style.css."""
     pack = _load_pack(config)
     return build_sink(config).sync_note_types(pack.notes, default_css=pack.style_css)
+
+
+def sync_collection(config: Config) -> None:
+    """Ask the Anki at `anki_url` to sync its collection with AnkiWeb."""
+    build_sink(config).sync_collection()
 
 
 def build_deck_builder(config: Config) -> DeckBuilder:

@@ -44,10 +44,12 @@ class AnkiConnectSink:
         base_url: str = "http://localhost:8765",
         *,
         timeout: float = 10.0,
+        sync_timeout: float = 60.0,
         allow_duplicate: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.sync_timeout = sync_timeout
         self.allow_duplicate = allow_duplicate
 
     def add_note(
@@ -170,6 +172,10 @@ class AnkiConnectSink:
             {update.name: update.parts for update in updates if update.parts},
         )
 
+    def sync_collection(self) -> None:
+        """Ask Anki to sync its collection with AnkiWeb, waiting up to `sync_timeout`."""
+        self._invoke("sync", request_timeout=self.sync_timeout)
+
     def _split_existing(
         self, definitions: list[NoteDefinition], existing: set[str]
     ) -> tuple[list[NoteDefinition], list[NoteDefinition]]:
@@ -278,7 +284,9 @@ class AnkiConnectSink:
             ],
         )
 
-    def _invoke(self, action: str, **params: object) -> object:
+    def _invoke(
+        self, action: str, *, request_timeout: float | None = None, **params: object
+    ) -> object:
         # Wire-level line; name the model when the params carry one so repeated
         # actions (modelFieldNames per note type) are tellable apart.
         if "modelName" in params:
@@ -291,7 +299,11 @@ class AnkiConnectSink:
             "params": params,
         }
         try:
-            response = httpx.post(self.base_url, json=payload, timeout=self.timeout)
+            response = httpx.post(
+                self.base_url,
+                json=payload,
+                timeout=self.timeout if request_timeout is None else request_timeout,
+            )
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise SinkError(f"AnkiConnect request to {self.base_url} failed: {exc}") from exc

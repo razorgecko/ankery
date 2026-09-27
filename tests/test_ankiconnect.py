@@ -111,6 +111,36 @@ def test_inband_error_raises_sink_error(httpx_mock):
         _sink().add_note(deck="German", note_type="Basic", fields=_fields())
 
 
+def test_sync_collection_sends_the_sync_action_with_its_own_timeout(httpx_mock):
+    httpx_mock.add_response(url=URL, json={"result": None, "error": None})
+
+    AnkiConnectSink(base_url=URL, timeout=5.0, sync_timeout=75.0).sync_collection()
+
+    [request] = httpx_mock.get_requests()
+    assert json.loads(request.content) == {"action": "sync", "version": 6, "params": {}}
+    assert request.extensions["timeout"]["read"] == 75.0
+
+
+def test_sync_collection_raises_on_inband_error(httpx_mock):
+    httpx_mock.add_response(
+        url=URL, json={"result": None, "error": "sync: auth not configured"}
+    )
+
+    with pytest.raises(SinkError, match="auth not configured"):
+        _sink().sync_collection()
+
+
+def test_other_actions_keep_the_request_timeout(httpx_mock):
+    httpx_mock.add_response(url=URL, json={"result": 1, "error": None})
+
+    AnkiConnectSink(base_url=URL, timeout=5.0, sync_timeout=75.0).add_note(
+        deck="German", note_type="Basic", fields=_fields()
+    )
+
+    [request] = httpx_mock.get_requests()
+    assert request.extensions["timeout"]["read"] == 5.0
+
+
 def test_http_error_raises_sink_error(httpx_mock):
     httpx_mock.add_response(url=URL, status_code=500)
 

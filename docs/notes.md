@@ -123,3 +123,11 @@ the matches' field values.
   never written. `config.sync_note_types(config)` scopes it to the pack's own
   `pack.notes`; the engine catch-all and `notes_dir` layouts are never created or
   written by sync.
+
+**`sync_collection`** (`--sync`) sends AnkiConnect's `sync` action with its own
+timeout, `anki_sync_timeout`, since a collection sync outlasts ordinary requests.
+The reply's meaning depends on the AnkiConnect version: current releases run a
+normal collection sync before replying (no AnkiWeb login and a required full sync
+are in-band errors) and then start Anki's GUI sync without waiting for it; older
+releases only start the GUI sync. A success therefore means "requested", not
+"synced", and a timeout does not mean the sync failed.

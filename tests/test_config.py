@@ -11,6 +11,7 @@ from ankery.config import (
     build_deck_builder,
     build_sink,
     resolve_variables,
+    sync_collection,
     sync_note_types,
 )
 from ankery.pack import load_pack
@@ -132,6 +133,7 @@ def test_load_reads_file_values(tmp_path):
         'deck = "German::Vocab"\n'
         'llm_base_url = "http://llm.local/v1"\n'
         "llm_timeout = 12\n"
+        "anki_sync_timeout = 120\n"
         'tags = ["auto", "de"]\n',
     )
     config = Config.load(path=path, environ={})
@@ -139,6 +141,8 @@ def test_load_reads_file_values(tmp_path):
     assert config.deck == "German::Vocab"
     assert config.llm_base_url == "http://llm.local/v1"
     assert config.llm_timeout == 12.0  # int in TOML coerced to float
+    assert config.anki_sync_timeout == 120.0
+    assert isinstance(config.anki_sync_timeout, float)
     assert config.tags == ("auto", "de")  # list coerced to tuple
 
 
@@ -574,13 +578,30 @@ def test_build_silent_for_api_key_over_https():
 
 def test_build_sink_passes_anki_settings():
     sink = build_sink(
-        Config(anki_url="http://anki.local:8765", anki_timeout=3.0, allow_duplicate=True)
+        Config(
+            anki_url="http://anki.local:8765",
+            anki_timeout=3.0,
+            anki_sync_timeout=90.0,
+            allow_duplicate=True,
+        )
     )
 
     assert isinstance(sink, AnkiConnectSink)
     assert sink.base_url == "http://anki.local:8765"
     assert sink.timeout == 3.0
+    assert sink.sync_timeout == 90.0
     assert sink.allow_duplicate is True
+
+
+def test_sync_collection_uses_the_configured_endpoint_without_a_pack(httpx_mock):
+    httpx_mock.add_response(
+        url="http://anki.local:8765", json={"result": None, "error": None}
+    )
+
+    sync_collection(Config(anki_url="http://anki.local:8765", anki_sync_timeout=45.0))
+
+    [request] = httpx_mock.get_requests()
+    assert request.extensions["timeout"]["read"] == 45.0
 
 
 def test_sync_note_types_syncs_the_packs_notes_with_its_style(monkeypatch):

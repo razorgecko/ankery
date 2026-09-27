@@ -158,6 +158,7 @@ The LLM API key is the one setting that is **not** allowed here (see
 | `llm_request_json_format` | — | `true` | Ask the LLM for a JSON-formatted response. |
 | `anki_url` | `--anki-url` | `"http://localhost:8765"` | AnkiConnect endpoint. |
 | `anki_timeout` | — | `10.0` | AnkiConnect request timeout, in seconds. |
+| `anki_sync_timeout` | — | `60.0` | Timeout for the `--sync` request, in seconds. |
 | `notes_dir` | `--notes-dir` | — | Directory of custom card-layout definitions, merged over the built-in ones. |
 
 ### Authorization

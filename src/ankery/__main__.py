@@ -2,11 +2,17 @@ import argparse
 import logging
 import sys
 import warnings
-from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from ankery.config import Config, ConfigError, build_deck_builder, sync_note_types
+from ankery.config import (
+    Config,
+    ConfigError,
+    build_deck_builder,
+    sync_collection,
+    sync_note_types,
+)
+from ankery.hints import parse_term
 from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
 
@@ -91,6 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="look up and render notes without writing anything to Anki; prints "
         "the -v preview (unless -q) and skips note type provisioning, so no "
         "running Anki is needed",
+    )
+    writes.add_argument(
+        "--sync",
+        action="store_true",
+        help="after adding, ask Anki to sync its collection with AnkiWeb",
     )
     output = parser.add_mutually_exclusive_group()
     output.add_argument(
@@ -303,6 +314,14 @@ def _add_main(argv: list[str]) -> int:
                 exit_code = 1
             else:
                 _report_added(result, term, level, dry_run=args.dry_run)
+    if args.sync:
+        try:
+            sync_collection(config)
+        except SinkError as exc:
+            _error(f"sync failed: {exc}")
+            return 1
+        if level >= 1:
+            print("sync requested")
     return exit_code
 
 
