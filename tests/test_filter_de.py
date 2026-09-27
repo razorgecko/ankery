@@ -75,11 +75,19 @@ def test_noun_article_is_stripped_from_the_term():
     assert entry.term == "See"
 
 
-@pytest.mark.parametrize("plural", [{}, {"nominative_pl": "Ferien"}, {"nominative_pl": "x"}])
+@pytest.mark.parametrize(
+    "plural", [{}, {"nominative_pl": ""}, {"nominative_pl": "Ferien"}, {"nominative_pl": "die Ferien"}]
+)
 def test_noun_without_gender_is_plural_only(plural):
     entry = normalize(Entry(term="Ferien", source="test", category="noun", properties=plural))
     assert entry.properties["headword"] == "Ferien (Pl.)"
     assert entry.properties["nominative_pl"] == "Ferien"
+
+
+def test_noun_without_gender_whose_plural_differs_raises():
+    entry = Entry(term="Blog", source="test", category="noun", properties={"nominative_pl": "Blogs"})
+    with pytest.raises(ValueError, match="Blog: no gender, but plural 'Blogs' differs from the term"):
+        normalize(entry)
 
 
 def test_noun_headword_overwrites_the_models():

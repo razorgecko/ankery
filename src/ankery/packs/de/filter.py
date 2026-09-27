@@ -29,15 +29,22 @@ def _noun_headword(entry: Entry) -> Entry:
     """Set `headword` to "term (gender), plural", or "term (Pl.)" when there is no
     gender.
 
-    A missing gender marks a noun with no singular, whose term is its plural, so
-    `nominative_pl` is set to the term. The noun note's fronts spell that case
-    "die term (Pl.)" to match (notes/noun_de.toml).
+    A missing gender with an empty plural or one equal to the term marks a noun
+    with no singular, whose term is its plural, so `nominative_pl` is set to the
+    term. The noun note's fronts spell that case "die term (Pl.)" to match
+    (notes/noun_de.toml). A missing gender with any other plural is a noun whose
+    gender the lookup did not give, and raises: the fronts would show it as
+    plural-only.
     """
     properties = dict(entry.properties)
     gender = properties.get("gender", "").strip()
+    plural = properties.get("nominative_pl", "").strip()
     if gender:
-        plural = properties.get("nominative_pl", "").strip()
         headword = f"{entry.term} ({gender})" + (f", {plural}" if plural else "")
+    elif plural and plural != entry.term:
+        raise ValueError(
+            f"{entry.term}: no gender, but plural {plural!r} differs from the term"
+        )
     else:
         properties["nominative_pl"] = entry.term
         headword = f"{entry.term} (Pl.)"
