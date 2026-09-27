@@ -26,15 +26,11 @@ def _strip_articles(entry: Entry) -> Entry:
 
 
 def _noun_headword(entry: Entry) -> Entry:
-    """Set `headword` to "term (gender), plural", or "term (Pl.)" when there is no
-    gender.
+    """Set `headword` to "term (gender), plural", or "term (Pl.)" for a
+    plural-only noun (no gender, plural empty or equal to the term).
 
-    A missing gender with an empty plural or one equal to the term marks a noun
-    with no singular, whose term is its plural, so `nominative_pl` is set to the
-    term. The noun note's fronts spell that case "die term (Pl.)" to match
-    (notes/noun_de.toml). A missing gender with any other plural is a noun whose
-    gender the lookup did not give, and raises: the fronts would show it as
-    plural-only.
+    Raises when there is no gender but the plural differs: the fronts
+    (notes/noun_de.toml) would show it as plural-only.
     """
     properties = dict(entry.properties)
     gender = properties.get("gender", "").strip()
