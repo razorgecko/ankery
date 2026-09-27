@@ -11,41 +11,6 @@ from ankery.providers.base import ProviderError
 from ankery.sinks.base import SinkError
 
 
-def split_category_hint(raw: str) -> tuple[str, str | None]:
-    """Split a `term:cat` token into (term, raw_hint); no colon -> (term, None).
-
-    The category hint is everything after the last colon, e.g. `schnell:adj` or
-    `Bank:noun`. A colon is glob-safe, so terms need no shell quoting.
-    """
-    term, sep, hint = raw.rpartition(":")
-    if not sep:
-        return raw.strip(), None
-    return term.strip(), hint.strip()
-
-
-def resolve_category_hint(hint: str, category_names: Sequence[str]) -> str:
-    """Resolve a category hint to one canonical pack category by exact-then-prefix match.
-
-    Raises ValueError if the hint is empty, matches nothing, or is an ambiguous
-    prefix of more than one declared category.
-    """
-    if not hint:
-        raise ValueError("empty category hint after colon")
-    lowered = hint.lower()
-    exact = [name for name in category_names if name.lower() == lowered]
-    if exact:
-        return exact[0]
-    prefix = [name for name in category_names if name.lower().startswith(lowered)]
-    if len(prefix) == 1:
-        return prefix[0]
-    known = ", ".join(sorted(category_names))
-    if not prefix:
-        raise ValueError(f"unknown category {hint!r}; this pack knows: {known}")
-    raise ValueError(
-        f"ambiguous category {hint!r}; matches: {', '.join(sorted(prefix))}"
-    )
-
-
 SYNC_COMMAND = "sync-note-types"
 
 
@@ -119,7 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="add the note even if Anki considers it a duplicate",
     )
-    parser.add_argument(
+    writes = parser.add_mutually_exclusive_group()
+    writes.add_argument(
         "-n", "--dry-run",
         action="store_true",
         help="look up and render notes without writing anything to Anki; prints "
@@ -314,19 +280,12 @@ def _add_main(argv: list[str]) -> int:
 
     exit_code = 0
     for raw_term in args.terms:
-        term, raw_hint = split_category_hint(raw_term)
-        if not term:
-            _error("empty term, skipping")
+        try:
+            term, category_hint = parse_term(raw_term, builder.category_names)
+        except ValueError as exc:
+            _error(f"{raw_term!r}: {exc}")
             exit_code = 1
             continue
-        category_hint: str | None = None
-        if raw_hint is not None:
-            try:
-                category_hint = resolve_category_hint(raw_hint, builder.category_names)
-            except ValueError as exc:
-                _error(f"{raw_term}: {exc}")
-                exit_code = 1
-                continue
         try:
             if args.dry_run:
                 result = builder.preview(term, category_hint=category_hint)

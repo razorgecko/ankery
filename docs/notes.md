@@ -54,11 +54,12 @@ falls straight through to the catch-all.
 `category` comes from the winning provider (`llm` classifies into the pack's
 closed vocabulary; a scraper stamps the page type it parsed, see
 [architecture.md](./architecture.md#3-providers-providers)); the engine does not
-infer it. A `term:cat` CLI token overrides it. `split_category_hint` splits the
-token at the last colon; `resolve_category_hint` (both in `__main__.py`) matches
-the suffix against the pack's category names, case-insensitively, exact match
-first, then a unique prefix. An empty, unknown or ambiguous hint is an error for
-that term only; the remaining terms still run. The resolved name is passed to
+infer it. A `term:cat` token overrides it. `hints.parse_term` splits the token at
+the last colon (`split_category_hint`), rejects an empty term, and matches the
+suffix against the pack's category names (`resolve_category_hint`),
+case-insensitively, exact match first, then a unique prefix. An empty term or an
+empty, unknown or ambiguous hint raises `ValueError`; the CLI reports it for that
+term only and the remaining terms still run. The resolved name is passed to
 providers as `category_hint` and stamped by `DeckBuilder.lookup` as `category`
 before normalize.
 

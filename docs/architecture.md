@@ -66,8 +66,8 @@ A provider is built for one pack, so its language is fixed at construction.
 - `None` is a clean miss: try the next.
 - `ProviderError` is a hard failure: try the next, re-raise if the chain ends with
   no result.
-- `category_hint` is a canonical category value resolved at the CLI boundary from
-  a `term:cat` token ([notes.md](./notes.md#2-routing)). A provider may use it to
+- `category_hint` is a canonical category value resolved from a `term:cat` token
+  before the lookup ([notes.md](./notes.md#2-routing)). A provider may use it to
   disambiguate or ignore it.
 
 Name resolution: the pack's own `providers/` builders first, then the engine
@@ -105,7 +105,8 @@ prompts.py        render_system_prompt(pack, category_hint?, *, variables, templ
 languages.py      language_name/language_code: code<->English-name, exposed as Jinja filters
 notedef.py        NoteDefinition, load/merge from dir
 manager.py        DeckBuilder: chain -> normalize -> route by category -> sink
-__main__.py       CLI parsers, term:cat splitting, output verbosity
+hints.py          parse_term: term:cat token -> (term, canonical category)
+__main__.py       CLI parsers, output verbosity
 defaults/         engine-shipped neutral assets: catch-all note, prompt templates, fallback style.css
 providers/base    Provider Protocol + ProviderError
 providers/llm     LLMProvider (OpenAI-compatible endpoint)

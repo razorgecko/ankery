@@ -68,6 +68,7 @@ ankery --deck MyDeck <term>      # choose the destination deck
 ankery --pack <code> <term>      # load a pack by code (e.g. the bundled `de`)
 ankery --var KEY=VALUE <term>    # set a pack variable
 ankery -n <term>                 # dry run: show the card, write nothing
+ankery --sync <term>             # then ask Anki to sync with AnkiWeb
 ankery -q <term>                 # quiet: no output, errors still on stderr
 ankery -v <term>                 # also print each note's saved content
 ankery -vv <term>                # additionally trace the lookup on stderr

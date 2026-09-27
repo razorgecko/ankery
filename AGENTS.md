@@ -125,7 +125,7 @@ uv run python -m ankery <term>
 | `models.py`, `manager.py`, `providers/`, module layout | [docs/architecture.md](./docs/architecture.md) |
 | `pack.py`, anything under `packs/` | [docs/packs.md](./docs/packs.md) |
 | `prompts.py`, `defaults/prompts/`, a pack's `prompts/` | [docs/prompts.md](./docs/prompts.md) |
-| `notedef.py`, routing, `sinks/`, `defaults/notes/` | [docs/notes.md](./docs/notes.md) |
+| `notedef.py`, `hints.py`, routing, `sinks/`, `defaults/notes/` | [docs/notes.md](./docs/notes.md) |
 | `config.py`, `__main__.py`, uv/packaging | [docs/configuration.md](./docs/configuration.md) |
 | the pack authoring guide | [docs/authoring-packs.md](./docs/authoring-packs.md) |
 
