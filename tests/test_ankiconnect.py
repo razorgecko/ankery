@@ -384,3 +384,46 @@ def test_sync_rejects_mismatch_before_writing_anything(httpx_mock, responses, ma
     assert not any(
         a.startswith(("update", "create")) for a in _actions(httpx_mock)
     )
+
+
+def test_find_notes_queries_one_deck_model_and_field(httpx_mock):
+    _respond(httpx_mock, [7])  # findNotes
+    _respond(httpx_mock, [
+        {"noteId": 7, "fields": {"Word": {"value": "Junge", "order": 0}}},
+    ])  # notesInfo
+
+    notes = _sink().find_notes(
+        deck="Deutsch", note_type="Ankery DE: Noun", field="Plural", value="Jungen/Jungs"
+    )
+
+    assert notes == {7: {"Word": "Junge"}}
+    query = json.loads(httpx_mock.get_requests()[0].content)["params"]["query"]
+    assert query == (
+        '"deck:Deutsch" -"deck:Deutsch::*" "note:Ankery DE: Noun" "Plural:Jungen/Jungs"'
+    )
+
+
+def test_find_notes_escapes_anki_search_syntax(httpx_mock):
+    _respond(httpx_mock, [])
+
+    _sink().find_notes(deck="my_deck", note_type="N", field="F", value='a*b "c" \\d')
+
+    query = json.loads(httpx_mock.get_requests()[0].content)["params"]["query"]
+    assert query == (
+        '"deck:my\\_deck" -"deck:my\\_deck::*" "note:N" "F:a\\*b \\"c\\" \\\\d"'
+    )
+
+
+def test_find_notes_without_matches_skips_notes_info(httpx_mock):
+    _respond(httpx_mock, [])
+
+    assert _sink().find_notes(deck="D", note_type="N", field="F", value="v") == {}
+    assert _actions(httpx_mock) == ["findNotes"]
+
+
+def test_find_notes_rejects_malformed_notes_info(httpx_mock):
+    _respond(httpx_mock, [7])
+    _respond(httpx_mock, [{"noteId": 7}])
+
+    with pytest.raises(SinkError, match="notesInfo"):
+        _sink().find_notes(deck="D", note_type="N", field="F", value="v")

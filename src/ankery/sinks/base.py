@@ -29,6 +29,13 @@ class AnkiSink(Protocol):
         """Create a note and return its Anki note id."""
         ...
 
+    def find_notes(
+        self, *, deck: str, note_type: str, field: str, value: str
+    ) -> dict[int, dict[str, str]]:
+        """Return the notes of `note_type` in `deck` whose `field` equals `value`,
+        as note id -> field values."""
+        ...
+
     def verify_note_types(
         self,
         definitions: Iterable[NoteDefinition],

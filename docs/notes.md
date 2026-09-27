@@ -17,6 +17,9 @@ File shape: see `packs/de/notes/noun_de.toml`.
 - Key order in `[map]` is the Anki field order.
 - Card `qfmt`/`afmt` are Anki's own mustache and are not run through Jinja.
 - Omit `css` to fall back to the pack's `style.css`.
+- `warn_if_shared` (optional) lists fields besides the first to check on add
+  ([§3](#3-shared-field-warnings)). Each must be a `[map]` field, and the first
+  field may not be listed (`NoteDefinitionError`).
 
 `load_notes_from_dir` loads `*.toml` ordered by file stem. Within one directory
 each category is served by at most one definition; two files with the same
@@ -59,7 +62,23 @@ that term only; the remaining terms still run. The resolved name is passed to
 providers as `category_hint` and stamped by `DeckBuilder.lookup` as `category`
 before normalize.
 
-## 3. AnkiConnect (`sinks/ankiconnect.py`)
+## 3. Shared-field warnings
+
+Anki's duplicate check compares only the first field, exactly. A note whose first
+field differs but whose other fields match an existing note may be the same term
+with other forms or another sense of it; only the user can tell.
+
+`DeckBuilder.add_term`, before `add_note`, queries the sink for each
+`warn_if_shared` field with a non-empty rendered value (`find_notes`: same deck,
+same note type). For each matching note whose first field differs, it emits one
+`warnings.warn` naming the note, its first field and the shared fields. The note
+is added regardless. A match with an identical first field is skipped, since
+Anki refuses that add. `preview` (dry run) does not query.
+
+The match is Anki's whole-field comparison, ignoring case: `Jungen` does not
+match a stored `Jungen/Jungs`.
+
+## 4. AnkiConnect (`sinks/ankiconnect.py`)
 
 JSON-RPC to a running Anki via the AnkiConnect add-on (`http://localhost:8765`).
 Responses are always HTTP 200; failures are in the body's `error` field.
@@ -67,6 +86,11 @@ Responses are always HTTP 200; failures are in the body's `error` field.
 **`add_note`** sets `duplicateScope = "deck"`: the same entry can live in another
 deck, but a repeat within one deck is blocked unless `allow_duplicate`. Without
 it AnkiConnect checks the whole collection for the note type.
+
+**`find_notes`** is read-only: `findNotes` with the deck (subdecks excluded,
+matching `checkChildren: False`), the note type and `field:value`, all escaped for
+Anki search syntax (`\`, `"`, and the wildcards `*`, `_`), then `notesInfo` for
+the matches' field values.
 
 **`verify_note_types`** runs before adding, create-only and safe to re-run:
 

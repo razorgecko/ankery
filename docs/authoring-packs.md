@@ -245,6 +245,12 @@ Field order is contractual: Anki keys both duplicate detection and its empty-not
 guard on the first field, and ankery refuses to mutate the field set of an existing
 model. Enriching a card later means editing the Jinja, never adding a field.
 
+Because Anki compares only the first field, a note can list other fields in
+`warn_if_shared` (a bare key, above `[map]`). Adding a note whose value in one of
+them another note in the deck already has, under a different first field, prints
+a warning and adds the note anyway. The German noun note lists `Word` and
+`Plural`, so a noun looked up again with other forms is flagged.
+
 ### The catch-all fallback
 
 A note is not required per category. Routing falls back, in order, to:
@@ -292,6 +298,10 @@ element_count = "number of distinct elements in formula, counted by filter.py"
 ```
 
 A key cannot be declared both ways; loading the pack fails if it is.
+
+A filter reports a doubtful value with `warnings.warn`; the entry still goes
+through. The German filter warns when a form in the headword lists alternatives
+(`Jungen/Jungs`).
 
 ## Step 8 — `providers/` and `prompts/` (optional)
 

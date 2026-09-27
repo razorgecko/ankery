@@ -3,6 +3,8 @@
 Imports must be absolute — this file is loaded by path.
 """
 
+import warnings
+
 from ankery.models import Entry
 
 _ARTICLES = {"der", "die", "das", "des", "dem", "den"}
@@ -43,8 +45,28 @@ def _noun_headword(entry: Entry) -> Entry:
     return entry
 
 
+# Marks of alternative forms in one value: "Jungen/Jungs", "Arbeit(s)zeiten".
+_VARIANT_MARKS = ("/", "(")
+
+
+def _warn_variants(entry: Entry, key: str) -> Entry:
+    """Warn when the term or the `key` property lists alternative forms; both go
+    into `headword` as they are."""
+    values = {"term": entry.term, key: entry.properties.get(key, "")}
+    # A plural-only noun's plural is its term; report that value once.
+    if values[key] == entry.term:
+        del values[key]
+    for name, value in values.items():
+        if any(mark in value for mark in _VARIANT_MARKS):
+            warnings.warn(
+                f"{entry.term}: {name} {value!r} lists alternative forms; "
+                "the headword keeps them all"
+            )
+    return entry
+
+
 def _normalize_noun(entry: Entry) -> Entry:
-    return _noun_headword(_strip_articles(entry))
+    return _warn_variants(_noun_headword(_strip_articles(entry)), "nominative_pl")
 
 
 # Preposition -> the case it fixes, or None for a two-way preposition, whose case
@@ -97,7 +119,7 @@ def _verb_headword(entry: Entry) -> Entry:
 
 
 def _normalize_verb(entry: Entry) -> Entry:
-    return _verb_headword(_split_preposition(entry))
+    return _warn_variants(_verb_headword(_split_preposition(entry)), "perfect")
 
 
 _BY_CATEGORY = {"noun": _normalize_noun, "verb": _normalize_verb}

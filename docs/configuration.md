@@ -48,10 +48,11 @@ language code), `--var KEY=VALUE` (repeatable), `--deck`, `--note-type`,
 
 **`-n`/`--dry-run`** looks up, routes and renders without writing.
 `DeckBuilder.preview` is `add_term` minus the sink (`note_id` is None);
-note-type provisioning is skipped, so no running Anki is needed. The `-v`
-preview prints as `would add` (an explicit `-q` still silences it). Lookup
-misses and failures keep their stderr and exit codes, so a quiet dry run works
-as a validation pass.
+note-type provisioning and the shared-field query
+([notes.md](./notes.md#3-shared-field-warnings)) are skipped, so no running
+Anki is needed. The `-v` preview prints as `would add` (an explicit `-q` still
+silences it). Lookup misses and failures keep their stderr and exit codes, so a
+quiet dry run works as a validation pass.
 
 **Verbosity** (`-q` / default / `-v` / `-vv`; `-q` and `-v` mutually exclusive):
 
@@ -80,7 +81,7 @@ logger tree, scoped so httpx stays quiet. Flow events log at INFO, payloads
   `created note type: <name>` and `updated note type: <name> (<parts written>)`,
   and adds no notes.
 
-Sync semantics: [notes.md](./notes.md#3-ankiconnect-sinksankiconnectpy).
+Sync semantics: [notes.md](./notes.md#4-ankiconnect-sinksankiconnectpy).
 
 ## 5. Tooling
 

@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 ANKICONNECT_VERSION = 6
 
 
+def _search_text(text: str) -> str:
+    """Escape `text` for a quoted Anki search term: `*` and `_` are wildcards."""
+    for char in ("\\", '"', "*", "_"):
+        text = text.replace(char, "\\" + char)
+    return text
+
+
 @dataclass(frozen=True)
 class _ModelUpdate:
     """Writes one existing model needs; a None part is already in sync."""
@@ -73,6 +80,34 @@ class AnkiConnectSink:
         if not isinstance(result, int):
             raise SinkError(f"addNote returned an unexpected result: {result!r}")
         return result
+
+    def find_notes(
+        self, *, deck: str, note_type: str, field: str, value: str
+    ) -> dict[int, dict[str, str]]:
+        """Return the notes of `note_type` in `deck` whose `field` equals `value`,
+        as note id -> field values.
+
+        Anki compares the whole field, ignoring case. Subdecks are excluded, as in
+        `add_note`'s duplicate scope.
+        """
+        deck = _search_text(deck)
+        query = (
+            f'"deck:{deck}" -"deck:{deck}::*" "note:{_search_text(note_type)}" '
+            f'"{_search_text(field)}:{_search_text(value)}"'
+        )
+        ids = self._invoke("findNotes", query=query)
+        if not isinstance(ids, list):
+            raise SinkError(f"findNotes returned an unexpected result: {ids!r}")
+        if not ids:
+            return {}
+        notes = self._invoke("notesInfo", notes=ids)
+        try:
+            return {
+                note["noteId"]: {name: f["value"] for name, f in note["fields"].items()}
+                for note in notes
+            }
+        except (KeyError, TypeError, AttributeError) as exc:
+            raise SinkError(f"notesInfo returned an unexpected result: {notes!r}") from exc
 
     def verify_note_types(
         self,

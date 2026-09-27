@@ -5,6 +5,8 @@ imports from packs/<code>/filter.py and the manager applies to every provider's
 output. These tests exercise the real hook the loader returns.
 """
 
+import re
+
 import pytest
 
 from ankery.models import Entry
@@ -164,3 +166,38 @@ def test_phrase_passes_through_unchanged():
     out = normalize(phrase.model_copy(deep=True))
     assert out.term == "die Katze im Sack kaufen"
     assert out.properties == {}
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        (
+            _noun({"gender": "der", "nominative_pl": "Jungen/Jungs"}),
+            "Haus: nominative_pl 'Jungen/Jungs' lists alternative forms",
+        ),
+        (
+            Entry(term="Arbeit(s)zeit", source="test", category="noun", properties={"gender": "die"}),
+            "Arbeit(s)zeit: term 'Arbeit(s)zeit' lists alternative forms",
+        ),
+        (
+            _verb("backen", perfect="hat gebacken/gebackt"),
+            "backen: perfect 'hat gebacken/gebackt' lists alternative forms",
+        ),
+    ],
+)
+def test_alternative_forms_in_a_headword_input_warn(entry, message):
+    with pytest.warns(UserWarning, match=re.escape(message)):
+        normalized = normalize(entry)
+    assert normalized.properties["headword"]  # the entry still goes through
+
+
+def test_plural_only_noun_with_variants_warns_once(recwarn):
+    normalize(Entry(term="Eltern/Altern", source="test", category="noun"))
+    assert len(recwarn) == 1
+
+
+def test_variants_outside_the_headword_do_not_warn(recwarn):
+    # A genitive like "Land(e)s" is common and never part of the headword.
+    normalize(_noun({"gender": "das", "nominative_pl": "Häuser", "genitive_sg": "Haus(e)s"}))
+    normalize(_verb("backen", perfect="hat gebacken", preterite="backte/buk"))
+    assert len(recwarn) == 0

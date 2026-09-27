@@ -33,12 +33,21 @@ class FakeSink:
         self.calls: list[dict] = []
         self.verified: dict | None = None
         self.created_result: list[str] = []
+        # (field, value) -> the notes find_notes returns for it.
+        self.existing: dict[tuple[str, str], dict[int, dict[str, str]]] = {}
+        self.queries: list[dict] = []
 
     def add_note(self, *, deck, note_type, fields, tags=None) -> int:
         self.calls.append(
             {"deck": deck, "note_type": note_type, "fields": fields, "tags": tags}
         )
         return 42
+
+    def find_notes(self, *, deck, note_type, field, value) -> dict[int, dict[str, str]]:
+        self.queries.append(
+            {"deck": deck, "note_type": note_type, "field": field, "value": value}
+        )
+        return self.existing.get((field, value), {})
 
     def verify_note_types(self, definitions, *, default_css="", catch_all=None) -> list[str]:
         self.verified = {
@@ -390,3 +399,78 @@ def test_unmatched_term_with_no_notes_routes_through_the_catch_all_terminus():
 
     assert sink.calls[0]["note_type"] == "Basic"
     assert sink.calls[0]["fields"]["Front"] == "Buch"
+
+
+def _noun_def(**overrides) -> NoteDefinition:
+    return NoteDefinition(
+        name="Ankery DE: Noun",
+        field_map={
+            "Headword": "{{ properties.headword }}",
+            "Word": "{{ term }}",
+            "Plural": "{{ properties.plural }}",
+        },
+        applies_to="noun",
+        warn_if_shared=("Word", "Plural"),
+        **overrides,
+    )
+
+
+def _noun_builder(sink, plural: str = "Jungen") -> DeckBuilder:
+    entry = Entry(
+        term="Junge", source="t", category="noun",
+        properties={"headword": f"Junge (der), {plural}", "plural": plural},
+    )
+    return _builder([FakeProvider("p", result=entry)], sink, note_definitions=[_noun_def()])
+
+
+def test_shared_field_warns_and_still_adds():
+    sink = FakeSink()
+    sink.existing[("Word", "Junge")] = {7: {"Headword": "Junge (der), Jungen/Jungs"}}
+
+    with pytest.warns(UserWarning, match=r"note 7 \(Junge \(der\), Jungen/Jungs\) has the same Word 'Junge'"):
+        result = _noun_builder(sink).add_term("Junge")
+
+    assert result.note_id == 42
+    assert len(sink.calls) == 1
+    assert sink.queries[0] == {
+        "deck": "German", "note_type": "Ankery DE: Noun", "field": "Word", "value": "Junge",
+    }
+
+
+def test_note_sharing_several_fields_warns_once_naming_each(recwarn):
+    sink = FakeSink()
+    other = {7: {"Headword": "Junge (die), Jungen"}}
+    sink.existing[("Word", "Junge")] = other
+    sink.existing[("Plural", "Jungen")] = other
+
+    _noun_builder(sink).add_term("Junge")
+
+    assert [str(w.message) for w in recwarn] == [
+        "Junge: note 7 (Junge (die), Jungen) has the same Word 'Junge', Plural 'Jungen'"
+    ]
+
+
+def test_note_with_the_same_first_field_is_not_warned_about(recwarn):
+    # Anki refuses that add as a duplicate; a warning would only repeat it.
+    sink = FakeSink()
+    sink.existing[("Word", "Junge")] = {7: {"Headword": "Junge (der), Jungen"}}
+
+    _noun_builder(sink).add_term("Junge")
+
+    assert len(recwarn) == 0
+
+
+def test_empty_shared_field_is_not_queried():
+    sink = FakeSink()
+
+    _noun_builder(sink, plural="").add_term("Junge")
+
+    assert [q["field"] for q in sink.queries] == ["Word"]
+
+
+def test_preview_does_not_query_shared_fields():
+    sink = FakeSink()
+
+    _noun_builder(sink).preview("Junge")
+
+    assert sink.queries == []

@@ -51,12 +51,25 @@ class NoteDefinition:
     applies_to: str | None = None
     cards: tuple[Card, ...] = ()
     css: str = ""
+    # Fields whose value, when another note in the deck already holds it, raises
+    # a warning on add.
+    warn_if_shared: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         # Stored in the form `applies` compares entry categories in, so routing,
         # the duplicate check and the merge all key on one spelling.
         if self.applies_to is not None:
             object.__setattr__(self, "applies_to", self.applies_to.strip().lower())
+        for field in self.warn_if_shared:
+            if field not in self.field_map:
+                raise NoteDefinitionError(
+                    f"note {self.name!r}: warn_if_shared names {field!r}, which is not a field"
+                )
+            if field == self.fields[0]:
+                raise NoteDefinitionError(
+                    f"note {self.name!r}: warn_if_shared names the first field {field!r}, "
+                    "which Anki's duplicate check already covers"
+                )
 
     @property
     def fields(self) -> list[str]:
@@ -89,7 +102,7 @@ def load_notes_from_dir(directory: Path) -> list[NoteDefinition]:
     for path in sorted(directory.glob("*.toml")):
         try:
             by_path.append((path, _parse(tomllib.loads(path.read_text("utf-8")))))
-        except (tomllib.TOMLDecodeError, KeyError, OSError) as exc:
+        except (tomllib.TOMLDecodeError, KeyError, OSError, NoteDefinitionError) as exc:
             raise NoteDefinitionError(f"{path}: {exc}") from exc
     _reject_duplicate_category(by_path)
     return [definition for _, definition in by_path]
@@ -141,4 +154,5 @@ def _parse(raw: dict) -> NoteDefinition:
         applies_to=raw.get("applies_to"),
         cards=cards,
         css=raw.get("css", ""),
+        warn_if_shared=tuple(raw.get("warn_if_shared", ())),
     )

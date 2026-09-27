@@ -102,8 +102,13 @@ mechanics are in [docs/](./docs/).
   per key: the operator's values come from one source
   (`test_var_flag_replaces_config_variables`).
 - **Sync loads no auth.** `with_auth=False`; nothing in sync needs the key.
-- **Dry run touches no Anki**, provisioning included
-  (`test_dry_run_previews_without_touching_anki`).
+- **Dry run touches no Anki**, provisioning and the shared-field query included
+  (`test_dry_run_previews_without_touching_anki`,
+  `test_preview_does_not_query_shared_fields`).
+- **`warn_if_shared` only warns.** The note is added regardless, and a match with
+  the same first field is left to Anki's duplicate check
+  (`test_shared_field_warns_and_still_adds`,
+  `test_note_with_the_same_first_field_is_not_warned_about`).
 
 ## Commands
 

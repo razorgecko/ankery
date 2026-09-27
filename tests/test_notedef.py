@@ -249,6 +249,31 @@ def _write_note(directory: Path, stem: str, name: str, applies_to: str | None):
     )
 
 
+def test_bundled_nouns_and_verbs_warn_on_shared_forms():
+    defs = _defs()
+    assert defs["Ankery DE: Noun"].warn_if_shared == ("Word", "Plural")
+    assert defs["Ankery DE: Verb"].warn_if_shared == ("Infinitive", "Perfect")
+
+
+@pytest.mark.parametrize(
+    ("warn_if_shared", "match"),
+    [(("Back",), "'Back', which is not a field"), (("Front",), "the first field 'Front'")],
+)
+def test_warn_if_shared_names_a_later_field(warn_if_shared, match):
+    with pytest.raises(NoteDefinitionError, match=match):
+        NoteDefinition(
+            name="N", field_map={"Front": "{{ term }}", "Word": ""}, warn_if_shared=warn_if_shared
+        )
+
+
+def test_invalid_warn_if_shared_names_the_file(tmp_path):
+    (tmp_path / "bad.toml").write_text(
+        'name = "N"\nwarn_if_shared = ["Back"]\n[map]\nFront = "{{ term }}"\n', "utf-8"
+    )
+    with pytest.raises(NoteDefinitionError, match="bad.toml"):
+        load_notes_from_dir(tmp_path)
+
+
 def test_two_notes_serving_one_category_in_a_directory_raise(tmp_path):
     # Silently letting the first-by-stem win and the other go dead is the trap we
     # close: a same-category clash names both files and the category.

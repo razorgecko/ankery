@@ -6,6 +6,12 @@ applies_to = "noun"
 # senses of one term apart (See (der) / See (die)), and no card shows it. The map
 # reads the property keys the pack declares for nouns (see ../pack.toml
 # [pos.noun]); an undeclared/absent key renders empty.
+#
+# Adding a note whose Word or Plural another note in the deck already has, under
+# a different Headword, prints a warning: the same noun looked up with other
+# forms, or another sense of it.
+warn_if_shared = ["Word", "Plural"]
+
 [map]
 Headword    = "{{ properties.headword }}"
 Word        = "{{ term }}"
