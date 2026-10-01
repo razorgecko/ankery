@@ -220,9 +220,11 @@ preview and may change.
    - **Paste the redirect URL.** Open the link in any browser, on any machine,
      and sign in. The browser is then sent to a `http://127.0.0.1:1455/…`
      address; copy it from the address bar, even if the page fails to load,
-     and paste it into ankery.
-   - **Open the link in a browser** (desktop only). ankery opens the link and
-     waits for the browser to come back.
+     and paste it at the prompt.
+   - **Enter `o`** (desktop only). ankery opens the link in a browser and
+     waits for it to come back.
+
+   Enter `q` to cancel.
 
    Once signed in, ankery lists the models the plan offers.
 

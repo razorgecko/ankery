@@ -25,7 +25,7 @@ LOGIN_COMMAND = "login"
 LOGOUT_COMMAND = "logout"
 STATUS_COMMAND = "status"
 
-# How long option 2 of the login prompt waits for the browser redirect.
+# How long the login prompt's open command waits for the browser redirect.
 LOGIN_TIMEOUT = 300.0
 
 
@@ -286,24 +286,32 @@ def _account(record: dict) -> str:
 
 
 def _ask_redirect(auth: signin.Authorization, server: signin.CallbackServer | None) -> str | None:
-    """Run the login prompt; return the redirect URL, or None if cancelled."""
-    menu = ["1. Paste the redirect URL"]
+    """Run the login prompt; return the redirect URL, or None if cancelled.
+
+    Input is never echoed: it may be part of the URL, which carries the
+    authorization code.
+    """
     if server is not None:
-        menu.append("2. Open the link in a browser")
-    menu.append("3. Cancel")
+        usage = "Paste the redirect URL, or enter o to open the link in a browser, q to cancel."
+    else:
+        usage = "Paste the redirect URL, or enter q to cancel."
+    print(usage)
     while True:
-        print("\n".join(menu))
-        choice = input("> ").strip()
-        if choice == "1":
-            return input("Redirect URL: ")
-        if choice == "2" and server is not None:
+        answer = input("> ").strip()
+        command = answer.lower()
+        if command in ("q", "quit"):
+            return None
+        if command in ("o", "open"):
+            if server is None:
+                print("No browser can be opened here; paste the redirect URL.")
+                continue
             if not webbrowser.open(auth.browser_url):
                 print("Could not start a browser; open the link above yourself.")
             print("Waiting for the browser sign-in (Ctrl-C cancels)...")
             return server.wait(LOGIN_TIMEOUT)
-        if choice == "3":
-            return None
-        print(f"Unknown choice {choice!r}.")
+        if "/" in answer:
+            return answer
+        print(usage)
 
 
 def _login_main(argv: list[str]) -> int:

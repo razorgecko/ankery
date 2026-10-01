@@ -927,13 +927,13 @@ def _mock_sign_in(httpx_mock, env, *, models=("gpt-5.5",)):
     )
 
 
-def _menu(out: str) -> list[str]:
-    return [line for line in out.splitlines() if line[:2] in ("1.", "2.", "3.")]
+PASTE_OR_OPEN = "Paste the redirect URL, or enter o to open the link in a browser, q to cancel."
+PASTE_ONLY = "Paste the redirect URL, or enter q to cancel."
 
 
 def test_login_paste_saves_the_sign_in_and_lists_models(signin_env, httpx_mock, capsys):
     _mock_sign_in(httpx_mock, signin_env, models=("gpt-5.5", "gpt-6-astra"))
-    signin_env["answers"] = ["1", _pasted_redirect]
+    signin_env["answers"] = [_pasted_redirect]
 
     code = cli.main(["login"])
 
@@ -949,7 +949,7 @@ def test_login_paste_saves_the_sign_in_and_lists_models(signin_env, httpx_mock, 
 
 def test_login_output_holds_no_secret(signin_env, httpx_mock, capsys):
     _mock_sign_in(httpx_mock, signin_env)
-    signin_env["answers"] = ["1", _pasted_redirect]
+    signin_env["answers"] = [_pasted_redirect]
 
     cli.main(["login"])
 
@@ -961,52 +961,76 @@ def test_login_output_holds_no_secret(signin_env, httpx_mock, capsys):
 def test_login_without_a_display_offers_no_browser(signin_env, capsys):
     signin_env["display"] = False
     signin_env["server"] = AssertionError("bound without a display")
-    signin_env["answers"] = ["3"]
+    signin_env["answers"] = ["q"]
 
     code = cli.main(["login"])
 
     assert code == 1
-    assert _menu(capsys.readouterr().out) == ["1. Paste the redirect URL", "3. Cancel"]
+    out = capsys.readouterr().out
+    assert PASTE_ONLY in out
+    assert "enter o" not in out
 
 
-def test_login_without_a_display_rejects_choice_2(signin_env, capsys):
-    signin_env["answers"] = ["2", "3"]
+def test_login_without_a_display_refuses_open_and_keeps_asking(signin_env, capsys):
+    signin_env["answers"] = ["o", "q"]
 
     code = cli.main(["login"])
 
     assert code == 1
-    assert "Unknown choice '2'" in capsys.readouterr().out
+    assert "No browser can be opened here; paste the redirect URL." in capsys.readouterr().out
     assert signin_env["opened"] == []
+
+
+@pytest.mark.parametrize("answer", ["", "1", "oops"])
+def test_login_repeats_the_usage_for_input_that_is_no_url_or_command(
+    signin_env, httpx_mock, capsys, answer
+):
+    _mock_sign_in(httpx_mock, signin_env)
+    signin_env["answers"] = [answer, _pasted_redirect]
+
+    code = cli.main(["login"])
+
+    assert code == 0
+    assert capsys.readouterr().out.count(PASTE_ONLY) == 2
+    assert signin.is_signed_in(signin_env["store"].load())
+
+
+@pytest.mark.parametrize("answer", ["O", "open"])
+def test_login_open_command_is_case_insensitive_and_has_a_long_form(
+    signin_env, httpx_mock, answer
+):
+    _mock_sign_in(httpx_mock, signin_env)
+    server = _FakeServer(lambda: _pasted_redirect(signin_env))
+    signin_env.update(display=True, server=server, answers=[answer])
+
+    assert cli.main(["login"]) == 0
+    assert signin_env["opened"] == [signin_env["auths"][0].browser_url]
 
 
 def test_login_busy_port_names_it_and_keeps_paste(signin_env, httpx_mock, capsys):
     _mock_sign_in(httpx_mock, signin_env)
     signin_env["display"] = True
     signin_env["server"] = OSError(98, "Address already in use")
-    signin_env["answers"] = ["1", _pasted_redirect]
+    signin_env["answers"] = [_pasted_redirect]
 
     code = cli.main(["login"])
 
     assert code == 0
     captured = capsys.readouterr()
     assert "port 1455 is in use (Address already in use)" in captured.err
-    assert _menu(captured.out) == ["1. Paste the redirect URL", "3. Cancel"]
+    assert PASTE_ONLY in captured.out
     assert signin.is_signed_in(signin_env["store"].load())
 
 
 def test_login_browser_waits_for_the_loopback_redirect(signin_env, httpx_mock, capsys):
     _mock_sign_in(httpx_mock, signin_env)
     server = _FakeServer(lambda: _pasted_redirect(signin_env))
-    signin_env.update(display=True, server=server, answers=["2"])
+    signin_env.update(display=True, server=server, answers=["o"])
 
     code = cli.main(["login"])
 
     assert code == 0
-    assert _menu(capsys.readouterr().out) == [
-        "1. Paste the redirect URL",
-        "2. Open the link in a browser",
-        "3. Cancel",
-    ]
+    assert PASTE_OR_OPEN in capsys.readouterr().out
     assert signin_env["opened"] == [signin_env["auths"][0].browser_url]
     assert signin_env["server_state"] == signin_env["auths"][0].state
     assert server.closed
@@ -1019,7 +1043,7 @@ def test_repeat_login_prints_no_id_token_but_hints_it_to_the_browser(
     signin_env["store"].save(_signed_in_record())
     _mock_sign_in(httpx_mock, signin_env)
     server = _FakeServer(lambda: _pasted_redirect(signin_env))
-    signin_env.update(display=True, server=server, answers=["2"])
+    signin_env.update(display=True, server=server, answers=["o"])
 
     code = cli.main(["login"])
 
@@ -1032,7 +1056,7 @@ def test_repeat_login_prints_no_id_token_but_hints_it_to_the_browser(
 
 def test_login_loopback_redirect_with_another_state_writes_nothing(signin_env, httpx_mock, capsys):
     server = _FakeServer(lambda: _pasted_redirect(signin_env, state="forged"))
-    signin_env.update(display=True, server=server, answers=["2"])
+    signin_env.update(display=True, server=server, answers=["o"])
 
     code = cli.main(["login"])
 
@@ -1043,7 +1067,7 @@ def test_login_loopback_redirect_with_another_state_writes_nothing(signin_env, h
 
 
 def test_login_pasted_redirect_with_another_state_writes_nothing(signin_env, httpx_mock, capsys):
-    signin_env["answers"] = ["1", lambda env: _pasted_redirect(env, state="forged")]
+    signin_env["answers"] = [lambda env: _pasted_redirect(env, state="forged")]
 
     code = cli.main(["login"])
 
@@ -1053,7 +1077,7 @@ def test_login_pasted_redirect_with_another_state_writes_nothing(signin_env, htt
     assert httpx_mock.get_requests() == []
 
 
-@pytest.mark.parametrize("answers", [["3"], []], ids=["choice", "eof"])
+@pytest.mark.parametrize("answers", [["q"], ["quit"], []], ids=["q", "quit", "eof"])
 def test_login_cancel_writes_nothing(signin_env, capsys, answers):
     signin_env["answers"] = answers
 
@@ -1069,7 +1093,7 @@ def test_login_ctrl_c_while_waiting_cancels(signin_env, capsys):
         raise KeyboardInterrupt
 
     server = _FakeServer(interrupted)
-    signin_env.update(display=True, server=server, answers=["2"])
+    signin_env.update(display=True, server=server, answers=["o"])
 
     code = cli.main(["login"])
 
@@ -1082,7 +1106,7 @@ def test_login_failure_keeps_the_previous_sign_in(signin_env, httpx_mock, capsys
     record = _signed_in_record()
     signin_env["store"].save(record)
     httpx_mock.add_response(url=signin.TOKEN_URL, status_code=400, json={"error": "invalid_grant"})
-    signin_env["answers"] = ["1", _pasted_redirect]
+    signin_env["answers"] = [_pasted_redirect]
 
     code = cli.main(["login"])
 
@@ -1094,7 +1118,7 @@ def test_login_failure_keeps_the_previous_sign_in(signin_env, httpx_mock, capsys
 def test_repeat_login_reuses_the_registration(signin_env, httpx_mock):
     signin_env["store"].save(_signed_in_record())
     _mock_sign_in(httpx_mock, signin_env)
-    signin_env["answers"] = ["1", _pasted_redirect]
+    signin_env["answers"] = [_pasted_redirect]
 
     cli.main(["login"])
 
@@ -1211,7 +1235,7 @@ def test_status_when_signed_out_exits_1(signin_env, capsys):
 @pytest.mark.parametrize("command", ["login", "logout", "status"])
 def test_signin_commands_load_config_without_auth(signin_env, monkeypatch, command):
     seen = _capture_load_path(monkeypatch)
-    signin_env["answers"] = ["3"]
+    signin_env["answers"] = ["q"]
 
     cli.main([command, "--config", "/tmp/custom.toml"])
 

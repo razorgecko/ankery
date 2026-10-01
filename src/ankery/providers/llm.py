@@ -89,7 +89,7 @@ class ChatCompletionsTransport:
         if not response.is_success:
             raise ProviderError(
                 f"LLM request to {url} failed: HTTP {response.status_code}: "
-                f"{_error_detail(response)}"
+                f"{error_detail(response)}"
             )
 
         try:
@@ -156,7 +156,7 @@ class ChatGPTTransport:
                         response.read()
                         raise ProviderError(
                             f"LLM request to {url} failed: HTTP {response.status_code}: "
-                            f"{_error_detail(response)}"
+                            f"{error_detail(response)}"
                         )
                     return _read_response_stream(response.iter_lines())
                 finally:
@@ -224,7 +224,7 @@ def merge_params(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[st
     return {key: value for key, value in merged.items() if value is not None}
 
 
-def _error_detail(response: httpx.Response) -> str:
+def error_detail(response: httpx.Response) -> str:
     """The endpoint's error message, from `error.message` or `detail`."""
     try:
         body = response.json()

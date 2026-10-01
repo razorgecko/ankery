@@ -159,34 +159,35 @@ Their requests use `llm_timeout`. A config error exits 2.
   `dynamic_agent_client` is never stored. Later runs send the issued
   `client_id` and the stored `ext_agent_host_id`.
 - While an ID token is held, the account is hinted. The printed URL carries
-  `login_hint` (the stored email) only; the URL that option 2 opens adds the ID
+  `login_hint` (the stored email) only; the URL that `o` opens adds the ID
   token as `id_token_hint`. The SIWC docs ask for URLs holding that hint to be
   kept out of logs, so it is never printed.
 - It prints the authorize URL and asks:
 
   ```
-  1. Paste the redirect URL
-  2. Open the link in a browser
-  3. Cancel
+  Paste the redirect URL, or enter o to open the link in a browser, q to cancel.
   ```
 
-  1. Reads the URL the browser was redirected to
-     (`http://127.0.0.1:1455/auth/callback?…`). Needs no listener, so it works
-     when the browser runs on another machine: the user copies the URL from the
-     address bar of the page that failed to load. The code in it is useless
-     without the verifier, which only this process holds.
-  2. Calls `webbrowser.open`, then `CallbackServer` serves `127.0.0.1:1455`
-     until the redirect with this run's `state` arrives (5 minutes). A request
-     with another or no `state` (a stale tab, another web page) gets a 400 and
-     the wait goes on. This option is offered only when a
-     graphical browser can be expected and the port binds. `can_open_browser`
-     expects one on macOS and Windows, and elsewhere only with `DISPLAY` or
-     `WAYLAND_DISPLAY` set; without them, `webbrowser` falls back to a console
-     browser that takes over the terminal. A busy port prints an error naming
-     it.
-  3. Cancels, as do EOF and Ctrl-C: exit 1, nothing written.
+  - A pasted URL is the one the browser was redirected to
+    (`http://127.0.0.1:1455/auth/callback?…`). It needs no listener, so it works
+    when the browser runs on another machine: the user copies the URL from the
+    address bar of the page that failed to load. The code in it is useless
+    without the verifier, which only this process holds. Any input holding a
+    `/` is taken as the URL; other input repeats the prompt, without echoing
+    what was typed.
+  - `o` (`open`) calls `webbrowser.open`, then `CallbackServer` serves
+    `127.0.0.1:1455` until the redirect with this run's `state` arrives
+    (5 minutes). A request with another or no `state` (a stale tab, another
+    web page) gets a 400 and the wait goes on. It is offered only when a
+    graphical browser can be expected and the port binds. `can_open_browser`
+    expects one on macOS and Windows, and elsewhere only with `DISPLAY` or
+    `WAYLAND_DISPLAY` set; without them, `webbrowser` falls back to a console
+    browser that takes over the terminal. A busy port prints an error naming
+    it. When it is not offered, the prompt leaves it out and `o` asks for the
+    URL instead.
+  - `q` (`quit`) cancels, as do EOF and Ctrl-C: exit 1, nothing written.
 
-  An unavailable option is left out, not renumbered.
+  Commands are case-insensitive.
 - `parse_callback` checks both paths in this order: path `/auth/callback`,
   `state`, `error`, `code`. `state` and `nonce` are compared as bytes, so a
   non-ASCII value is a mismatch, not a crash. A repeat sign-in's redirect may
