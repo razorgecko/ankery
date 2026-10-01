@@ -330,13 +330,7 @@ def _build_chat_completions(config: "Config", model: str, params: dict[str, Any]
 
 
 def _build_chatgpt(config: "Config", model: str, params: dict[str, Any]) -> Transport:
-    ignored = [key for key in ("llm_base_url", "llm_api_key") if getattr(config, key)]
-    if ignored:
-        warnings.warn(
-            f"llm_backend {ChatGPTTransport.name!r} ignores {', '.join(ignored)}: "
-            "its endpoint is fixed and it uses the ChatGPT sign-in.",
-            skip_file_prefixes=_INTERNAL_FILES,
-        )
+    """llm_base_url and llm_api_key are ignored"""
     return ChatGPTTransport(
         model,
         token_source=_token_source(config),

@@ -494,7 +494,7 @@ def test_chat_completions_backend_uses_the_configured_url_and_model():
     assert transport.model == "my-model"
 
 
-def test_chatgpt_backend_warns_and_ignores_llm_base_url(stub_tokens):
+def test_chatgpt_backend_silently_ignores_llm_base_url(stub_tokens):
     # The token is scoped to OpenAI's API; a configured URL must never receive it.
     config = Config(
         pack="de",
@@ -503,7 +503,8 @@ def test_chatgpt_backend_warns_and_ignores_llm_base_url(stub_tokens):
         llm_model="gpt-5.5",
         llm_base_url="http://example.com/v1",
     )
-    with pytest.warns(UserWarning, match="'chatgpt' ignores llm_base_url: its endpoint is fixed"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         transport = _transport(config)
 
     assert transport.name == "chatgpt"
@@ -538,7 +539,7 @@ def test_chatgpt_section_reaches_the_chatgpt_transport_only(stub_tokens):
     assert transport.params == {"reasoning": {"effort": "low"}}
 
 
-def test_chatgpt_backend_warns_and_ignores_the_api_key(stub_tokens):
+def test_chatgpt_backend_silently_ignores_the_api_key(stub_tokens):
     config = Config(
         pack="de",
         providers=("llm",),
@@ -546,18 +547,11 @@ def test_chatgpt_backend_warns_and_ignores_the_api_key(stub_tokens):
         llm_model="gpt-5.5",
         llm_api_key="sk-secret",
     )
-    with pytest.warns(UserWarning, match="'chatgpt' ignores llm_api_key: .*ChatGPT sign-in") as record:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         transport = _transport(config)
 
     assert not hasattr(transport, "api_key")
-    assert record[0].filename == __file__  # blames the caller, not ankery
-
-
-def test_chatgpt_backend_with_only_its_own_settings_is_silent(stub_tokens):
-    config = Config(pack="de", providers=("llm",), llm_backend="chatgpt", llm_model="gpt-5.5")
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _transport(config)
 
 
 def test_chatgpt_backend_needs_a_sign_in():

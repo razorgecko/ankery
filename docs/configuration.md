@@ -18,7 +18,8 @@ Key fields: `providers` (empty = pack's chain), `pack` (required, no default),
 rejects an unknown name at load. `llm_base_url` and `llm_model` default to
 `None`, meaning the transport's own default; a transport with no default model
 and no `llm_model` is a `ConfigError`. `llm_base_url` and `llm_api_key` apply to
-`chat-completions` only; `chatgpt` ignores both with a warning.
+`chat-completions` only; `chatgpt` ignores both silently, so switching
+backends needs no edit to them.
 
 ## 2. Layers
 

@@ -154,7 +154,7 @@ The LLM API key is the one setting that is **not** allowed here (see
 | `tags` | — | `[]` | Tags added to every created note. |
 | `allow_duplicate` | `--allow-duplicate` | `false` | Add a note even if Anki considers it a duplicate. |
 | `llm_backend` | `--llm-backend` | `"chat-completions"` | How ankery talks to the LLM: `chat-completions` for an OpenAI-compatible server, `chatgpt` for a ChatGPT plan. |
-| `llm_base_url` | `--llm-url` | `"http://localhost:8080/v1"` | OpenAI-compatible LLM endpoint for `chat-completions`. Ignored by `chatgpt`, whose endpoint is fixed, with a warning. |
+| `llm_base_url` | `--llm-url` | `"http://localhost:8080/v1"` | OpenAI-compatible LLM endpoint for `chat-completions`. Ignored by `chatgpt`, whose endpoint is fixed. |
 | `llm_model` | `--llm-model` | per backend | Model name sent to the LLM. `chat-completions`: `"local-model"`; `chatgpt`: none, it must be set. |
 | `llm_timeout` | — | `30.0` | LLM request timeout, in seconds. |
 | `anki_url` | `--anki-url` | `"http://localhost:8765"` | AnkiConnect endpoint. |
@@ -202,7 +202,7 @@ The LLM API key, if the endpoint needs one, can be supplied in two ways:
 
 If the endpoint is configured without an API key (as a local `llama-server`
 can be), both can be omitted entirely. The key is used by `chat-completions`
-only; `chatgpt` ignores it, with a warning.
+only; `chatgpt` ignores it.
 
 ### Using a ChatGPT plan
 
