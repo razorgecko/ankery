@@ -92,6 +92,9 @@ mechanics are in [docs/](./docs/).
   must be named `ankery.…` explicitly: the module name is `ankery_pack_*`,
   outside the `ankery` tree, so `-vv` would not show it.
 - **Never log request headers** in a provider: they carry the bearer token.
+- **`llm_params.json` cannot set a transport's owned keys**, in any section,
+  active or not (`test_llm_params_owned_key_raises`). The provenance and
+  hinted-miss rules live in `LLMProvider`, never in a transport.
 - **Tables after bare keys.** In `pack.toml` and `config.toml` a table header
   captures every key after it. `config.py` catches an engine key under
   `[variables]` (`test_load_rejects_engine_key_captured_under_variables_table`);

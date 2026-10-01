@@ -25,6 +25,9 @@ dataclass defaults  <  config.toml  <  auth.toml  <  env (secret only)  <  CLI f
 - `config.toml` — every field except the secret; unknown keys raise.
 - `auth.toml` — only `llm_api_key`; any other key raises. The split keeps
   `config.toml` shareable.
+- `llm_params.json` — request parameter overrides for the LLM transport
+  ([§3](#3-llm-request-parameters)). Read from the config dir only, alongside
+  `config.toml` (also under `with_auth=False`); not settable in `config.toml`.
 - Env — only the secret (`ANKERY_LLM_API_KEY`) and the file paths
   (`ANKERY_CONFIG`, `ANKERY_AUTH`).
 - `variables` — a `[variables]` table in `config.toml`, keyed by labels the pack
@@ -38,7 +41,33 @@ dataclass defaults  <  config.toml  <  auth.toml  <  env (secret only)  <  CLI f
   pack's defaults without recalling the file. Pack defaults still fill every
   key the operator leaves unset (`resolve_variables`).
 
-## 3. Add command flags
+## 3. LLM request parameters
+
+Each LLM transport ([architecture.md](./architecture.md#3-providers-providers))
+has a default parameter set (`DEFAULT_PARAMS`) and a set of fields it builds
+itself (`OWNED_KEYS`). `chat-completions`: defaults `{"temperature": 0,
+"response_format": {"type": "json_object"}}`; owned `model`, `messages`,
+`stream`.
+
+`llm_params.json` maps a transport name to that transport's overrides:
+
+```json
+{"chat-completions": {"temperature": 0.2, "response_format": null}}
+```
+
+- **Merge** (`merge_params`): a section key replaces the default's key, `null`
+  removes it, a new key is added. Shallow: a nested value replaces the default
+  whole. The request body is the merged parameters plus the owned fields.
+- A section is per transport, not per server: every `chat-completions` server
+  shares it. A missing section or file means the defaults.
+- Values pass through unchecked. An endpoint rejection is a `ProviderError`
+  carrying the endpoint's message (`error.message` or `detail`).
+- **Load-time checks** cover every section, `ConfigError` naming the file:
+  invalid JSON, a non-object top level or section, an unknown transport name,
+  an owned key.
+- JSON, not TOML, because `null` is how a default is removed.
+
+## 4. Add command flags
 
 `--provider` (comma list, whole chain), `--llm` (the `llm`-only chain; mutually
 exclusive with `--provider`), `--pack` (taken literally, never normalized to a
@@ -76,7 +105,7 @@ logger tree, scoped so httpx stays quiet. Flow events log at INFO, payloads
 Warnings (`warnings.warn`) print to stderr as `ankery: warning: …` at every
 level.
 
-## 4. `sync-note-types`
+## 5. `sync-note-types`
 
 `ankery sync-note-types` has its own parser (`build_sync_parser`).
 
@@ -92,7 +121,7 @@ level.
 
 Sync semantics: [notes.md](./notes.md#4-ankiconnect-sinksankiconnectpy).
 
-## 5. Tooling
+## 6. Tooling
 
 ```bash
 uv sync                       # venv from pyproject + lockfile

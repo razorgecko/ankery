@@ -3,7 +3,7 @@ import json
 import pytest
 
 from ankery.providers.base import ProviderError
-from ankery.providers.llm import LLMProvider
+from ankery.providers.llm import ChatCompletionsTransport, LLMProvider, merge_params
 
 BASE_URL = "http://localhost:8080/v1"
 CHAT_URL = f"{BASE_URL}/chat/completions"
@@ -18,7 +18,10 @@ def _completion(content: str) -> dict:
     return {"choices": [{"message": {"role": "assistant", "content": content}}]}
 
 
-def _provider(**kwargs) -> LLMProvider:
+def _provider(*, params=None, api_key=None, **kwargs) -> LLMProvider:
+    transport = ChatCompletionsTransport(
+        BASE_URL, "test-model", params=params, api_key=api_key
+    )
     # The provider renders the system prompt per fetch from a (category_hint -> str)
     # callable; the default ignores the hint and returns the constant SYSTEM.
     kwargs.setdefault("system_prompt_for", lambda category_hint=None: SYSTEM)
@@ -28,7 +31,7 @@ def _provider(**kwargs) -> LLMProvider:
     # The pack's category label is the JSON key the model fills; the provider
     # maps it onto Entry.category. The German pack labels it "part of speech".
     kwargs.setdefault("category_key", "part of speech")
-    return LLMProvider(base_url=BASE_URL, model="test-model", **kwargs)
+    return LLMProvider(transport, **kwargs)
 
 
 def test_fetch_returns_entry(httpx_mock):
@@ -144,13 +147,75 @@ def test_request_payload_carries_prompt_and_model(httpx_mock):
     assert "Term: Buch" in roles["user"]
 
 
-def test_no_response_format_when_disabled(httpx_mock):
+def _sent_body(httpx_mock, **kwargs) -> dict:
+    """Fetch once through a provider built with `kwargs`; return the request body."""
     httpx_mock.add_response(url=CHAT_URL, json=_completion('{"term": "Buch"}'))
+    _provider(**kwargs).fetch("Buch")
+    return json.loads(httpx_mock.get_requests()[0].content)
 
-    _provider(request_json_format=False).fetch("Buch")
 
-    body = json.loads(httpx_mock.get_requests()[0].content)
+def test_default_body_is_owned_fields_plus_default_params(httpx_mock):
+    body = _sent_body(httpx_mock)
+
+    assert body == {
+        "model": "test-model",
+        "messages": [
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": "Term: Buch"},
+        ],
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+
+
+def test_param_override_replaces_a_default(httpx_mock):
+    body = _sent_body(httpx_mock, params={"temperature": 0.2})
+
+    assert body["temperature"] == 0.2
+    assert body["response_format"] == {"type": "json_object"}
+
+
+def test_null_param_removes_a_default(httpx_mock):
+    body = _sent_body(httpx_mock, params={"response_format": None})
+
     assert "response_format" not in body
+    assert body["temperature"] == 0
+
+
+def test_new_param_is_added(httpx_mock):
+    body = _sent_body(httpx_mock, params={"seed": 7})
+
+    assert body["seed"] == 7
+    assert body["temperature"] == 0
+
+
+def test_nested_param_replaces_the_default_whole():
+    merged = merge_params(
+        {"response_format": {"type": "json_object", "extra": 1}},
+        {"response_format": {"type": "text"}},
+    )
+
+    assert merged == {"response_format": {"type": "text"}}
+
+
+def test_endpoint_error_message_reaches_provider_error(httpx_mock):
+    httpx_mock.add_response(
+        url=CHAT_URL,
+        status_code=400,
+        json={"error": {"message": "Unsupported parameter: seed", "type": "x"}},
+    )
+
+    with pytest.raises(ProviderError, match="HTTP 400: Unsupported parameter: seed"):
+        _provider(params={"seed": 7}).fetch("Buch")
+
+
+def test_endpoint_detail_error_reaches_provider_error(httpx_mock):
+    httpx_mock.add_response(
+        url=CHAT_URL, status_code=400, json={"detail": "Unsupported parameter: top_p"}
+    )
+
+    with pytest.raises(ProviderError, match="HTTP 400: Unsupported parameter: top_p"):
+        _provider(params={"top_p": 1}).fetch("Buch")
 
 
 def test_api_key_sends_bearer_header(httpx_mock):

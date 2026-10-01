@@ -74,20 +74,27 @@ Name resolution: the pack's own `providers/` builders first, then the engine
 registry `PROVIDER_REGISTRY` (`config.py`). Chain = `config.providers` if set,
 else the pack's `providers`.
 
-- **`llm`** — engine-level, cross-language. OpenAI-compatible
-  `/v1/chat/completions` (default `http://localhost:8080/v1`, a local
-  llama-server). The system prompt is rendered per fetch
-  ([prompts.md](./prompts.md)), so the provider holds a `(category_hint -> str)`
-  renderer, not a fixed string. The model fills a JSON key named for the pack's
-  category `label` (e.g. `part of speech`), mapped onto `Entry.category`, and
-  returns `properties` and `collections` as nested objects taken verbatim by
-  `Entry`; the provider does no folding and holds no key list: the declared keys
-  reach the model only through the rendered system prompt. Under a hint, a
-  term-less object is a clean miss (`None`). Output is validated against `Entry`,
-  which drops unknown top-level keys but does not check keys inside
-  `properties`/`collections` against the pack's declarations; the provider stamps
-  provenance. A 429 is retried (`providers/retry.py`).
-  `llm_api_key` adds a Bearer header.
+- **`llm`** — engine-level, cross-language. `LLMProvider` renders the prompts,
+  hands them to a transport, and turns the response text into an `Entry`. The
+  system prompt is rendered per fetch ([prompts.md](./prompts.md)), so the
+  provider holds a `(category_hint -> str)` renderer, not a fixed string. The
+  model fills a JSON key named for the pack's category `label` (e.g. `part of
+  speech`), mapped onto `Entry.category`, and returns `properties` and
+  `collections` as nested objects taken verbatim by `Entry`; the provider does
+  no folding and holds no key list: the declared keys reach the model only
+  through the rendered system prompt. Under a hint, a term-less object is a
+  clean miss (`None`). Output is validated against `Entry`, which drops unknown
+  top-level keys but does not check keys inside `properties`/`collections`
+  against the pack's declarations; the provider stamps provenance. These rules
+  sit in the provider, so they hold for every transport.
+- **Transports** (`providers/llm.py`, registry `TRANSPORTS`) turn `(system
+  prompt, user prompt)` into response text and own everything
+  endpoint-specific: URL, request body, auth header, response parsing, retry.
+  Each declares default request parameters and the fields it builds itself
+  ([configuration.md](./configuration.md#3-llm-request-parameters)).
+  `chat-completions`: OpenAI-compatible `/v1/chat/completions` (default
+  `http://localhost:8080/v1`, a local llama-server); `llm_api_key` adds a
+  Bearer header; a 429 is retried (`providers/retry.py`).
 - **`netzverb`** (German pack) — scrapes verbformen.com and verben.de with
   BeautifulSoup. 404 is a clean miss; a 429 is retried. A `category_hint` picks
   the page directly and misses cleanly for any category it cannot scrape; with no
@@ -109,7 +116,7 @@ hints.py          parse_term: term:cat token -> (term, canonical category)
 __main__.py       CLI parsers, output verbosity
 defaults/         engine-shipped neutral assets: catch-all note, prompt templates, fallback style.css
 providers/base    Provider Protocol + ProviderError
-providers/llm     LLMProvider (OpenAI-compatible endpoint)
+providers/llm     LLMProvider, transports (chat-completions), merge_params
 providers/retry   request_with_retry: HTTP 429 backoff, shared by providers
 sinks/base        AnkiSink Protocol + SinkError
 sinks/ankiconnect AnkiConnectSink (JSON-RPC)

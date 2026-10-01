@@ -155,11 +155,28 @@ The LLM API key is the one setting that is **not** allowed here (see
 | `llm_base_url` | `--llm-url` | `"http://localhost:8080/v1"` | OpenAI-compatible LLM endpoint. |
 | `llm_model` | `--llm-model` | `"local-model"` | Model name sent to the LLM. |
 | `llm_timeout` | — | `30.0` | LLM request timeout, in seconds. |
-| `llm_request_json_format` | — | `true` | Ask the LLM for a JSON-formatted response. |
 | `anki_url` | `--anki-url` | `"http://localhost:8765"` | AnkiConnect endpoint. |
 | `anki_timeout` | — | `10.0` | AnkiConnect request timeout, in seconds. |
 | `anki_sync_timeout` | — | `60.0` | Timeout for the `--sync` request, in seconds. |
 | `notes_dir` | `--notes-dir` | — | Directory of custom card-layout definitions, merged over the built-in ones. |
+
+### LLM request parameters
+
+ankery sends the LLM a small set of default request parameters: `temperature: 0`
+and `response_format: {"type": "json_object"}`. To change them, create
+`~/.config/ankery/llm_params.json`:
+
+```json
+{
+  "chat-completions": {"temperature": 0.2, "response_format": null}
+}
+```
+
+- A key replaces the default of the same name; nested values are replaced whole.
+- `null` removes a default (here, JSON mode for a server that rejects it).
+- Any other key is passed to the endpoint as given. If the endpoint rejects it,
+  the error shows the endpoint's message.
+- `model`, `messages` and `stream` are reserved for ankery and cannot be set.
 
 ### Authorization
 

@@ -42,6 +42,15 @@ def _write_auth(tmp_path, text: str):
     return path
 
 
+def _write_params(tmp_path, text: str):
+    # llm_params.json is read from the config dir, which the autouse fixture
+    # points at tmp_path / "_xdg".
+    path = tmp_path / "_xdg" / "ankery" / "llm_params.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
+
+
 def _provider_named(builder, name):
     [provider] = [p for p in builder.providers if p.name == name]
     return provider
@@ -310,10 +319,103 @@ def test_load_explicit_auth_path_wins_over_env(tmp_path):
 
 
 def test_load_reads_bool_from_file(tmp_path):
-    path = _write(tmp_path, "llm_request_json_format = false\n")
+    path = _write(tmp_path, "allow_duplicate = true\n")
     config = Config.load(path=path, environ={})
 
-    assert config.llm_request_json_format is False
+    assert config.allow_duplicate is True
+
+
+def test_removed_llm_request_json_format_is_an_unknown_key(tmp_path):
+    path = _write(tmp_path, "llm_request_json_format = false\n")
+
+    with pytest.raises(ConfigError, match="unknown config keys: llm_request_json_format"):
+        Config.load(path=path, environ={})
+
+
+# ---------------------------------------------------------------------------
+# llm_params.json
+# ---------------------------------------------------------------------------
+
+
+def test_missing_llm_params_file_means_no_overrides(tmp_path):
+    config = Config.load(path=tmp_path / "absent.toml", environ={})
+
+    assert config.llm_params == {}
+
+
+def test_load_reads_llm_params_file(tmp_path):
+    _write_params(
+        tmp_path, '{"chat-completions": {"temperature": 0.2, "response_format": null}}'
+    )
+
+    config = Config.load(path=tmp_path / "absent.toml", environ={}, with_auth=False)
+
+    assert config.llm_params == {
+        "chat-completions": {"temperature": 0.2, "response_format": None}
+    }
+
+
+def test_llm_params_invalid_json_raises(tmp_path):
+    path = _write_params(tmp_path, '{"chat-completions": {')
+
+    with pytest.raises(ConfigError, match=f"Could not read {path}"):
+        Config.load(path=tmp_path / "absent.toml", environ={})
+
+
+def test_llm_params_non_object_top_level_raises(tmp_path):
+    _write_params(tmp_path, "[]")
+
+    with pytest.raises(ConfigError, match="llm_params.json: the top level must be an object"):
+        Config.load(path=tmp_path / "absent.toml", environ={})
+
+
+def test_llm_params_non_object_section_raises(tmp_path):
+    _write_params(tmp_path, '{"chat-completions": 0.2}')
+
+    with pytest.raises(ConfigError, match="section 'chat-completions' must be an object"):
+        Config.load(path=tmp_path / "absent.toml", environ={})
+
+
+def test_llm_params_unknown_backend_raises(tmp_path):
+    _write_params(tmp_path, '{"chat-completion": {"temperature": 0.2}}')
+
+    with pytest.raises(ConfigError, match="unknown llm backend 'chat-completion'"):
+        Config.load(path=tmp_path / "absent.toml", environ={})
+
+
+@pytest.mark.parametrize("key", ["model", "messages", "stream"])
+def test_llm_params_owned_key_raises(tmp_path, key):
+    _write_params(tmp_path, f'{{"chat-completions": {{"{key}": "x"}}}}')
+
+    with pytest.raises(ConfigError, match=f"section 'chat-completions' sets {key}"):
+        Config.load(path=tmp_path / "absent.toml", environ={})
+
+
+def test_llm_params_may_not_be_set_in_config_toml(tmp_path):
+    path = _write(tmp_path, '[llm_params.chat-completions]\ntemperature = 0.2\n')
+
+    with pytest.raises(ConfigError, match="llm_params may not be set in config.toml"):
+        Config.load(path=path, environ={})
+
+
+def test_llm_params_section_reaches_the_transport():
+    config = Config(
+        pack="de",
+        providers=("llm",),
+        llm_params={"chat-completions": {"temperature": 0.2, "response_format": None}},
+    )
+
+    transport = _provider_named(build_deck_builder(config), "llm").transport
+
+    assert transport.params == {"temperature": 0.2}
+
+
+def test_no_llm_params_section_means_transport_defaults():
+    transport = _provider_named(
+        build_deck_builder(Config(pack="de", providers=("llm",))), "llm"
+    ).transport
+
+    assert transport.params == {"temperature": 0, "response_format": {"type": "json_object"}}
 
 
 def test_load_wraps_malformed_toml(tmp_path):
@@ -341,7 +443,7 @@ def test_api_key_read_from_env_only():
 
 def test_build_deck_builder_passes_api_key():
     builder = build_deck_builder(Config(pack="de", llm_api_key="sk-123", providers=("llm",)))
-    assert _provider_named(builder, "llm").api_key == "sk-123"
+    assert _provider_named(builder, "llm").transport.api_key == "sk-123"
 
 
 def test_build_deck_builder_wires_provider_and_sink():
@@ -366,8 +468,8 @@ def test_build_deck_builder_wires_provider_and_sink():
 
     provider = _provider_named(builder, "llm")
     assert isinstance(provider, LLMProvider)
-    assert provider.base_url == "http://llm.local/v1"
-    assert provider.model == "my-model"
+    assert provider.transport.base_url == "http://llm.local/v1"
+    assert provider.transport.model == "my-model"
 
     assert isinstance(builder.sink, AnkiConnectSink)
     assert builder.sink.base_url == "http://anki.local:8765"

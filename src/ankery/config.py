@@ -1,3 +1,4 @@
+import json
 import os
 import stat
 import tomllib
@@ -18,7 +19,7 @@ from ankery.notedef import (
 from ankery.pack import Pack, PackError, load_pack
 from ankery.prompts import render_system_prompt, render_user_prompt
 from ankery.providers.base import Provider
-from ankery.providers.llm import LLMProvider
+from ankery.providers.llm import TRANSPORTS, ChatCompletionsTransport, LLMProvider
 from ankery.sinks.ankiconnect import AnkiConnectSink
 from ankery.sinks.base import SyncResult
 
@@ -32,6 +33,7 @@ def _config_dir() -> Path:
     return base / "ankery"
 
 SECRET_KEYS = {"llm_api_key"}
+LLM_PARAMS_FILE = "llm_params.json"
 
 
 class ConfigError(Exception):
@@ -48,7 +50,8 @@ class Config:
     llm_base_url: str = "http://localhost:8080/v1"
     llm_model: str = "local-model"
     llm_timeout: float = 30.0
-    llm_request_json_format: bool = True
+    # Per-backend request parameter overrides, read from llm_params.json only.
+    llm_params: dict[str, dict] = field(default_factory=dict)
     # Bearer token for hosted endpoints; None sends no Authorization header.
     llm_api_key: str | None = None
 
@@ -83,14 +86,19 @@ class Config:
         environ: dict[str, str] | None = None,
         with_auth: bool = True,
     ) -> "Config":
-        """Resolve config: defaults < config.toml < auth.toml < env. Without
-        `with_auth`, stops at config.toml: no auth file is read and no secret set."""
+        """Resolve config: defaults < config.toml < auth.toml < env, with
+        llm_params.json read alongside config.toml. Without `with_auth`, stops at
+        config.toml: no auth file is read and no secret set."""
         env = os.environ if environ is None else environ
         if path is None:
             raw = env.get(ENV_PREFIX + "CONFIG")
             path = Path(raw).expanduser() if raw else None
         config_path = _config_dir() / "config.toml" if path is None else path
-        base = replace(cls(), **_load_config_file(config_path))
+        base = replace(
+            cls(),
+            **_load_config_file(config_path),
+            llm_params=_load_llm_params(_config_dir() / LLM_PARAMS_FILE),
+        )
         if not with_auth:
             return base
         if auth_path is None:
@@ -130,13 +138,18 @@ def _load_config_file(path: Path) -> dict:
     """Read config.toml; rejects unknown keys and refuses the secret (belongs in auth.toml)."""
     raw = _read_toml(path)
     config_keys = {f.name for f in fields(Config)}
-    allowed = config_keys - SECRET_KEYS
+    allowed = config_keys - SECRET_KEYS - {"llm_params"}
     unknown = set(raw) - allowed
     if unknown:
         if unknown & SECRET_KEYS:
             raise ConfigError(
                 f"{path}: llm_api_key may not be set in config.toml; put it in "
                 "auth.toml (or the ANKERY_LLM_API_KEY environment variable) instead."
+            )
+        if "llm_params" in unknown:
+            raise ConfigError(
+                f"{path}: llm_params may not be set in config.toml; put it in "
+                f"{LLM_PARAMS_FILE} in the config directory instead."
             )
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 
@@ -164,6 +177,37 @@ def _load_config_file(path: Path) -> dict:
                 "keys; move these above it."
             )
         raw["variables"] = {k: str(v) for k, v in raw["variables"].items()}
+    return raw
+
+
+def _load_llm_params(path: Path) -> dict[str, dict]:
+    """Read llm_params.json, a backend -> request parameters map; a missing file
+    means none. Every section is checked, not only the active backend's."""
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"Could not read {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"{path}: the top level must be an object keyed by llm backend."
+        )
+    for backend, params in raw.items():
+        transport = TRANSPORTS.get(backend)
+        if transport is None:
+            raise ConfigError(
+                f"{path}: unknown llm backend {backend!r}; known: "
+                f"{', '.join(sorted(TRANSPORTS))}."
+            )
+        if not isinstance(params, dict):
+            raise ConfigError(f"{path}: section {backend!r} must be an object.")
+        owned = params.keys() & transport.OWNED_KEYS
+        if owned:
+            raise ConfigError(
+                f"{path}: section {backend!r} sets {', '.join(sorted(owned))}, "
+                "which ankery builds itself; remove it."
+            )
     return raw
 
 
@@ -232,9 +276,15 @@ def _build_llm(config: "Config", pack: Pack) -> Provider:
                 "the token is exposed in transit — use https for remote endpoints.",
                 stacklevel=2,
             )
-    return LLMProvider(
+    transport = ChatCompletionsTransport(
         base_url=config.llm_base_url,
         model=config.llm_model,
+        params=config.llm_params.get(ChatCompletionsTransport.name, {}),
+        timeout=config.llm_timeout,
+        api_key=config.llm_api_key,
+    )
+    return LLMProvider(
+        transport,
         system_prompt_for=partial(
             render_system_prompt,
             pack,
@@ -245,9 +295,6 @@ def _build_llm(config: "Config", pack: Pack) -> Provider:
         pack=pack.code,
         variables=config.variables,
         category_key=pack.category_label,
-        timeout=config.llm_timeout,
-        request_json_format=config.llm_request_json_format,
-        api_key=config.llm_api_key,
     )
 
 
