@@ -1,9 +1,16 @@
 import json
 
+import httpx
 import pytest
+from pytest_httpx import IteratorStream
 
 from ankery.providers.base import ProviderError
-from ankery.providers.llm import ChatCompletionsTransport, LLMProvider, merge_params
+from ankery.providers.llm import (
+    ChatCompletionsTransport,
+    LLMProvider,
+    ChatGPTTransport,
+    merge_params,
+)
 
 BASE_URL = "http://localhost:8080/v1"
 CHAT_URL = f"{BASE_URL}/chat/completions"
@@ -317,3 +324,214 @@ def test_unknown_top_level_keys_are_dropped_but_logged(httpx_mock, caplog):
     [record] = [r for r in caplog.records if "unknown top-level keys" in r.message]
     assert "examples" in record.getMessage()
     assert "collections.definitions" in record.getMessage()
+
+
+# ---------------------------------------------------------------------------
+# chatgpt: ChatGPTTransport
+# ---------------------------------------------------------------------------
+
+RESPONSES_URL = "https://api.openai.com/v1/responses"
+
+
+class _Tokens:
+    def access_token(self) -> str:
+        return "tok-123"
+
+
+def _responses_provider(*, params=None) -> LLMProvider:
+    transport = ChatGPTTransport("gpt-5.5", token_source=_Tokens(), params=params)
+    return LLMProvider(
+        transport,
+        system_prompt_for=lambda category_hint=None: SYSTEM,
+        user_prompt_for=lambda term: f"Term: {term}",
+        pack="de",
+        variables={"target_language": "en"},
+        category_key="part of speech",
+    )
+
+
+def _sse(*events: dict) -> bytes:
+    """Encode events as a server-sent event stream, `event:` lines included."""
+    return "".join(
+        f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events
+    ).encode()
+
+
+def _deltas(text: str, size: int = 4) -> list[dict]:
+    return [
+        {"type": "response.output_text.delta", "delta": text[i : i + size]}
+        for i in range(0, len(text), size)
+    ]
+
+
+_CREATED = {"type": "response.created", "response": {"status": "in_progress"}}
+_COMPLETED = {"type": "response.completed", "response": {"status": "completed"}}
+
+
+def _stream_of(text: str) -> bytes:
+    return _sse(_CREATED, *_deltas(text), _COMPLETED)
+
+
+def test_responses_fetch_joins_the_streamed_deltas(httpx_mock):
+    entry_json = json.dumps(
+        {"term": "Buch", "part of speech": "noun", "properties": {"gender": "das"}}
+    )
+    httpx_mock.add_response(url=RESPONSES_URL, content=_stream_of(entry_json))
+
+    entry = _responses_provider().fetch("Buch")
+
+    assert entry.term == "Buch"
+    assert entry.category == "noun"
+    assert entry.properties == {"gender": "das"}
+
+
+def test_responses_deltas_split_across_chunks(httpx_mock):
+    # Chunk boundaries fall inside lines and inside the JSON of an event.
+    raw = _stream_of('{"term": "Buch"}')
+    chunks = [raw[i : i + 7] for i in range(0, len(raw), 7)]
+    httpx_mock.add_response(url=RESPONSES_URL, stream=IteratorStream(chunks))
+
+    assert _responses_provider().fetch("Buch").term == "Buch"
+
+
+def test_responses_default_body_is_owned_fields_only(httpx_mock):
+    httpx_mock.add_response(url=RESPONSES_URL, content=_stream_of('{"term": "Buch"}'))
+
+    _responses_provider().fetch("Buch")
+
+    request = httpx_mock.get_requests()[0]
+    assert json.loads(request.content) == {
+        "model": "gpt-5.5",
+        "instructions": SYSTEM,
+        "input": [{"role": "user", "content": "Term: Buch"}],
+        "stream": True,
+        "store": False,
+    }
+    assert request.headers["Authorization"] == "Bearer tok-123"
+
+
+def test_responses_params_are_merged_into_the_body(httpx_mock):
+    httpx_mock.add_response(url=RESPONSES_URL, content=_stream_of('{"term": "Buch"}'))
+
+    _responses_provider(params={"reasoning": {"effort": "low"}}).fetch("Buch")
+
+    body = json.loads(httpx_mock.get_requests()[0].content)
+    assert body["reasoning"] == {"effort": "low"}
+    assert body["stream"] is True
+
+
+def test_responses_fetch_sets_provenance(httpx_mock):
+    echoed = json.dumps(
+        {"term": "Buch", "source": "hallucinated", "pack": "xx", "variables": {"a": "b"}}
+    )
+    httpx_mock.add_response(url=RESPONSES_URL, content=_stream_of(echoed))
+
+    entry = _responses_provider().fetch("Buch")
+
+    assert entry.source == "llm"
+    assert entry.pack == "de"
+    assert entry.variables == {"target_language": "en"}
+
+
+def test_responses_hinted_fetch_misses_on_empty_object(httpx_mock):
+    httpx_mock.add_response(url=RESPONSES_URL, content=_stream_of("{}"))
+
+    assert _responses_provider().fetch("laufen", category_hint="noun") is None
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        ("subscription_sharing_usage_limit_exceeded", "ChatGPT plan usage limit reached"),
+        ("subscription_sharing_usage_unavailable", "ChatGPT plan usage data unavailable"),
+    ],
+)
+def test_responses_usage_failure_has_a_clear_message(httpx_mock, code, message):
+    failed = {
+        "type": "response.failed",
+        "response": {"status": "failed", "error": {"code": code, "message": "x"}},
+    }
+    httpx_mock.add_response(url=RESPONSES_URL, content=_sse(_CREATED, failed))
+
+    with pytest.raises(ProviderError, match=f"{message} \\({code}\\)"):
+        _responses_provider().fetch("Buch")
+
+
+def test_responses_other_failure_carries_code_and_message(httpx_mock):
+    failed = {
+        "type": "response.failed",
+        "response": {"error": {"code": "server_error", "message": "boom"}},
+    }
+    httpx_mock.add_response(url=RESPONSES_URL, content=_sse(_CREATED, failed))
+
+    with pytest.raises(ProviderError, match="failed: server_error: boom"):
+        _responses_provider().fetch("Buch")
+
+
+def test_responses_incomplete_raises_with_its_reason(httpx_mock):
+    incomplete = {
+        "type": "response.incomplete",
+        "response": {"incomplete_details": {"reason": "content_filter"}},
+    }
+    httpx_mock.add_response(
+        url=RESPONSES_URL, content=_sse(_CREATED, *_deltas('{"term"'), incomplete)
+    )
+
+    with pytest.raises(ProviderError, match="incomplete: content_filter"):
+        _responses_provider().fetch("Buch")
+
+
+def test_responses_stream_error_event_raises(httpx_mock):
+    error = {"type": "error", "code": "rate_limit_exceeded", "message": "slow down"}
+    httpx_mock.add_response(url=RESPONSES_URL, content=_sse(error))
+
+    with pytest.raises(ProviderError, match="rate_limit_exceeded: slow down"):
+        _responses_provider().fetch("Buch")
+
+
+def test_responses_stream_without_completed_raises(httpx_mock):
+    # The deltas alone form valid JSON; without response.completed it still fails.
+    httpx_mock.add_response(
+        url=RESPONSES_URL, content=_sse(_CREATED, *_deltas('{"term": "Buch"}'))
+    )
+
+    with pytest.raises(ProviderError, match="ended before response.completed"):
+        _responses_provider().fetch("Buch")
+
+
+def test_responses_invalid_event_json_raises(httpx_mock):
+    httpx_mock.add_response(url=RESPONSES_URL, content=b"data: {not json\n\n")
+
+    with pytest.raises(ProviderError, match="invalid JSON"):
+        _responses_provider().fetch("Buch")
+
+
+def test_responses_endpoint_error_reaches_provider_error(httpx_mock):
+    httpx_mock.add_response(
+        url=RESPONSES_URL,
+        status_code=400,
+        json={"detail": "Unsupported parameter: temperature"},
+    )
+
+    with pytest.raises(
+        ProviderError, match="HTTP 400: Unsupported parameter: temperature"
+    ):
+        _responses_provider(params={"temperature": 0}).fetch("Buch")
+
+
+def test_responses_fetch_retries_a_streamed_429(httpx_mock, monkeypatch):
+    monkeypatch.setattr("ankery.providers.retry.time.sleep", lambda _: None)
+    httpx_mock.add_response(url=RESPONSES_URL, status_code=429)
+    httpx_mock.add_response(url=RESPONSES_URL, content=_stream_of('{"term": "Buch"}'))
+
+    entry = _responses_provider().fetch("Buch")
+
+    assert entry.term == "Buch"
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_responses_http_error_raises_provider_error(httpx_mock):
+    httpx_mock.add_exception(httpx.ConnectError("refused"), url=RESPONSES_URL)
+
+    with pytest.raises(ProviderError, match="refused"):
+        _responses_provider().fetch("Buch")

@@ -73,7 +73,9 @@ def test_note_type_default_is_the_owned_catch_all_model():
 def test_from_env_uses_defaults_when_unset():
     config = Config.from_env({})
 
-    assert config.llm_base_url == "http://localhost:8080/v1"
+    assert config.llm_backend == "chat-completions"
+    assert config.llm_base_url is None  # the transport's default
+    assert config.llm_model is None  # the transport's default
     assert config.anki_url == "http://localhost:8765"
     assert config.deck == "Default"
     assert config.note_type == "Ankery Basic"
@@ -96,7 +98,7 @@ def test_from_env_ignores_non_secret_vars():
     }
     config = Config.from_env(env, base=base)
 
-    assert config.llm_base_url == "http://localhost:8080/v1"  # default, env ignored
+    assert config.llm_base_url is None  # default, env ignored
     assert config.llm_model == "file-model"  # base shows through, env ignored
     assert config.deck == "FromFile"
     assert config.providers == ()
@@ -133,7 +135,7 @@ def test_load_missing_file_uses_defaults(tmp_path):
     config = Config.load(path=tmp_path / "absent.toml", environ={})
 
     assert config.deck == "Default"
-    assert config.llm_base_url == "http://localhost:8080/v1"
+    assert config.llm_base_url is None
 
 
 def test_load_reads_file_values(tmp_path):
@@ -383,11 +385,24 @@ def test_llm_params_unknown_backend_raises(tmp_path):
         Config.load(path=tmp_path / "absent.toml", environ={})
 
 
-@pytest.mark.parametrize("key", ["model", "messages", "stream"])
-def test_llm_params_owned_key_raises(tmp_path, key):
-    _write_params(tmp_path, f'{{"chat-completions": {{"{key}": "x"}}}}')
+@pytest.mark.parametrize(
+    ("backend", "key"),
+    [
+        ("chat-completions", "model"),
+        ("chat-completions", "messages"),
+        ("chat-completions", "stream"),
+        ("chatgpt", "model"),
+        ("chatgpt", "input"),
+        ("chatgpt", "instructions"),
+        ("chatgpt", "stream"),
+        ("chatgpt", "store"),
+    ],
+)
+def test_llm_params_owned_key_raises(tmp_path, backend, key):
+    # Checked in every section, whichever backend is active (chat-completions here).
+    _write_params(tmp_path, f'{{"{backend}": {{"{key}": "x"}}}}')
 
-    with pytest.raises(ConfigError, match=f"section 'chat-completions' sets {key}"):
+    with pytest.raises(ConfigError, match=f"section '{backend}' sets {key}"):
         Config.load(path=tmp_path / "absent.toml", environ={})
 
 
@@ -416,6 +431,140 @@ def test_no_llm_params_section_means_transport_defaults():
     ).transport
 
     assert transport.params == {"temperature": 0, "response_format": {"type": "json_object"}}
+
+
+# ---------------------------------------------------------------------------
+# llm_backend
+# ---------------------------------------------------------------------------
+
+
+class _StubTokens:
+    def access_token(self) -> str:
+        return "stub-token"
+
+
+@pytest.fixture
+def stub_tokens(monkeypatch):
+    monkeypatch.setattr("ankery.config._token_source", lambda config: _StubTokens())
+
+
+def _transport(config):
+    return _provider_named(build_deck_builder(config), "llm").transport
+
+
+def test_load_reads_llm_backend(tmp_path):
+    path = _write(tmp_path, 'llm_backend = "chatgpt"\n')
+
+    assert Config.load(path=path, environ={}).llm_backend == "chatgpt"
+
+
+def test_load_rejects_an_unknown_llm_backend(tmp_path):
+    path = _write(tmp_path, 'llm_backend = "chatgtp"\n')
+
+    with pytest.raises(ConfigError, match=f"{path}: unknown llm_backend 'chatgtp'"):
+        Config.load(path=path, environ={})
+
+
+def test_unknown_llm_backend_raises():
+    config = Config(pack="de", providers=("llm",), llm_backend="chatgtp")
+
+    with pytest.raises(ConfigError, match="unknown llm_backend 'chatgtp'; known: chat-completions, chatgpt"):
+        build_deck_builder(config)
+
+
+def test_chat_completions_backend_defaults():
+    transport = _transport(Config(pack="de", providers=("llm",)))
+
+    assert transport.name == "chat-completions"
+    assert transport.base_url == "http://localhost:8080/v1"
+    assert transport.model == "local-model"
+
+
+def test_chat_completions_backend_uses_the_configured_url_and_model():
+    transport = _transport(
+        Config(
+            pack="de",
+            providers=("llm",),
+            llm_base_url="https://llm.example/v1",
+            llm_model="my-model",
+        )
+    )
+
+    assert transport.base_url == "https://llm.example/v1"
+    assert transport.model == "my-model"
+
+
+def test_chatgpt_backend_warns_and_ignores_llm_base_url(stub_tokens):
+    # The token is scoped to OpenAI's API; a configured URL must never receive it.
+    config = Config(
+        pack="de",
+        providers=("llm",),
+        llm_backend="chatgpt",
+        llm_model="gpt-5.5",
+        llm_base_url="http://example.com/v1",
+    )
+    with pytest.warns(UserWarning, match="'chatgpt' ignores llm_base_url: its endpoint is fixed"):
+        transport = _transport(config)
+
+    assert transport.name == "chatgpt"
+    assert transport.URL == "https://api.openai.com/v1/responses"
+    assert not hasattr(transport, "base_url")
+    assert transport.model == "gpt-5.5"
+    assert transport.token_source.access_token() == "stub-token"
+
+
+def test_chatgpt_backend_without_a_model_raises(stub_tokens):
+    config = Config(pack="de", providers=("llm",), llm_backend="chatgpt")
+
+    with pytest.raises(ConfigError, match="no default model.*`ankery status`"):
+        build_deck_builder(config)
+
+
+def test_chatgpt_section_reaches_the_chatgpt_transport_only(stub_tokens):
+    params = {
+        "chat-completions": {"temperature": 0.2},
+        "chatgpt": {"reasoning": {"effort": "low"}},
+    }
+    transport = _transport(
+        Config(
+            pack="de",
+            providers=("llm",),
+            llm_backend="chatgpt",
+            llm_model="gpt-5.5",
+            llm_params=params,
+        )
+    )
+
+    assert transport.params == {"reasoning": {"effort": "low"}}
+
+
+def test_chatgpt_backend_warns_and_ignores_the_api_key(stub_tokens):
+    config = Config(
+        pack="de",
+        providers=("llm",),
+        llm_backend="chatgpt",
+        llm_model="gpt-5.5",
+        llm_api_key="sk-secret",
+    )
+    with pytest.warns(UserWarning, match="'chatgpt' ignores llm_api_key: .*ChatGPT sign-in") as record:
+        transport = _transport(config)
+
+    assert not hasattr(transport, "api_key")
+    assert record[0].filename == __file__  # blames the caller, not ankery
+
+
+def test_chatgpt_backend_with_only_its_own_settings_is_silent(stub_tokens):
+    config = Config(pack="de", providers=("llm",), llm_backend="chatgpt", llm_model="gpt-5.5")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _transport(config)
+
+
+def test_chatgpt_backend_needs_a_sign_in():
+    config = Config(pack="de", providers=("llm",), llm_backend="chatgpt", llm_model="gpt-5.5")
+
+    with pytest.raises(ConfigError, match="needs a ChatGPT sign-in"):
+        build_deck_builder(config)
 
 
 def test_load_wraps_malformed_toml(tmp_path):
@@ -630,8 +779,10 @@ def test_build_deck_builder_override_variable_reaches_provider():
 def test_load_warns_on_world_readable_auth_file(tmp_path):
     auth = _write_auth(tmp_path, 'llm_api_key = "sk-secret"\n')
     auth.chmod(0o644)
-    with pytest.warns(UserWarning, match="accessible to group/others"):
+    with pytest.warns(UserWarning, match="accessible to group/others") as record:
         Config.load(path=tmp_path / "absent.toml", auth_path=auth, environ={})
+
+    assert record[0].filename == __file__  # blames the caller, not ankery
 
 
 def test_load_silent_when_auth_file_locked_down(tmp_path):
@@ -650,8 +801,10 @@ def test_build_warns_on_api_key_over_plaintext_http_to_remote():
         llm_base_url="http://example.com:8080/v1",
         llm_api_key="sk-secret",
     )
-    with pytest.warns(UserWarning, match="plaintext http"):
+    with pytest.warns(UserWarning, match="plaintext http") as record:
         build_deck_builder(config)
+
+    assert record[0].filename == __file__  # blames the caller, not ankery
 
 
 def test_build_silent_for_api_key_over_http_to_localhost():

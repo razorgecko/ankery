@@ -288,6 +288,23 @@ def test_infra_flags_override_config(patched):
     assert config.anki_url == "http://anki.local:8765"
 
 
+def test_llm_backend_flag_overrides_config(patched):
+    captured, set_results = patched
+    set_results({"Buch": AddResult(note_id=1, term="Buch")})
+
+    cli.main(["--llm-backend", "chatgpt", "Buch"])
+
+    assert captured["config"].llm_backend == "chatgpt"
+
+
+def test_llm_backend_flag_rejects_an_unknown_backend(patched, capsys):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--llm-backend", "chatgtp", "Buch"])
+
+    assert exc.value.code == 2
+    assert "invalid choice: 'chatgtp'" in capsys.readouterr().err
+
+
 def test_provider_flag_overrides_chain(patched):
     captured, set_results = patched
     set_results({"Buch": AddResult(note_id=1, term="Buch")})

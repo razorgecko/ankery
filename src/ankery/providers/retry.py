@@ -47,6 +47,8 @@ def request_with_retry(
         if response.status_code != 429 or attempt == max_attempts - 1:
             return response
         delay = _retry_delay(response, base_delay * 2**attempt, max_delay)
+        # A streamed response holds its connection until closed.
+        response.close()
         logger.info("HTTP 429, retrying in %.1fs (attempt %d)", delay, attempt + 1)
         sleep(delay)
     return response  # unreachable: the loop returns on its final attempt

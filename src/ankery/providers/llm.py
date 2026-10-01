@@ -1,6 +1,7 @@
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from itertools import chain
 from typing import Any, Protocol
 
 import httpx
@@ -19,9 +20,19 @@ class Transport(Protocol):
     name: str
     # Request fields the transport builds itself.
     OWNED_KEYS: frozenset[str]
+    # None: the model must be configured.
+    DEFAULT_MODEL: str | None
 
     def complete(self, system_prompt: str, user_prompt: str) -> str:
         """Return the model's response text; raise ProviderError on failure."""
+        ...
+
+
+class TokenSource(Protocol):
+    """Supplies a current OAuth access token."""
+
+    def access_token(self) -> str:
+        """Return a token valid for the next request; raise ProviderError if none."""
         ...
 
 
@@ -30,6 +41,8 @@ class ChatCompletionsTransport:
 
     name = "chat-completions"
     OWNED_KEYS = frozenset({"model", "messages", "stream"})
+    DEFAULT_BASE_URL = "http://localhost:8080/v1"
+    DEFAULT_MODEL: str | None = "local-model"
     DEFAULT_PARAMS: dict[str, Any] = {
         "temperature": 0,
         "response_format": {"type": "json_object"},
@@ -85,9 +98,121 @@ class ChatCompletionsTransport:
             raise ProviderError(f"Unexpected LLM response shape: {exc}") from exc
 
 
-TRANSPORTS: dict[str, type[Transport]] = {
-    ChatCompletionsTransport.name: ChatCompletionsTransport,
+# Failure codes of plan-billed (Sign in with ChatGPT) usage.
+_USAGE_ERRORS = {
+    "subscription_sharing_usage_limit_exceeded": "ChatGPT plan usage limit reached",
+    "subscription_sharing_usage_unavailable": "ChatGPT plan usage data unavailable",
 }
+
+
+class ChatGPTTransport:
+    """Transport for the streamed /responses endpoint, authorized by a ChatGPT
+    sign-in token."""
+
+    name = "chatgpt"
+    OWNED_KEYS = frozenset({"model", "input", "instructions", "stream", "store"})
+    # Model slugs depend on the user's plan.
+    DEFAULT_MODEL: str | None = None
+    # Fixed: sign-in tokens are issued for this resource only.
+    URL = "https://api.openai.com/v1/responses"
+    # Empty: the endpoint rejects temperature, and json_object text format needs
+    # the word "json" in an input message, which a pack's user prompt may lack.
+    DEFAULT_PARAMS: dict[str, Any] = {}
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        token_source: TokenSource,
+        params: dict[str, Any] | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self.model = model
+        self.token_source = token_source
+        self.params = merge_params(self.DEFAULT_PARAMS, params or {})
+        self.timeout = timeout
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        payload = {
+            **self.params,
+            "model": self.model,
+            "instructions": system_prompt,
+            "input": [{"role": "user", "content": user_prompt}],
+            # The endpoint accepts only streamed, unstored responses.
+            "stream": True,
+            "store": False,
+        }
+        headers = {"Authorization": f"Bearer {self.token_source.access_token()}"}
+
+        url = self.URL
+        # Log the URL and model only, never `headers` — they carry the bearer token.
+        logger.info("llm: POST %s (model %r, streamed)", url, self.model)
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                request = client.build_request("POST", url, json=payload, headers=headers)
+                response = request_with_retry(lambda: client.send(request, stream=True))
+                try:
+                    if not response.is_success:
+                        response.read()
+                        raise ProviderError(
+                            f"LLM request to {url} failed: HTTP {response.status_code}: "
+                            f"{_error_detail(response)}"
+                        )
+                    return _read_response_stream(response.iter_lines())
+                finally:
+                    response.close()
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"LLM request to {url} failed: {exc}") from exc
+
+
+def _read_response_stream(lines: Iterator[str]) -> str:
+    """Join the output text deltas of a Responses event stream; the text counts
+    only once `response.completed` arrives."""
+    parts: list[str] = []
+    for event in _sse_events(lines):
+        kind = event.get("type")
+        if kind == "response.output_text.delta":
+            parts.append(event.get("delta", ""))
+        elif kind == "response.completed":
+            return "".join(parts)
+        elif kind == "response.failed":
+            error = (event.get("response") or {}).get("error") or {}
+            code = error.get("code")
+            if code in _USAGE_ERRORS:
+                raise ProviderError(f"{_USAGE_ERRORS[code]} ({code})")
+            raise ProviderError(
+                f"LLM response failed: {code or 'unknown error'}: {error.get('message', '')}"
+            )
+        elif kind == "response.incomplete":
+            details = (event.get("response") or {}).get("incomplete_details") or {}
+            raise ProviderError(
+                f"LLM response incomplete: {details.get('reason', 'unknown reason')}"
+            )
+        elif kind == "error":
+            raise ProviderError(
+                f"LLM stream error: {event.get('code') or 'unknown error'}: "
+                f"{event.get('message', '')}"
+            )
+    raise ProviderError("LLM stream ended before response.completed")
+
+
+def _sse_events(lines: Iterator[str]) -> Iterator[dict]:
+    """Decode server-sent events: the JSON of each event's joined `data:` lines."""
+    data: list[str] = []
+    # The trailing blank line dispatches an event the stream left unterminated.
+    for line in chain(lines, [""]):
+        if line:
+            if line.startswith("data:"):
+                data.append(line[5:].removeprefix(" "))
+            continue
+        if data:
+            try:
+                event = json.loads("\n".join(data))
+            except json.JSONDecodeError as exc:
+                raise ProviderError(f"LLM stream sent invalid JSON: {exc}") from exc
+            data = []
+            if isinstance(event, dict):
+                yield event
 
 
 def merge_params(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:

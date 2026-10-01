@@ -13,6 +13,13 @@ Key fields: `providers` (empty = pack's chain), `pack` (required, no default),
 `variables` (default `{}`), `packs_dir`, `notes_dir`, `deck`, `note_type`,
 `tags`, the `llm_*`/`anki_*` settings, `allow_duplicate`.
 
+`llm_backend` names the LLM transport
+([architecture.md](./architecture.md#3-providers-providers)); `config.toml`
+rejects an unknown name at load. `llm_base_url` and `llm_model` default to
+`None`, meaning the transport's own default; a transport with no default model
+and no `llm_model` is a `ConfigError`. `llm_base_url` and `llm_api_key` apply to
+`chat-completions` only; `chatgpt` ignores both with a warning.
+
 ## 2. Layers
 
 Each layer overrides the last:
@@ -45,9 +52,14 @@ dataclass defaults  <  config.toml  <  auth.toml  <  env (secret only)  <  CLI f
 
 Each LLM transport ([architecture.md](./architecture.md#3-providers-providers))
 has a default parameter set (`DEFAULT_PARAMS`) and a set of fields it builds
-itself (`OWNED_KEYS`). `chat-completions`: defaults `{"temperature": 0,
-"response_format": {"type": "json_object"}}`; owned `model`, `messages`,
-`stream`.
+itself (`OWNED_KEYS`).
+
+| transport | defaults | owned |
+|---|---|---|
+| `chat-completions` | `{"temperature": 0, "response_format": {"type": "json_object"}}` | `model`, `messages`, `stream` |
+| `chatgpt` | `{}` | `model`, `input`, `instructions`, `stream`, `store` |
+
+The `chatgpt` endpoint accepts `reasoning.effort`, `none` to `max`.
 
 `llm_params.json` maps a transport name to that transport's overrides:
 
@@ -72,8 +84,8 @@ itself (`OWNED_KEYS`). `chat-completions`: defaults `{"temperature": 0,
 `--provider` (comma list, whole chain), `--llm` (the `llm`-only chain; mutually
 exclusive with `--provider`), `--pack` (taken literally, never normalized to a
 language code), `--var KEY=VALUE` (repeatable), `--deck`, `--note-type`,
-`--allow-duplicate`, `--llm-url`, `--llm-model`, `--anki-url`, `--packs-dir`,
-`--notes-dir`, `--config`, `--auth`.
+`--allow-duplicate`, `--llm-backend`, `--llm-url`, `--llm-model`, `--anki-url`,
+`--packs-dir`, `--notes-dir`, `--config`, `--auth`.
 
 **`-n`/`--dry-run`** looks up, routes and renders without writing.
 `DeckBuilder.preview` is `add_term` minus the sink (`note_id` is None);

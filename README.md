@@ -152,8 +152,9 @@ The LLM API key is the one setting that is **not** allowed here (see
 | `note_type` | `--note-type` | `"Ankery Basic"` | Catch-all model for terms with no dedicated layout. Defaults to ankery's own provisioned model; point it at a foreign model (e.g. Anki's stock `Basic`) to write there instead. |
 | `tags` | — | `[]` | Tags added to every created note. |
 | `allow_duplicate` | `--allow-duplicate` | `false` | Add a note even if Anki considers it a duplicate. |
-| `llm_base_url` | `--llm-url` | `"http://localhost:8080/v1"` | OpenAI-compatible LLM endpoint. |
-| `llm_model` | `--llm-model` | `"local-model"` | Model name sent to the LLM. |
+| `llm_backend` | `--llm-backend` | `"chat-completions"` | How ankery talks to the LLM: `chat-completions` for an OpenAI-compatible server, `chatgpt` for a ChatGPT plan. |
+| `llm_base_url` | `--llm-url` | `"http://localhost:8080/v1"` | OpenAI-compatible LLM endpoint for `chat-completions`. Ignored by `chatgpt`, whose endpoint is fixed, with a warning. |
+| `llm_model` | `--llm-model` | per backend | Model name sent to the LLM. `chat-completions`: `"local-model"`; `chatgpt`: none, it must be set. |
 | `llm_timeout` | — | `30.0` | LLM request timeout, in seconds. |
 | `anki_url` | `--anki-url` | `"http://localhost:8765"` | AnkiConnect endpoint. |
 | `anki_timeout` | — | `10.0` | AnkiConnect request timeout, in seconds. |
@@ -162,21 +163,28 @@ The LLM API key is the one setting that is **not** allowed here (see
 
 ### LLM request parameters
 
-ankery sends the LLM a small set of default request parameters: `temperature: 0`
-and `response_format: {"type": "json_object"}`. To change them, create
-`~/.config/ankery/llm_params.json`:
+With the `chat-completions` backend, ankery sends the LLM a small set of default
+request parameters: `temperature: 0` and
+`response_format: {"type": "json_object"}`. The `chatgpt` backend sends none. To
+change them, create `~/.config/ankery/llm_params.json`, with one section per
+backend:
 
 ```json
 {
-  "chat-completions": {"temperature": 0.2, "response_format": null}
+  "chat-completions": {"temperature": 0.2, "response_format": null},
+  "chatgpt": {"reasoning": {"effort": "low"}}
 }
 ```
 
+- Only the section of the backend in use is sent, so switching backends needs no
+  edit.
 - A key replaces the default of the same name; nested values are replaced whole.
 - `null` removes a default (here, JSON mode for a server that rejects it).
 - Any other key is passed to the endpoint as given. If the endpoint rejects it,
   the error shows the endpoint's message.
-- `model`, `messages` and `stream` are reserved for ankery and cannot be set.
+- Reserved for ankery and not settable: `model`, `messages` and `stream` under
+  `chat-completions`; `model`, `input`, `instructions`, `stream` and `store`
+  under `chatgpt`.
 
 ### Authorization
 
@@ -192,7 +200,8 @@ The LLM API key, if the endpoint needs one, can be supplied in two ways:
   both are set.
 
 If the endpoint is configured without an API key (as a local `llama-server`
-can be), both can be omitted entirely.
+can be), both can be omitted entirely. The key is used by `chat-completions`
+only; `chatgpt` ignores it, with a warning.
 
 ### Custom card layouts
 

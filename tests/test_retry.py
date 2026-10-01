@@ -28,6 +28,19 @@ def test_retries_on_429_then_succeeds():
     assert len(slept) == 2  # one wait before each retry
 
 
+def test_discarded_429_responses_are_closed_and_the_last_is_not():
+    # Stream-backed, so each response stays open until closed.
+    responses = [
+        httpx.Response(status, stream=httpx.ByteStream(b"")) for status in (429, 429, 200)
+    ]
+    sent = iter(responses)
+
+    response = request_with_retry(lambda: next(sent), sleep=lambda _: None)
+
+    assert response is responses[-1]
+    assert [r.is_closed for r in responses] == [True, True, False]
+
+
 def test_gives_up_after_max_attempts():
     calls: list[int] = []
 

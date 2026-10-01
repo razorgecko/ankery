@@ -87,14 +87,26 @@ else the pack's `providers`.
   top-level keys but does not check keys inside `properties`/`collections`
   against the pack's declarations; the provider stamps provenance. These rules
   sit in the provider, so they hold for every transport.
-- **Transports** (`providers/llm.py`, registry `TRANSPORTS`) turn `(system
-  prompt, user prompt)` into response text and own everything
-  endpoint-specific: URL, request body, auth header, response parsing, retry.
-  Each declares default request parameters and the fields it builds itself
-  ([configuration.md](./configuration.md#3-llm-request-parameters)).
-  `chat-completions`: OpenAI-compatible `/v1/chat/completions` (default
-  `http://localhost:8080/v1`, a local llama-server); `llm_api_key` adds a
-  Bearer header; a 429 is retried (`providers/retry.py`).
+- **Transports** (`providers/llm.py`) turn `(system prompt, user prompt)` into
+  response text and own everything endpoint-specific: URL, request body, auth
+  header, response parsing, retry. Each declares default request parameters,
+  the fields it builds itself
+  ([configuration.md](./configuration.md#3-llm-request-parameters)) and its
+  default model (`DEFAULT_MODEL`, `None` if it has none). `config.py` holds the
+  registry: `TRANSPORTS` maps each `llm_backend` name to its class, and each
+  class has a builder that takes the config, the resolved model and the
+  backend's `llm_params.json` section. A 429 is retried in both
+  (`providers/retry.py`).
+  - `chat-completions`: OpenAI-compatible `/v1/chat/completions`
+    (`DEFAULT_BASE_URL` `http://localhost:8080/v1`, a local llama-server;
+    `DEFAULT_MODEL` `local-model`); `llm_api_key` adds a Bearer header.
+  - `chatgpt` (`ChatGPTTransport`): the streamed Responses API at the fixed
+    `https://api.openai.com/v1/responses`, billed to the user's ChatGPT plan;
+    no default model. The transport has no URL parameter: the sign-in token is
+    issued for that resource only, and a configurable URL could send it to
+    another host. The Bearer token comes from a `TokenSource`; `llm_api_key` is
+    not used. The system prompt goes in `instructions`. The text counts only
+    after `response.completed`; failure events raise `ProviderError`.
 - **`netzverb`** (German pack) — scrapes verbformen.com and verben.de with
   BeautifulSoup. 404 is a clean miss; a 429 is retried. A `category_hint` picks
   the page directly and misses cleanly for any category it cannot scrape; with no
@@ -106,7 +118,7 @@ else the pack's `providers`.
 
 ```
 models.py         Entry (the contract)
-config.py         Config, layered resolution, resolve_variables, wiring, sync_note_types, sync_collection, PROVIDER_REGISTRY
+config.py         Config, layered resolution, resolve_variables, wiring, sync_note_types, sync_collection, PROVIDER_REGISTRY, TRANSPORTS
 pack.py           Pack + load_pack (resolve, parse categories/derived keys/variables, load filter/providers)
 prompts.py        render_system_prompt(pack, category_hint?, *, variables, template?), render_user_prompt
 languages.py      language_name/language_code: code<->English-name, exposed as Jinja filters
@@ -116,7 +128,7 @@ hints.py          parse_term: term:cat token -> (term, canonical category)
 __main__.py       CLI parsers, output verbosity
 defaults/         engine-shipped neutral assets: catch-all note, prompt templates, fallback style.css
 providers/base    Provider Protocol + ProviderError
-providers/llm     LLMProvider, transports (chat-completions), merge_params
+providers/llm     LLMProvider, transports (chat-completions, chatgpt), TokenSource, merge_params
 providers/retry   request_with_retry: HTTP 429 backoff, shared by providers
 sinks/base        AnkiSink Protocol + SinkError
 sinks/ankiconnect AnkiConnectSink (JSON-RPC)

@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ankery.config import (
+    TRANSPORTS,
     Config,
     ConfigError,
     build_deck_builder,
@@ -83,7 +84,16 @@ def build_parser() -> argparse.ArgumentParser:
         "notes by category",
     )
     parser.add_argument("--note-type", help="Anki note type")
-    parser.add_argument("--llm-url", help="OpenAI-compatible base URL for the LLM provider")
+    parser.add_argument(
+        "--llm-backend",
+        choices=sorted(TRANSPORTS),
+        help="LLM transport: chat-completions (an OpenAI-compatible server) or "
+        "chatgpt (a ChatGPT plan, via Sign in with ChatGPT)",
+    )
+    parser.add_argument(
+        "--llm-url",
+        help="base URL of the chat-completions endpoint (the chatgpt endpoint is fixed)",
+    )
     parser.add_argument("--llm-model", help="model name sent to the LLM provider")
     parser.add_argument(
         "--allow-duplicate",
@@ -181,6 +191,8 @@ def _config_from_args(args: argparse.Namespace) -> Config:
         overrides["note_type"] = args.note_type
     if args.notes_dir is not None:
         overrides["notes_dir"] = Path(args.notes_dir).expanduser()
+    if args.llm_backend is not None:
+        overrides["llm_backend"] = args.llm_backend
     if args.llm_url is not None:
         overrides["llm_base_url"] = args.llm_url
     if args.llm_model is not None:

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, fields, replace
 from functools import partial
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from ankery.defaults import catch_all_model_name
@@ -19,7 +20,13 @@ from ankery.notedef import (
 from ankery.pack import Pack, PackError, load_pack
 from ankery.prompts import render_system_prompt, render_user_prompt
 from ankery.providers.base import Provider
-from ankery.providers.llm import TRANSPORTS, ChatCompletionsTransport, LLMProvider
+from ankery.providers.llm import (
+    ChatCompletionsTransport,
+    ChatGPTTransport,
+    LLMProvider,
+    TokenSource,
+    Transport,
+)
 from ankery.sinks.ankiconnect import AnkiConnectSink
 from ankery.sinks.base import SyncResult
 
@@ -31,6 +38,9 @@ def _config_dir() -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".config"
     return base / "ankery"
+
+# Skipped when attributing a warning, so it names the first caller outside ankery.
+_INTERNAL_FILES = (str(Path(__file__).parent) + os.sep,)
 
 SECRET_KEYS = {"llm_api_key"}
 LLM_PARAMS_FILE = "llm_params.json"
@@ -47,8 +57,11 @@ class Config:
     # Empty means use the pack's preferred chain.
     providers: tuple[str, ...] = ()
 
-    llm_base_url: str = "http://localhost:8080/v1"
-    llm_model: str = "local-model"
+    llm_backend: str = ChatCompletionsTransport.name
+    # chat-completions only. None: the transport's DEFAULT_BASE_URL.
+    llm_base_url: str | None = None
+    # None: the transport's DEFAULT_MODEL.
+    llm_model: str | None = None
     llm_timeout: float = 30.0
     # Per-backend request parameter overrides, read from llm_params.json only.
     llm_params: dict[str, dict] = field(default_factory=dict)
@@ -153,6 +166,10 @@ def _load_config_file(path: Path) -> dict:
             )
         raise ConfigError(f"{path}: unknown config keys: {', '.join(sorted(unknown))}")
 
+    backend = raw.get("llm_backend")
+    if backend is not None and backend not in TRANSPORTS:
+        raise ConfigError(f"{path}: {_unknown_backend(backend)}")
+
     for key in ("tags", "providers"):
         if isinstance(raw.get(key), list):
             raw[key] = tuple(raw[key])
@@ -237,7 +254,7 @@ def _warn_if_world_readable(path: Path) -> None:
         warnings.warn(
             f"{path} holds a secret but is accessible to group/others; "
             f"restrict it with `chmod 600 {path}`.",
-            stacklevel=2,
+            skip_file_prefixes=_INTERNAL_FILES,
         )
 
 
@@ -267,22 +284,83 @@ def resolve_variables(raw: dict[str, str], pack: Pack) -> dict[str, str]:
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
-def _build_llm(config: "Config", pack: Pack) -> Provider:
+def _token_source(config: "Config") -> TokenSource:
+    """The ChatGPT sign-in token source."""
+    raise ConfigError(
+        f"the {ChatGPTTransport.name} llm backend needs a ChatGPT sign-in, "
+        "which this version cannot do yet."
+    )
+
+
+# Each builder gets the resolved model and the backend's llm_params.json section.
+TransportBuilder = Callable[["Config", str, dict[str, Any]], Transport]
+
+
+def _build_chat_completions(config: "Config", model: str, params: dict[str, Any]) -> Transport:
+    base_url = config.llm_base_url or ChatCompletionsTransport.DEFAULT_BASE_URL
     if config.llm_api_key:
-        parts = urlsplit(config.llm_base_url)
+        parts = urlsplit(base_url)
         if parts.scheme == "http" and parts.hostname not in _LOOPBACK_HOSTS:
             warnings.warn(
                 f"sending the LLM API key over plaintext http to {parts.hostname}; "
                 "the token is exposed in transit — use https for remote endpoints.",
-                stacklevel=2,
+                skip_file_prefixes=_INTERNAL_FILES,
             )
-    transport = ChatCompletionsTransport(
-        base_url=config.llm_base_url,
-        model=config.llm_model,
-        params=config.llm_params.get(ChatCompletionsTransport.name, {}),
+    return ChatCompletionsTransport(
+        base_url=base_url,
+        model=model,
+        params=params,
         timeout=config.llm_timeout,
         api_key=config.llm_api_key,
     )
+
+
+def _build_chatgpt(config: "Config", model: str, params: dict[str, Any]) -> Transport:
+    ignored = [key for key in ("llm_base_url", "llm_api_key") if getattr(config, key)]
+    if ignored:
+        warnings.warn(
+            f"llm_backend {ChatGPTTransport.name!r} ignores {', '.join(ignored)}: "
+            "its endpoint is fixed and it uses the ChatGPT sign-in.",
+            skip_file_prefixes=_INTERNAL_FILES,
+        )
+    return ChatGPTTransport(
+        model,
+        token_source=_token_source(config),
+        params=params,
+        timeout=config.llm_timeout,
+    )
+
+
+_TRANSPORT_BUILDERS: dict[type[Transport], TransportBuilder] = {
+    ChatCompletionsTransport: _build_chat_completions,
+    ChatGPTTransport: _build_chatgpt,
+}
+
+TRANSPORTS: dict[str, type[Transport]] = {
+    transport.name: transport for transport in _TRANSPORT_BUILDERS
+}
+
+
+def _unknown_backend(backend: str) -> str:
+    return f"unknown llm_backend {backend!r}; known: {', '.join(sorted(TRANSPORTS))}."
+
+
+def _build_transport(config: "Config") -> Transport:
+    backend = TRANSPORTS.get(config.llm_backend)
+    if backend is None:
+        raise ConfigError(_unknown_backend(config.llm_backend))
+    model = config.llm_model or backend.DEFAULT_MODEL
+    if model is None:
+        raise ConfigError(
+            f"llm_backend {backend.name!r} has no default model; set llm_model "
+            "(or --llm-model) to a model slug; `ankery status` lists them."
+        )
+    params = config.llm_params.get(backend.name, {})
+    return _TRANSPORT_BUILDERS[backend](config, model, params)
+
+
+def _build_llm(config: "Config", pack: Pack) -> Provider:
+    transport = _build_transport(config)
     return LLMProvider(
         transport,
         system_prompt_for=partial(
