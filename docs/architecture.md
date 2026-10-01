@@ -104,9 +104,12 @@ else the pack's `providers`.
     `https://api.openai.com/v1/responses`, billed to the user's ChatGPT plan;
     no default model. The transport has no URL parameter: the sign-in token is
     issued for that resource only, and a configurable URL could send it to
-    another host. The Bearer token comes from a `TokenSource`; `llm_api_key` is
-    not used. The system prompt goes in `instructions`. The text counts only
-    after `response.completed`; failure events raise `ProviderError`.
+    another host. The Bearer token comes from a `TokenSource`, the stored
+    ChatGPT sign-in (`signin.StoredTokens`,
+    [configuration.md](./configuration.md#6-sign-in-with-chatgpt));
+    `llm_api_key` is not used. The system prompt goes in `instructions`. The
+    text counts only after `response.completed`; failure events raise
+    `ProviderError`.
 - **`netzverb`** (German pack) — scrapes verbformen.com and verben.de with
   BeautifulSoup. 404 is a clean miss; a 429 is retried. A `category_hint` picks
   the page directly and misses cleanly for any category it cannot scrape; with no
@@ -125,7 +128,8 @@ languages.py      language_name/language_code: code<->English-name, exposed as J
 notedef.py        NoteDefinition, load/merge from dir
 manager.py        DeckBuilder: chain -> normalize -> route by category -> sink
 hints.py          parse_term: term:cat token -> (term, canonical category)
-__main__.py       CLI parsers, output verbosity
+__main__.py       CLI parsers and commands, output verbosity
+signin.py         Sign in with ChatGPT: login, refresh, revocation, TokenStore, StoredTokens, CallbackServer
 defaults/         engine-shipped neutral assets: catch-all note, prompt templates, fallback style.css
 providers/base    Provider Protocol + ProviderError
 providers/llm     LLMProvider, transports (chat-completions, chatgpt), TokenSource, merge_params

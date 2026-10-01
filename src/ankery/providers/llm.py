@@ -113,7 +113,7 @@ class ChatGPTTransport:
     OWNED_KEYS = frozenset({"model", "input", "instructions", "stream", "store"})
     # Model slugs depend on the user's plan.
     DEFAULT_MODEL: str | None = None
-    # Fixed: sign-in tokens are issued for this resource only.
+    # Sign-in tokens are issued for this resource only.
     URL = "https://api.openai.com/v1/responses"
     # Empty: the endpoint rejects temperature, and json_object text format needs
     # the word "json" in an input message, which a pack's user prompt may lack.

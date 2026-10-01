@@ -27,6 +27,13 @@ from ankery.providers.llm import (
     TokenSource,
     Transport,
 )
+from ankery.signin import (
+    SignInError,
+    StoredTokens,
+    TokenStore,
+    is_signed_in,
+    tokens_path,
+)
 from ankery.sinks.ankiconnect import AnkiConnectSink
 from ankery.sinks.base import SyncResult
 
@@ -285,11 +292,18 @@ _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def _token_source(config: "Config") -> TokenSource:
-    """The ChatGPT sign-in token source."""
-    raise ConfigError(
-        f"the {ChatGPTTransport.name} llm backend needs a ChatGPT sign-in, "
-        "which this version cannot do yet."
-    )
+    """The stored ChatGPT sign-in; ConfigError if there is none."""
+    store = TokenStore(tokens_path())
+    try:
+        record = store.load()
+    except SignInError as exc:
+        raise ConfigError(str(exc)) from exc
+    if not is_signed_in(record):
+        raise ConfigError(
+            f"the {ChatGPTTransport.name} llm backend needs a ChatGPT sign-in; "
+            "run `ankery login`."
+        )
+    return StoredTokens(store, timeout=config.llm_timeout)
 
 
 # Each builder gets the resolved model and the backend's llm_params.json section.

@@ -44,9 +44,11 @@ mechanics are in [docs/](./docs/).
 8. **A note definition is written once.** The runtime map and the sink's model
    creation read the same `NoteDefinition`; field names and order are not
    restated anywhere else.
-9. **The secret stays out of shareable and logged surfaces.** Only
-   `llm_api_key` lives in `auth.toml`; env carries only that secret and the two
-   file paths (`test_from_env_ignores_non_secret_vars`,
+9. **Secrets stay out of shareable and logged surfaces.** `auth.toml` holds
+   only `llm_api_key`; the ChatGPT OAuth tokens live only in `tokens.json` in
+   the state dir, written by ankery with mode `0600`
+   (`test_store_round_trips_and_writes_mode_0600`); env carries only the API
+   key and the two file paths (`test_from_env_ignores_non_secret_vars`,
    `test_load_auth_file_rejects_non_secret_keys`); request headers are never
    logged.
 
@@ -92,6 +94,20 @@ mechanics are in [docs/](./docs/).
   must be named `ankery.…` explicitly: the module name is `ankery_pack_*`,
   outside the `ankery` tree, so `-vv` would not show it.
 - **Never log request headers** in a provider: they carry the bearer token.
+- **Never log or echo a token, the token exchange, the callback query or the
+  pasted URL.** The ID token goes only into the URL ankery opens, never the one
+  it prints (`test_token_requests_log_no_secrets`,
+  `test_login_output_holds_no_secret`,
+  `test_repeat_login_prints_no_id_token_but_hints_it_to_the_browser`,
+  `test_rejected_redirect_message_does_not_quote_the_code`).
+- **Refresh under the store lock, and save the new set before using it.** The
+  refresh token rotates: a concurrent refresh or an unsaved rotation spends it
+  and forces a new login
+  (`test_refresh_waits_for_the_store_lock_and_uses_what_the_holder_saved`,
+  `test_token_near_expiry_is_refreshed_rotated_and_saved`).
+- **Check a redirect's `state` before its `error` or `code`**, pasted or loopback
+  (`test_pasted_redirect_with_another_state_is_rejected`,
+  `test_loopback_redirect_with_another_state_is_refused_and_the_wait_goes_on`).
 - **`llm_params.json` cannot set a transport's owned keys**, in any section,
   active or not (`test_llm_params_owned_key_raises`). The provenance and
   hinted-miss rules live in `LLMProvider`, never in a transport.
@@ -100,11 +116,14 @@ mechanics are in [docs/](./docs/).
   `[variables]` (`test_load_rejects_engine_key_captured_under_variables_table`);
   keep that check.
 - **`main` dispatches on the first argv token only.** `ankery -- sync-note-types`
-  adds a term (`test_sync_command_only_selected_by_first_token`).
+  adds a term (`test_sync_command_only_selected_by_first_token`,
+  `test_signin_commands_only_selected_by_first_token`).
 - **`--var` replaces the `[variables]` table from `config.toml`**, never merges
   per key: the operator's values come from one source
   (`test_var_flag_replaces_config_variables`).
-- **`sync-note-types` loads no auth.** `with_auth=False`; nothing in it needs the key.
+- **`sync-note-types`, `login`, `logout` and `status` load no auth.**
+  `with_auth=False`; nothing in them needs the key
+  (`test_signin_commands_load_config_without_auth`).
 - **Dry run touches no Anki**, provisioning, the shared-field query and `--sync`
   included (`test_dry_run_previews_without_touching_anki`,
   `test_preview_does_not_query_shared_fields`, `test_dry_run_rejects_sync`).
@@ -129,7 +148,7 @@ uv run python -m ankery <term>
 | `pack.py`, anything under `packs/` | [docs/packs.md](./docs/packs.md) |
 | `prompts.py`, `defaults/prompts/`, a pack's `prompts/` | [docs/prompts.md](./docs/prompts.md) |
 | `notedef.py`, `hints.py`, routing, `sinks/`, `defaults/notes/` | [docs/notes.md](./docs/notes.md) |
-| `config.py`, `__main__.py`, uv/packaging | [docs/configuration.md](./docs/configuration.md) |
+| `config.py`, `__main__.py`, `signin.py`, uv/packaging | [docs/configuration.md](./docs/configuration.md) |
 | the pack authoring guide | [docs/authoring-packs.md](./docs/authoring-packs.md) |
 
 ## Style

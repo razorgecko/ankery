@@ -1,7 +1,7 @@
 # Configuration and CLI
 
-`config.py` and `__main__.py`: how settings are layered, and what the CLI does
-with them.
+`config.py`, `__main__.py` and `signin.py`: how settings are layered, what the
+CLI does with them, and the ChatGPT sign-in.
 
 ## 1. `Config`
 
@@ -37,6 +37,8 @@ dataclass defaults  <  config.toml  <  auth.toml  <  env (secret only)  <  CLI f
   `config.toml` (also under `with_auth=False`); not settable in `config.toml`.
 - Env — only the secret (`ANKERY_LLM_API_KEY`) and the file paths
   (`ANKERY_CONFIG`, `ANKERY_AUTH`).
+- `tokens.json` is not a layer: it is state written by ankery, outside the
+  config dir, and sets no `Config` field ([§6](#6-sign-in-with-chatgpt)).
 - `variables` — a `[variables]` table in `config.toml`, keyed by labels the pack
   declares. Being a table header it must follow every bare top-level key;
   `config.py` catches an engine key that lands under it and points at the
@@ -133,7 +135,135 @@ level.
 
 Sync semantics: [notes.md](./notes.md#4-ankiconnect-sinksankiconnectpy).
 
-## 6. Tooling
+## 6. Sign in with ChatGPT
+
+`signin.py` implements OpenAI's Sign in with ChatGPT for the `chatgpt` transport:
+the OAuth authorization code flow with PKCE and no client secret. Endpoints are
+fixed under `https://auth.openai.com`; the token resource is
+`https://api.openai.com/v1`.
+
+### Commands
+
+`ankery login`, `ankery logout` and `ankery status` each have their own parser
+(`--config` only). As with `sync-note-types` ([§5](#5-sync-note-types)), only
+the first argv token selects them, and they load config with `with_auth=False`.
+Their requests use `llm_timeout`. A config error exits 2.
+
+**`login`** (`begin`, `complete`):
+
+- Each run makes a fresh PKCE verifier, `state` and `nonce`.
+- Registration: with no stored `client_id`, it authorizes as
+  `dynamic_agent_client` with `agent_name_hint=ankery` and a new
+  `ext_agent_host_id` (`urn:uuid:…`). The redirect returns the issued
+  `client_id` (`oaiapp_…`), which is used from then on.
+  `dynamic_agent_client` is never stored. Later runs send the issued
+  `client_id` and the stored `ext_agent_host_id`.
+- While an ID token is held, the account is hinted. The printed URL carries
+  `login_hint` (the stored email) only; the URL that option 2 opens adds the ID
+  token as `id_token_hint`. The SIWC docs ask for URLs holding that hint to be
+  kept out of logs, so it is never printed.
+- It prints the authorize URL and asks:
+
+  ```
+  1. Paste the redirect URL
+  2. Open the link in a browser
+  3. Cancel
+  ```
+
+  1. Reads the URL the browser was redirected to
+     (`http://127.0.0.1:1455/auth/callback?…`). Needs no listener, so it works
+     when the browser runs on another machine: the user copies the URL from the
+     address bar of the page that failed to load. The code in it is useless
+     without the verifier, which only this process holds.
+  2. Calls `webbrowser.open`, then `CallbackServer` serves `127.0.0.1:1455`
+     until the redirect with this run's `state` arrives (5 minutes). A request
+     with another or no `state` (a stale tab, another web page) gets a 400 and
+     the wait goes on. This option is offered only when a
+     graphical browser can be expected and the port binds. `can_open_browser`
+     expects one on macOS and Windows, and elsewhere only with `DISPLAY` or
+     `WAYLAND_DISPLAY` set; without them, `webbrowser` falls back to a console
+     browser that takes over the terminal. A busy port prints an error naming
+     it.
+  3. Cancels, as do EOF and Ctrl-C: exit 1, nothing written.
+
+  An unavailable option is left out, not renumbered.
+- `parse_callback` checks both paths in this order: path `/auth/callback`,
+  `state`, `error`, `code`. `state` and `nonce` are compared as bytes, so a
+  non-ASCII value is a mismatch, not a crash. A repeat sign-in's redirect may
+  omit `client_id`; the one sent to authorize stays valid.
+- The code is exchanged at the token endpoint. The ID token's claims are
+  checked: `iss`, `aud` contains the issued `client_id`, `nonce`, `exp`
+  (60 s skew), `sub`. There is no JWKS signature check, because the token comes
+  straight from the token endpoint over TLS.
+- It saves the record under the store lock, then prints the account and the
+  model slugs. A failure exits 1 and keeps the previous record.
+
+**`logout`**:
+
+- Asks `Sign out <account>? [y/N]`. Anything but `y`/`yes` (any case), EOF or
+  Ctrl-C exits 1 with nothing changed.
+- Revokes the refresh token at the revocation endpoint. A failed revocation
+  warns, and logout continues.
+- Deletes the tokens and keeps the registration and the account (`signed_out`:
+  `email`, `issuer`, `subject`, `client_id`, `ext_agent_host_id`). The next
+  login reuses the registration, without `id_token_hint`.
+- Exit 0, also when already signed out (no prompt).
+
+**`status`** prints the account, the access token's expiry and the model slugs
+(`GET /v1/models`, entries with `visibility == "list"`). It refreshes the token
+first if due and never prints a token. Exit 1 when signed out or when the model
+list fails.
+
+### Token store
+
+- Path (`tokens_path`): `$XDG_STATE_HOME/ankery/tokens.json` if
+  `XDG_STATE_HOME` is absolute, else `~/.local/state/ankery/tokens.json`. It is
+  never hand-edited.
+- One record: `email`, `issuer`, `subject`, `client_id`, `ext_agent_host_id`,
+  `id_token`, `access_token`, `refresh_token`, `expires_in`, `scopes`,
+  `saved_at` (ISO 8601 UTC, taken before the token request).
+- `TokenStore.save` writes atomically: temp file in the same directory,
+  `chmod 0600`, `os.replace`. It creates the directory with mode `0700`.
+- `TokenStore.lock` takes an exclusive lock on `tokens.json.lock` beside it
+  (`fcntl.flock`; `msvcrt.locking` on Windows), seen by other processes. Every
+  write holds it: refresh, `login` and `logout`. Reads need none, since the
+  write is atomic.
+- `auth.toml` keeps only `llm_api_key`; the OAuth tokens never go there.
+
+### Refresh
+
+`StoredTokens` is the `chatgpt` transport's `TokenSource`. When no sign-in is
+stored, `config._token_source` raises `ConfigError`, so the run fails at wiring,
+dry run included.
+
+- `access_token()` holds the store lock while it reads the record and, if due,
+  refreshes and saves. The SIWC docs require refreshes to be serialized: the
+  server rejects a rotated-out refresh token as `refresh_token_reused`. A
+  process that waited on the lock re-reads the record, so it uses the set the
+  holder saved and makes no request.
+- Within 300 s of expiry it refreshes and saves the new set before returning,
+  because the refresh token rotates. The refresh form is `grant_type`,
+  `client_id`, `refresh_token` and `resource`, with no `scope`. A response
+  without a refresh token keeps the current one.
+- An error code that the SIWC docs call terminal (`invalid_grant`,
+  `invalid_refresh_token`, `token_expired`, `refresh_token_expired`,
+  `refresh_token_invalidated`, `refresh_token_reused`, read from the OAuth
+  `error` or the API's `error.code`) clears the tokens, keeping the
+  registration as `logout` does, and is a `ProviderError` telling the user to
+  run `ankery login`. Any other failure, a 429 included, keeps the tokens and is
+  a `ProviderError` without that advice.
+
+### Logging
+
+Never log or echo a token, the token request form or response, the callback
+query, the pasted URL or request headers.
+
+- `signin` logs the endpoint and grant type only.
+- `parse_callback` errors never quote the URL.
+- `CallbackServer` silences the request log, which would print the code to
+  stderr.
+
+## 7. Tooling
 
 ```bash
 uv sync                       # venv from pyproject + lockfile

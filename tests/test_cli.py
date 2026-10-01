@@ -1,9 +1,16 @@
+import base64
+import json
 import logging
+import time
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
+import httpx
 import pytest
 
 from ankery import __main__ as cli
+from ankery import signin
 from ankery.config import Config, ConfigError
 from ankery.manager import AddResult
 from ankery.providers.base import ProviderError
@@ -807,3 +814,429 @@ def test_sync_accepts_config_packs_dir_and_anki_url(sync_patched, monkeypatch):
     assert seen["with_auth"] is False
     assert sync_patched["config"].packs_dir == Path("/tmp/packs")
     assert sync_patched["config"].anki_url == "http://anki.local:8765"
+
+
+# ---------------------------------------------------------------------------
+# Sign in with ChatGPT: login, logout, status
+# ---------------------------------------------------------------------------
+
+ISSUED = "oaiapp_123"
+
+
+def _jwt(claims: dict) -> str:
+    def part(obj):
+        return base64.urlsafe_b64encode(json.dumps(obj).encode()).rstrip(b"=").decode()
+
+    return f"{part({'alg': 'RS256'})}.{part(claims)}.sig"
+
+
+def _signed_in_record(**overrides) -> dict:
+    return {
+        "email": "a@example.com",
+        "issuer": "https://auth.openai.com",
+        "subject": "user-1",
+        "client_id": ISSUED,
+        "ext_agent_host_id": "urn:uuid:host",
+        "id_token": "id-secret",
+        "access_token": "access-secret",
+        "refresh_token": "refresh-secret",
+        "expires_in": 3600,
+        "scopes": ["openid"],
+        "saved_at": datetime.now(UTC).isoformat(),
+        **overrides,
+    }
+
+
+class _FakeServer:
+    """CallbackServer stand-in that returns a scripted redirect."""
+
+    def __init__(self, redirect=None):
+        self.redirect = redirect
+        self.closed = False
+
+    def wait(self, timeout):
+        return self.redirect()
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def signin_env(monkeypatch, tmp_path):
+    """Isolate the token store, the display and the prompt; return the shared state."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setattr(Config, "load", classmethod(lambda cls, *a, **k: cls()))
+    env = {"answers": [], "prompts": [], "auths": [], "opened": [], "server": None, "display": False}
+
+    def fake_input(prompt=""):
+        env["prompts"].append(prompt.strip())
+        if not env["answers"]:
+            raise EOFError
+        answer = env["answers"].pop(0)
+        return answer(env) if callable(answer) else answer
+
+    real_begin = signin.begin
+
+    def begin(record):
+        env["auths"].append(real_begin(record))
+        return env["auths"][-1]
+
+    def make_server(state):
+        env["server_state"] = state
+        if isinstance(env["server"], Exception):
+            raise env["server"]
+        return env["server"]
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(signin, "begin", begin)
+    monkeypatch.setattr(signin, "can_open_browser", lambda: env["display"])
+    monkeypatch.setattr(signin, "CallbackServer", make_server)
+    monkeypatch.setattr(cli.webbrowser, "open", lambda url: env["opened"].append(url) or True)
+    env["store"] = signin.TokenStore(signin.tokens_path())
+    return env
+
+
+def _pasted_redirect(env, **params) -> str:
+    auth = env["auths"][-1]
+    query = {"code": "the-code", "state": auth.state, "client_id": ISSUED, **params}
+    return f"{signin.REDIRECT_URI}?{urlencode(query)}"
+
+
+def _mock_sign_in(httpx_mock, env, *, models=("gpt-5.5",)):
+    def token_response(request):
+        claims = {
+            "iss": "https://auth.openai.com",
+            "aud": ISSUED,
+            "sub": "user-1",
+            "email": "a@example.com",
+            "nonce": env["auths"][-1].nonce,
+            "exp": time.time() + 3600,
+        }
+        return httpx.Response(200, json={
+            "access_token": "access-secret",
+            "refresh_token": "refresh-secret",
+            "id_token": _jwt(claims),
+            "expires_in": 3600,
+            "scope": "openid",
+        })
+
+    httpx_mock.add_callback(token_response, url=signin.TOKEN_URL)
+    httpx_mock.add_response(
+        url=signin.MODELS_URL,
+        json={"models": [{"slug": slug, "visibility": "list"} for slug in models]},
+    )
+
+
+def _menu(out: str) -> list[str]:
+    return [line for line in out.splitlines() if line[:2] in ("1.", "2.", "3.")]
+
+
+def test_login_paste_saves_the_sign_in_and_lists_models(signin_env, httpx_mock, capsys):
+    _mock_sign_in(httpx_mock, signin_env, models=("gpt-5.5", "gpt-6-astra"))
+    signin_env["answers"] = ["1", _pasted_redirect]
+
+    code = cli.main(["login"])
+
+    assert code == 0
+    record = signin_env["store"].load()
+    assert record["client_id"] == ISSUED
+    assert record["refresh_token"] == "refresh-secret"
+    out = capsys.readouterr().out
+    assert signin_env["auths"][0].url in out
+    assert "signed in as a@example.com" in out
+    assert "models:\n  gpt-5.5\n  gpt-6-astra" in out
+
+
+def test_login_output_holds_no_secret(signin_env, httpx_mock, capsys):
+    _mock_sign_in(httpx_mock, signin_env)
+    signin_env["answers"] = ["1", _pasted_redirect]
+
+    cli.main(["login"])
+
+    captured = capsys.readouterr()
+    for secret in ("the-code", "access-secret", "refresh-secret", signin_env["auths"][0].verifier):
+        assert secret not in captured.out + captured.err
+
+
+def test_login_without_a_display_offers_no_browser(signin_env, capsys):
+    signin_env["display"] = False
+    signin_env["server"] = AssertionError("bound without a display")
+    signin_env["answers"] = ["3"]
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert _menu(capsys.readouterr().out) == ["1. Paste the redirect URL", "3. Cancel"]
+
+
+def test_login_without_a_display_rejects_choice_2(signin_env, capsys):
+    signin_env["answers"] = ["2", "3"]
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert "Unknown choice '2'" in capsys.readouterr().out
+    assert signin_env["opened"] == []
+
+
+def test_login_busy_port_names_it_and_keeps_paste(signin_env, httpx_mock, capsys):
+    _mock_sign_in(httpx_mock, signin_env)
+    signin_env["display"] = True
+    signin_env["server"] = OSError(98, "Address already in use")
+    signin_env["answers"] = ["1", _pasted_redirect]
+
+    code = cli.main(["login"])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "port 1455 is in use (Address already in use)" in captured.err
+    assert _menu(captured.out) == ["1. Paste the redirect URL", "3. Cancel"]
+    assert signin.is_signed_in(signin_env["store"].load())
+
+
+def test_login_browser_waits_for_the_loopback_redirect(signin_env, httpx_mock, capsys):
+    _mock_sign_in(httpx_mock, signin_env)
+    server = _FakeServer(lambda: _pasted_redirect(signin_env))
+    signin_env.update(display=True, server=server, answers=["2"])
+
+    code = cli.main(["login"])
+
+    assert code == 0
+    assert _menu(capsys.readouterr().out) == [
+        "1. Paste the redirect URL",
+        "2. Open the link in a browser",
+        "3. Cancel",
+    ]
+    assert signin_env["opened"] == [signin_env["auths"][0].browser_url]
+    assert signin_env["server_state"] == signin_env["auths"][0].state
+    assert server.closed
+    assert signin.is_signed_in(signin_env["store"].load())
+
+
+def test_repeat_login_prints_no_id_token_but_hints_it_to_the_browser(
+    signin_env, httpx_mock, capsys
+):
+    signin_env["store"].save(_signed_in_record())
+    _mock_sign_in(httpx_mock, signin_env)
+    server = _FakeServer(lambda: _pasted_redirect(signin_env))
+    signin_env.update(display=True, server=server, answers=["2"])
+
+    code = cli.main(["login"])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "id-secret" not in captured.out + captured.err
+    assert signin_env["auths"][0].url in captured.out
+    assert "id_token_hint=id-secret" in signin_env["opened"][0]
+
+
+def test_login_loopback_redirect_with_another_state_writes_nothing(signin_env, httpx_mock, capsys):
+    server = _FakeServer(lambda: _pasted_redirect(signin_env, state="forged"))
+    signin_env.update(display=True, server=server, answers=["2"])
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert "sign-in failed: the redirect URL is not from this sign-in" in capsys.readouterr().err
+    assert signin_env["store"].load() is None
+    assert httpx_mock.get_requests() == []
+
+
+def test_login_pasted_redirect_with_another_state_writes_nothing(signin_env, httpx_mock, capsys):
+    signin_env["answers"] = ["1", lambda env: _pasted_redirect(env, state="forged")]
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert "state mismatch" in capsys.readouterr().err
+    assert signin_env["store"].load() is None
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("answers", [["3"], []], ids=["choice", "eof"])
+def test_login_cancel_writes_nothing(signin_env, capsys, answers):
+    signin_env["answers"] = answers
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert "sign-in cancelled" in capsys.readouterr().err
+    assert not signin.tokens_path().exists()
+
+
+def test_login_ctrl_c_while_waiting_cancels(signin_env, capsys):
+    def interrupted():
+        raise KeyboardInterrupt
+
+    server = _FakeServer(interrupted)
+    signin_env.update(display=True, server=server, answers=["2"])
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert server.closed
+    assert not signin.tokens_path().exists()
+
+
+def test_login_failure_keeps_the_previous_sign_in(signin_env, httpx_mock, capsys):
+    record = _signed_in_record()
+    signin_env["store"].save(record)
+    httpx_mock.add_response(url=signin.TOKEN_URL, status_code=400, json={"error": "invalid_grant"})
+    signin_env["answers"] = ["1", _pasted_redirect]
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert "sign-in failed: token request failed: HTTP 400: invalid_grant" in capsys.readouterr().err
+    assert signin_env["store"].load() == record
+
+
+def test_repeat_login_reuses_the_registration(signin_env, httpx_mock):
+    signin_env["store"].save(_signed_in_record())
+    _mock_sign_in(httpx_mock, signin_env)
+    signin_env["answers"] = ["1", _pasted_redirect]
+
+    cli.main(["login"])
+
+    auth = signin_env["auths"][0]
+    assert auth.client_id == ISSUED
+    assert auth.ext_agent_host_id == "urn:uuid:host"
+    assert signin_env["store"].load()["ext_agent_host_id"] == "urn:uuid:host"
+
+
+def test_logout_revokes_and_keeps_the_registration(signin_env, httpx_mock, capsys):
+    signin_env["store"].save(_signed_in_record())
+    signin_env["answers"] = ["y"]
+    httpx_mock.add_response(url=signin.REVOKE_URL)
+
+    code = cli.main(["logout"])
+
+    assert code == 0
+    assert "signed out a@example.com" in capsys.readouterr().out
+    assert signin_env["store"].load() == {
+        "email": "a@example.com",
+        "issuer": "https://auth.openai.com",
+        "subject": "user-1",
+        "client_id": ISSUED,
+        "ext_agent_host_id": "urn:uuid:host",
+    }
+    assert "token=refresh-secret" in httpx_mock.get_request().content.decode()
+
+
+def test_logout_deletes_tokens_even_if_revocation_fails(signin_env, httpx_mock, capsys):
+    signin_env["store"].save(_signed_in_record())
+    signin_env["answers"] = ["y"]
+    httpx_mock.add_response(url=signin.REVOKE_URL, status_code=503)
+
+    code = cli.main(["logout"])
+
+    assert code == 0
+    assert "warning: revocation request failed: HTTP 503" in capsys.readouterr().err
+    assert not signin.is_signed_in(signin_env["store"].load())
+
+
+@pytest.mark.parametrize("answer", ["Y", "yes"])
+def test_logout_accepts_yes(signin_env, httpx_mock, capsys, answer):
+    signin_env["store"].save(_signed_in_record())
+    signin_env["answers"] = [answer]
+    httpx_mock.add_response(url=signin.REVOKE_URL)
+
+    code = cli.main(["logout"])
+
+    assert code == 0
+    assert "Sign out a@example.com? [y/N]" in signin_env["prompts"]
+    assert not signin.is_signed_in(signin_env["store"].load())
+
+
+@pytest.mark.parametrize("answers", [["n"], [""], ["sure"], []], ids=["no", "enter", "other", "eof"])
+def test_logout_declined_keeps_the_sign_in(signin_env, httpx_mock, capsys, answers):
+    record = _signed_in_record()
+    signin_env["store"].save(record)
+    signin_env["answers"] = answers
+
+    code = cli.main(["logout"])
+
+    assert code == 1
+    assert "logout cancelled" in capsys.readouterr().err
+    assert signin_env["store"].load() == record
+    assert httpx_mock.get_requests() == []
+
+
+def test_logout_when_signed_out_is_a_no_op(signin_env, httpx_mock, capsys):
+    code = cli.main(["logout"])
+
+    assert code == 0
+    assert "not signed in" in capsys.readouterr().out
+    assert not signin.tokens_path().exists()
+
+
+def test_status_shows_account_expiry_and_models_without_tokens(signin_env, httpx_mock, capsys):
+    signin_env["store"].save(_signed_in_record())
+    httpx_mock.add_response(
+        url=signin.MODELS_URL, json={"models": [{"slug": "gpt-5.5", "visibility": "list"}]}
+    )
+
+    code = cli.main(["status"])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "signed in as a@example.com" in out
+    assert "access token expires " in out
+    assert "models:\n  gpt-5.5" in out
+    for secret in ("access-secret", "refresh-secret", "id-secret"):
+        assert secret not in out
+
+
+def test_status_refreshes_an_expired_token(signin_env, httpx_mock, capsys):
+    signin_env["store"].save(_signed_in_record(saved_at="2026-01-01T00:00:00+00:00"))
+    httpx_mock.add_response(url=signin.TOKEN_URL, json={
+        "access_token": "access-2", "refresh_token": "refresh-2", "expires_in": 3600,
+    })
+    httpx_mock.add_response(url=signin.MODELS_URL, json={"models": []})
+
+    code = cli.main(["status"])
+
+    assert code == 0
+    assert signin_env["store"].load()["refresh_token"] == "refresh-2"
+    assert httpx_mock.get_requests()[-1].headers["Authorization"] == "Bearer access-2"
+
+
+def test_status_when_signed_out_exits_1(signin_env, capsys):
+    code = cli.main(["status"])
+
+    assert code == 1
+    assert "not signed in; run `ankery login`" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", ["login", "logout", "status"])
+def test_signin_commands_load_config_without_auth(signin_env, monkeypatch, command):
+    seen = _capture_load_path(monkeypatch)
+    signin_env["answers"] = ["3"]
+
+    cli.main([command, "--config", "/tmp/custom.toml"])
+
+    assert seen["path"] == Path("/tmp/custom.toml")
+    assert seen["with_auth"] is False
+
+
+@pytest.mark.parametrize("command", ["login", "logout", "status"])
+def test_signin_commands_reject_add_flags(signin_env, capsys, command):
+    with pytest.raises(SystemExit) as exc:
+        cli.main([command, "--pack", "de"])
+
+    assert exc.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["login", "logout", "status"])
+def test_signin_commands_only_selected_by_first_token(patched, monkeypatch, command):
+    captured, set_results = patched
+    builder = set_results(
+        {command: AddResult(note_id=1, term=command, note_type="N", fields={})}
+    )
+    monkeypatch.setitem(cli.COMMANDS, command, lambda argv: pytest.fail("command ran"))
+
+    code = cli.main(["--", command])
+
+    assert code == 0
+    assert builder.calls == [command]

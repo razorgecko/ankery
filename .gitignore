@@ -10,7 +10,6 @@ __pycache__/
 .pytest_cache/
 config.toml
 tmp/
-spike_*.json
 
 # Packaging / build artifacts
 build/

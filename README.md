@@ -46,8 +46,9 @@ want the model alone and no fallback.
 - Python 3.13+
 - A running Anki with the AnkiConnect add-on (listening on
   `http://localhost:8765` by default)
-- An OpenAI-compatible LLM endpoint for the LLM lookup (e.g. a local
-  `llama-server` on `http://localhost:8080/v1`)
+- For the LLM lookup, either an OpenAI-compatible LLM endpoint (e.g. a local
+  `llama-server` on `http://localhost:8080/v1`) or a ChatGPT plan (see
+  [Using a ChatGPT plan](#using-a-chatgpt-plan))
 
 ## Install
 
@@ -203,6 +204,42 @@ If the endpoint is configured without an API key (as a local `llama-server`
 can be), both can be omitted entirely. The key is used by `chat-completions`
 only; `chatgpt` ignores it, with a warning.
 
+### Using a ChatGPT plan
+
+The LLM lookup can run on a ChatGPT plan instead of an API key, through OpenAI's
+Sign in with ChatGPT. Usage counts against the plan. The feature is an OpenAI
+preview and may change.
+
+1. Sign in:
+
+   ```bash
+   ankery login
+   ```
+
+   ankery prints a sign-in link and offers two ways to finish:
+   - **Paste the redirect URL.** Open the link in any browser, on any machine,
+     and sign in. The browser is then sent to a `http://127.0.0.1:1455/…`
+     address; copy it from the address bar, even if the page fails to load,
+     and paste it into ankery.
+   - **Open the link in a browser** (desktop only). ankery opens the link and
+     waits for the browser to come back.
+
+   Once signed in, ankery lists the models the plan offers.
+
+2. Select the backend and one of those models in `config.toml`:
+
+   ```toml
+   llm_backend = "chatgpt"
+   llm_model = "gpt-5.5"
+   ```
+
+`ankery status` shows the signed-in account and the available models.
+`ankery logout` signs out, after asking for confirmation. The sign-in is kept in
+`~/.local/state/ankery/tokens.json` (in `$XDG_STATE_HOME/ankery/` if
+`XDG_STATE_HOME` is set to an absolute path), readable only by its owner,
+renewed automatically, and separate from `auth.toml`. A term spelled like one
+of these commands needs `--`: `ankery -- status`.
+
 ### Custom card layouts
 
 The card layouts ship as one TOML file per note type. Additional layouts can be
@@ -309,3 +346,4 @@ ankery reads only a few environment variables:
 | `ANKERY_CONFIG` | Path to the `config.toml` to load (overridden by `--config`). |
 | `ANKERY_AUTH` | Path to the `auth.toml` to load (overridden by `--auth`). |
 | `XDG_CONFIG_HOME` | Base config directory, as described above. |
+| `XDG_STATE_HOME` | Base directory of the ChatGPT sign-in (`tokens.json`), as described in [Using a ChatGPT plan](#using-a-chatgpt-plan). |
