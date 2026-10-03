@@ -6,6 +6,7 @@ import hashlib
 import http.server
 import json
 import logging
+import math
 import os
 import secrets
 import sys
@@ -23,7 +24,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import httpx
 
 from ankery.providers.base import ProviderError
-from ankery.providers.llm import error_detail
+from ankery.providers.llm import error_code, error_detail
 
 if sys.platform == "win32":
     import msvcrt
@@ -38,7 +39,8 @@ TOKEN_URL = f"{ISSUER}/api/accounts/oauth/token"
 REVOKE_URL = f"{ISSUER}/api/accounts/oauth/revoke"
 RESOURCE = "https://api.openai.com/v1"
 MODELS_URL = f"{RESOURCE}/models"
-SCOPES = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
+DIRECT_SCOPE = "chatgpt.tokens.use.direct"
+SCOPES = f"openid profile email offline_access resource.invoke {DIRECT_SCOPE}"
 
 CALLBACK_HOST = "127.0.0.1"
 CALLBACK_PORT = 1455
@@ -55,7 +57,7 @@ REFRESH_MARGIN = 300.0
 CLOCK_SKEW = 60.0
 
 TOKENS_FILE = "tokens.json"
-# Kept through logout: the registration and the account.
+# Kept when the tokens become unusable: the registration and its account.
 _REGISTRATION_KEYS = ("email", "issuer", "subject", "client_id", "ext_agent_host_id")
 
 
@@ -98,6 +100,9 @@ class Authorization:
     verifier: str
     state: str
     nonce: str
+    # The registered account's ID token subject and email; None on first sign-in.
+    subject: str | None = None
+    email: str | None = None
 
 
 def begin(record: dict[str, Any] | None) -> Authorization:
@@ -136,6 +141,8 @@ def begin(record: dict[str, Any] | None) -> Authorization:
         verifier=verifier,
         state=state,
         nonce=nonce,
+        subject=record.get("subject") if client_id else None,
+        email=record.get("email") if client_id else None,
     )
 
 
@@ -162,6 +169,8 @@ def parse_callback(auth: Authorization, url: str) -> tuple[str, str]:
     client_id = query.get("client_id") or auth.client_id
     if client_id == REGISTRATION_CLIENT_ID:
         raise SignInError("the sign-in did not issue a client ID")
+    if auth.client_id != REGISTRATION_CLIENT_ID and client_id != auth.client_id:
+        raise SignInError("the redirect URL names another client ID than this registration")
     return code, client_id
 
 
@@ -188,6 +197,14 @@ def complete(
     )
     claims = _id_token_claims(body.get("id_token"))
     _check_id_token(claims, client_id=client_id, nonce=auth.nonce, now=clock())
+    if auth.subject is not None and claims["sub"] != auth.subject:
+        raise SignInError(
+            "the sign-in is for another ChatGPT account than "
+            f"{auth.email or auth.subject}; to switch accounts, run `ankery logout` first"
+        )
+    tokens = _token_fields(body, saved_at)
+    if DIRECT_SCOPE not in tokens["scopes"]:
+        raise SignInError(f"the sign-in did not grant the {DIRECT_SCOPE} scope")
     return {
         "email": claims.get("email"),
         "issuer": claims["iss"],
@@ -195,7 +212,7 @@ def complete(
         "client_id": client_id,
         "ext_agent_host_id": auth.ext_agent_host_id,
         "id_token": body["id_token"],
-        **_token_fields(body, saved_at),
+        **tokens,
     }
 
 
@@ -204,6 +221,15 @@ def _token_fields(body: dict[str, Any], saved_at: float) -> dict[str, Any]:
     for key in ("access_token", "refresh_token", "expires_in"):
         if key not in body:
             raise SignInError(f"the token response has no {key}")
+    expires_in = body["expires_in"]
+    # bool is an int; json also parses NaN and Infinity.
+    if (
+        isinstance(expires_in, bool)
+        or not isinstance(expires_in, (int, float))
+        or not math.isfinite(expires_in)
+        or expires_in <= 0
+    ):
+        raise SignInError("the token response has an invalid expires_in")
     return {
         "access_token": body["access_token"],
         "refresh_token": body["refresh_token"],
@@ -268,7 +294,7 @@ def _token_request(form: dict[str, str], *, timeout: float) -> dict[str, Any]:
     except httpx.HTTPError as exc:
         raise SignInError(f"token request failed: {exc}") from exc
     if not response.is_success:
-        error = _Rejected if _error_code(response) in _TERMINAL_ERRORS else SignInError
+        error = _Rejected if error_code(response) in _TERMINAL_ERRORS else SignInError
         raise error(
             f"token request failed: HTTP {response.status_code}: {_oauth_error(response)}"
         )
@@ -279,18 +305,6 @@ def _token_request(form: dict[str, str], *, timeout: float) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise SignInError("the token response is not an object")
     return body
-
-
-def _error_code(response: httpx.Response) -> str | None:
-    """An OAuth error body's `error`, or the API's `error.code`."""
-    try:
-        body = response.json()
-    except ValueError:
-        return None
-    error = body.get("error") if isinstance(body, dict) else None
-    if isinstance(error, dict):
-        error = error.get("code")
-    return error if isinstance(error, str) else None
 
 
 def _oauth_error(response: httpx.Response) -> str:
@@ -378,9 +392,14 @@ def expires_at(record: dict[str, Any]) -> datetime:
     return datetime.fromtimestamp(saved_at.timestamp() + record["expires_in"], UTC)
 
 
-def signed_out(record: dict[str, Any]) -> dict[str, Any]:
+def without_tokens(record: dict[str, Any]) -> dict[str, Any]:
     """`record` without its tokens; the registration and account stay."""
     return {key: record[key] for key in _REGISTRATION_KEYS if key in record}
+
+
+def signed_out(record: dict[str, Any]) -> dict[str, Any]:
+    """`record` with only the host ID, which names no account."""
+    return {key: record[key] for key in ("ext_agent_host_id",) if key in record}
 
 
 if sys.platform == "win32":
@@ -501,7 +520,7 @@ class StoredTokens:
         except _Rejected as exc:
             # The tokens are unusable; the registration stays for the next login.
             with suppress(SignInError):
-                self.store.save(signed_out(record))
+                self.store.save(without_tokens(record))
             raise ProviderError(
                 f"the ChatGPT sign-in has expired or was revoked ({exc}); "
                 "run `ankery login`"

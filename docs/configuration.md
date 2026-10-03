@@ -153,12 +153,13 @@ Their requests use `llm_timeout`. A config error exits 2.
 **`login`** (`begin`, `complete`):
 
 - Each run makes a fresh PKCE verifier, `state` and `nonce`.
-- Registration: with no stored `client_id`, it authorizes as
-  `dynamic_agent_client` with `agent_name_hint=ankery` and a new
-  `ext_agent_host_id` (`urn:uuid:…`). The redirect returns the issued
-  `client_id` (`oaiapp_…`), which is used from then on.
-  `dynamic_agent_client` is never stored. Later runs send the issued
-  `client_id` and the stored `ext_agent_host_id`.
+- Registration: with no stored `client_id` (first sign-in, or after
+  `logout`), it authorizes as `dynamic_agent_client` with
+  `agent_name_hint=ankery` and the `ext_agent_host_id` (`urn:uuid:…`): the
+  stored one, else a new one. The redirect returns the issued `client_id`
+  (`oaiapp_…`), which is used from then on. `dynamic_agent_client` is never
+  stored. Later runs send the issued `client_id` and the stored
+  `ext_agent_host_id`.
 - While an ID token is held, the account is hinted. The printed URL carries
   `login_hint` (the stored email) only; the URL that `o` opens adds the ID
   token as `id_token_hint`. The SIWC docs ask for URLs holding that hint to be
@@ -192,11 +193,19 @@ Their requests use `llm_timeout`. A config error exits 2.
 - `parse_callback` checks both paths in this order: path `/auth/callback`,
   `state`, `error`, `code`. `state` and `nonce` are compared as bytes, so a
   non-ASCII value is a mismatch, not a crash. A repeat sign-in's redirect may
-  omit `client_id`; the one sent to authorize stays valid.
+  omit `client_id`; the one sent to authorize stays valid. One that names
+  another `client_id` is rejected, so the registration is never replaced.
 - The code is exchanged at the token endpoint. The ID token's claims are
   checked: `iss`, `aud` contains the issued `client_id`, `nonce`, `exp`
   (60 s skew), `sub`. There is no JWKS signature check, because the token comes
   straight from the token endpoint over TLS.
+- With a stored `client_id`, `sub` must be the stored `subject`, also when the
+  tokens were cleared and the browser shows the account picker again. Another
+  account fails the login: its tokens would mix with this account's
+  registration. Switching accounts takes `logout`, then `login`.
+- The granted `scope` must include `chatgpt.tokens.use.direct`, without which
+  the token cannot call `https://api.openai.com/v1`. A grant without it fails
+  the login.
 - It saves the record under the store lock, then prints the account and the
   model slugs. A failure exits 1 and keeps the previous record.
 
@@ -206,10 +215,11 @@ Their requests use `llm_timeout`. A config error exits 2.
   Ctrl-C exits 1 with nothing changed.
 - Revokes the refresh token at the revocation endpoint. A failed revocation
   warns, and logout continues.
-- Deletes the tokens and keeps the registration and the account (`signed_out`:
-  `email`, `issuer`, `subject`, `client_id`, `ext_agent_host_id`). The next
-  login reuses the registration, without `id_token_hint`.
-- Exit 0, also when already signed out (no prompt).
+- Forgets the account: it keeps only `ext_agent_host_id` (`signed_out`), a
+  random host ID that names no account and that the SIWC docs require to stay
+  stable for the host. The next login registers again, with any account.
+- Exit 0, also when already signed out (no prompt). If the tokens were cleared
+  by a refresh, the account left behind is forgotten the same way.
 
 **`status`** prints the account, the access token's expiry and the model slugs
 (`GET /v1/models`, entries with `visibility == "list"`). It refreshes the token
@@ -247,13 +257,17 @@ dry run included.
   because the refresh token rotates. The refresh form is `grant_type`,
   `client_id`, `refresh_token` and `resource`, with no `scope`. A response
   without a refresh token keeps the current one.
+- In both the code exchange and the refresh, a token response whose
+  `expires_in` is not a positive finite number fails, and nothing is saved.
 - An error code that the SIWC docs call terminal (`invalid_grant`,
   `invalid_refresh_token`, `token_expired`, `refresh_token_expired`,
   `refresh_token_invalidated`, `refresh_token_reused`, read from the OAuth
   `error` or the API's `error.code`) clears the tokens, keeping the
-  registration as `logout` does, and is a `ProviderError` telling the user to
-  run `ankery login`. Any other failure, a 429 included, keeps the tokens and is
-  a `ProviderError` without that advice.
+  registration and its account (`without_tokens`: `email`, `issuer`,
+  `subject`, `client_id`, `ext_agent_host_id`) for the next login, which
+  reuses them without `id_token_hint`. It is a `ProviderError` telling the
+  user to run `ankery login`. Any other failure, a 429 included, keeps the
+  tokens and is a `ProviderError` without that advice.
 
 ### Logging
 

@@ -444,6 +444,7 @@ def test_responses_hinted_fetch_misses_on_empty_object(httpx_mock):
     [
         ("subscription_sharing_usage_limit_exceeded", "ChatGPT plan usage limit reached"),
         ("subscription_sharing_usage_unavailable", "ChatGPT plan usage data unavailable"),
+        ("subscription_sharing_user_unavailable", "ChatGPT plan user data unavailable"),
     ],
 )
 def test_responses_usage_failure_has_a_clear_message(httpx_mock, code, message):
@@ -455,6 +456,51 @@ def test_responses_usage_failure_has_a_clear_message(httpx_mock, code, message):
 
     with pytest.raises(ProviderError, match=f"{message} \\({code}\\)"):
         _responses_provider().fetch("Buch")
+
+
+def _usage_error(code: str) -> dict:
+    return {"error": {"code": code, "message": "Usage limit reached.", "type": "usage"}}
+
+
+def test_responses_usage_limit_points_at_the_usage_page(httpx_mock):
+    failed = {
+        "type": "response.failed",
+        "response": {"error": _usage_error("subscription_sharing_usage_limit_exceeded")["error"]},
+    }
+    httpx_mock.add_response(url=RESPONSES_URL, content=_sse(_CREATED, failed))
+
+    with pytest.raises(ProviderError, match="see https://chatgpt.com/settings/usage"):
+        _responses_provider().fetch("Buch")
+
+
+def test_responses_usage_limit_429_is_not_retried(httpx_mock, monkeypatch):
+    monkeypatch.setattr("ankery.providers.retry.time.sleep", lambda _: None)
+    httpx_mock.add_response(
+        url=RESPONSES_URL,
+        status_code=429,
+        json=_usage_error("subscription_sharing_usage_limit_exceeded"),
+    )
+
+    with pytest.raises(
+        ProviderError,
+        match="ChatGPT plan usage limit reached \\(subscription_sharing_usage_limit_exceeded\\)",
+    ):
+        _responses_provider().fetch("Buch")
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_responses_other_usage_429_is_retried_then_has_a_clear_message(httpx_mock, monkeypatch):
+    monkeypatch.setattr("ankery.providers.retry.time.sleep", lambda _: None)
+    httpx_mock.add_response(
+        url=RESPONSES_URL,
+        status_code=429,
+        json=_usage_error("subscription_sharing_usage_unavailable"),
+        is_reusable=True,
+    )
+
+    with pytest.raises(ProviderError, match="ChatGPT plan usage data unavailable"):
+        _responses_provider().fetch("Buch")
+    assert len(httpx_mock.get_requests()) == 4
 
 
 def test_responses_other_failure_carries_code_and_message(httpx_mock):

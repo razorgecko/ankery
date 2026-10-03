@@ -236,7 +236,8 @@ preview and may change.
    ```
 
 `ankery status` shows the signed-in account and the available models.
-`ankery logout` signs out, after asking for confirmation. The sign-in is kept in
+`ankery logout` signs out, after asking for confirmation, and forgets the
+account; to switch accounts, log out and sign in again. The sign-in is kept in
 `~/.local/state/ankery/tokens.json` (in `$XDG_STATE_HOME/ankery/` if
 `XDG_STATE_HOME` is set to an absolute path), readable only by its owner,
 renewed automatically, and separate from `auth.toml`. A term spelled like one

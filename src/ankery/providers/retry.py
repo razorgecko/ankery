@@ -4,6 +4,7 @@
 :func:`request_with_retry` retries it transparently, honouring the server's
 ``Retry-After`` when given and otherwise backing off exponentially, and returns
 the final response unchanged so the caller handles every other status itself.
+A caller can mark a 429 as permanent, which returns it at once.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ def request_with_retry(
     base_delay: float = DEFAULT_BASE_DELAY,
     max_delay: float = DEFAULT_MAX_DELAY,
     sleep: Callable[[float], None] = time.sleep,
+    permanent: Callable[[httpx.Response], bool] = lambda _: False,
 ) -> httpx.Response:
     """Send a request, retrying while the response is HTTP 429.
 
@@ -39,12 +41,17 @@ def request_with_retry(
     backoff (``base_delay * 2**attempt``); either way the wait is capped at
     ``max_delay`` to bound an unhelpful server. The last response is returned
     regardless of status, so the caller still handles non-429 codes itself.
+    A 429 for which ``permanent`` returns True is returned without a retry.
 
     ``sleep`` is injectable so tests need not wait in real time.
     """
     for attempt in range(max_attempts):
         response = send()
-        if response.status_code != 429 or attempt == max_attempts - 1:
+        if (
+            response.status_code != 429
+            or attempt == max_attempts - 1
+            or permanent(response)
+        ):
             return response
         delay = _retry_delay(response, base_delay * 2**attempt, max_delay)
         # A streamed response holds its connection until closed.

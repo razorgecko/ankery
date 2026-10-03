@@ -96,7 +96,7 @@ else the pack's `providers`.
   registry: `TRANSPORTS` maps each `llm_backend` name to its class, and each
   class has a builder that takes the config, the resolved model and the
   backend's `llm_params.json` section. A 429 is retried in both
-  (`providers/retry.py`).
+  (`providers/retry.py`), except the ChatGPT plan's usage limit (below).
   - `chat-completions`: OpenAI-compatible `/v1/chat/completions`
     (`DEFAULT_BASE_URL` `http://localhost:8080/v1`, a local llama-server;
     `DEFAULT_MODEL` `local-model`); `llm_api_key` adds a Bearer header.
@@ -109,7 +109,11 @@ else the pack's `providers`.
     [configuration.md](./configuration.md#6-sign-in-with-chatgpt));
     `llm_api_key` is not used. The system prompt goes in `instructions`. The
     text counts only after `response.completed`; failure events raise
-    `ProviderError`.
+    `ProviderError`. The plan's usage codes (`subscription_sharing_*`) get
+    their own message, as an HTTP error or a `response.failed` event. A 429
+    with `subscription_sharing_usage_limit_exceeded` is not retried, because
+    the limit resets after hours, and its message links
+    `https://chatgpt.com/settings/usage`.
 - **`netzverb`** (German pack) — scrapes verbformen.com and verben.de with
   BeautifulSoup. 404 is a clean miss; a 429 is retried. A `category_hint` picks
   the page directly and misses cleanly for any category it cannot scrape; with no

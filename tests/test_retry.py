@@ -55,6 +55,21 @@ def test_gives_up_after_max_attempts():
     assert len(slept) == 2  # no sleep after the final attempt
 
 
+def test_permanent_429_returns_without_a_retry():
+    calls: list[int] = []
+
+    def send() -> httpx.Response:
+        calls.append(1)
+        return _resp(429)
+
+    def no_sleep(_: float) -> None:
+        raise AssertionError("should not sleep on a permanent 429")
+
+    response = request_with_retry(send, sleep=no_sleep, permanent=lambda r: True)
+    assert response.status_code == 429
+    assert len(calls) == 1
+
+
 def test_non_429_returns_immediately():
     calls: list[int] = []
 

@@ -902,12 +902,12 @@ def _pasted_redirect(env, **params) -> str:
     return f"{signin.REDIRECT_URI}?{urlencode(query)}"
 
 
-def _mock_sign_in(httpx_mock, env, *, models=("gpt-5.5",)):
+def _mock_sign_in(httpx_mock, env, *, models=("gpt-5.5",), subject="user-1"):
     def token_response(request):
         claims = {
             "iss": "https://auth.openai.com",
             "aud": ISSUED,
-            "sub": "user-1",
+            "sub": subject,
             "email": "a@example.com",
             "nonce": env["auths"][-1].nonce,
             "exp": time.time() + 3600,
@@ -917,14 +917,15 @@ def _mock_sign_in(httpx_mock, env, *, models=("gpt-5.5",)):
             "refresh_token": "refresh-secret",
             "id_token": _jwt(claims),
             "expires_in": 3600,
-            "scope": "openid",
+            "scope": "openid chatgpt.tokens.use.direct",
         })
 
     httpx_mock.add_callback(token_response, url=signin.TOKEN_URL)
-    httpx_mock.add_response(
-        url=signin.MODELS_URL,
-        json={"models": [{"slug": slug, "visibility": "list"} for slug in models]},
-    )
+    if models is not None:
+        httpx_mock.add_response(
+            url=signin.MODELS_URL,
+            json={"models": [{"slug": slug, "visibility": "list"} for slug in models]},
+        )
 
 
 PASTE_OR_OPEN = "Paste the redirect URL, or enter o to open the link in a browser, q to cancel."
@@ -1128,7 +1129,33 @@ def test_repeat_login_reuses_the_registration(signin_env, httpx_mock):
     assert signin_env["store"].load()["ext_agent_host_id"] == "urn:uuid:host"
 
 
-def test_logout_revokes_and_keeps_the_registration(signin_env, httpx_mock, capsys):
+def test_login_as_another_account_fails_and_keeps_the_registration(signin_env, httpx_mock, capsys):
+    registration = signin.without_tokens(_signed_in_record())
+    signin_env["store"].save(registration)
+    _mock_sign_in(httpx_mock, signin_env, models=None, subject="user-2")
+    signin_env["answers"] = [_pasted_redirect]
+
+    code = cli.main(["login"])
+
+    assert code == 1
+    assert "another ChatGPT account" in capsys.readouterr().err
+    assert signin_env["store"].load() == registration
+
+
+def test_login_after_logout_accepts_another_account(signin_env, httpx_mock, capsys):
+    signin_env["store"].save(signin.signed_out(_signed_in_record()))
+    _mock_sign_in(httpx_mock, signin_env, subject="user-2")
+    signin_env["answers"] = [_pasted_redirect]
+
+    code = cli.main(["login"])
+
+    assert code == 0
+    record = signin_env["store"].load()
+    assert record["subject"] == "user-2"
+    assert record["ext_agent_host_id"] == "urn:uuid:host"
+
+
+def test_logout_revokes_and_forgets_the_account(signin_env, httpx_mock, capsys):
     signin_env["store"].save(_signed_in_record())
     signin_env["answers"] = ["y"]
     httpx_mock.add_response(url=signin.REVOKE_URL)
@@ -1137,13 +1164,7 @@ def test_logout_revokes_and_keeps_the_registration(signin_env, httpx_mock, capsy
 
     assert code == 0
     assert "signed out a@example.com" in capsys.readouterr().out
-    assert signin_env["store"].load() == {
-        "email": "a@example.com",
-        "issuer": "https://auth.openai.com",
-        "subject": "user-1",
-        "client_id": ISSUED,
-        "ext_agent_host_id": "urn:uuid:host",
-    }
+    assert signin_env["store"].load() == {"ext_agent_host_id": "urn:uuid:host"}
     assert "token=refresh-secret" in httpx_mock.get_request().content.decode()
 
 
@@ -1183,6 +1204,17 @@ def test_logout_declined_keeps_the_sign_in(signin_env, httpx_mock, capsys, answe
     assert code == 1
     assert "logout cancelled" in capsys.readouterr().err
     assert signin_env["store"].load() == record
+    assert httpx_mock.get_requests() == []
+
+
+def test_logout_after_cleared_tokens_forgets_the_account(signin_env, httpx_mock, capsys):
+    signin_env["store"].save(signin.without_tokens(_signed_in_record()))
+
+    code = cli.main(["logout"])
+
+    assert code == 0
+    assert "not signed in" in capsys.readouterr().out
+    assert signin_env["store"].load() == {"ext_agent_host_id": "urn:uuid:host"}
     assert httpx_mock.get_requests() == []
 
 

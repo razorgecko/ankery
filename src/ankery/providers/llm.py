@@ -99,10 +99,26 @@ class ChatCompletionsTransport:
 
 
 # Failure codes of plan-billed (Sign in with ChatGPT) usage.
+_USAGE_LIMIT = "subscription_sharing_usage_limit_exceeded"
 _USAGE_ERRORS = {
-    "subscription_sharing_usage_limit_exceeded": "ChatGPT plan usage limit reached",
+    _USAGE_LIMIT: "ChatGPT plan usage limit reached",
     "subscription_sharing_usage_unavailable": "ChatGPT plan usage data unavailable",
+    "subscription_sharing_user_unavailable": "ChatGPT plan user data unavailable",
 }
+_USAGE_URL = "https://chatgpt.com/settings/usage"
+
+
+def _usage_message(code: str) -> str:
+    message = f"{_USAGE_ERRORS[code]} ({code})"
+    if code == _USAGE_LIMIT:
+        message += f"; see {_USAGE_URL}"
+    return message
+
+
+def _usage_limited(response: httpx.Response) -> bool:
+    """Whether a 429 is the plan's usage limit, which resets after hours, not seconds."""
+    response.read()
+    return error_code(response) == _USAGE_LIMIT
 
 
 class ChatGPTTransport:
@@ -150,10 +166,15 @@ class ChatGPTTransport:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 request = client.build_request("POST", url, json=payload, headers=headers)
-                response = request_with_retry(lambda: client.send(request, stream=True))
+                response = request_with_retry(
+                    lambda: client.send(request, stream=True), permanent=_usage_limited
+                )
                 try:
                     if not response.is_success:
                         response.read()
+                        code = error_code(response)
+                        if code in _USAGE_ERRORS:
+                            raise ProviderError(_usage_message(code))
                         raise ProviderError(
                             f"LLM request to {url} failed: HTTP {response.status_code}: "
                             f"{error_detail(response)}"
@@ -179,7 +200,7 @@ def _read_response_stream(lines: Iterator[str]) -> str:
             error = (event.get("response") or {}).get("error") or {}
             code = error.get("code")
             if code in _USAGE_ERRORS:
-                raise ProviderError(f"{_USAGE_ERRORS[code]} ({code})")
+                raise ProviderError(_usage_message(code))
             raise ProviderError(
                 f"LLM response failed: {code or 'unknown error'}: {error.get('message', '')}"
             )
@@ -222,6 +243,18 @@ def merge_params(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[st
     """
     merged = {**defaults, **overrides}
     return {key: value for key, value in merged.items() if value is not None}
+
+
+def error_code(response: httpx.Response) -> str | None:
+    """The body's `error` string, or `error.code`."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    if isinstance(error, dict):
+        error = error.get("code")
+    return error if isinstance(error, str) else None
 
 
 def error_detail(response: httpx.Response) -> str:

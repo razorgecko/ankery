@@ -360,12 +360,20 @@ def _login_main(argv: list[str]) -> int:
 
 
 def _logout_main(argv: list[str]) -> int:
-    setup = _signin_setup(LOGOUT_COMMAND, "Sign out of ChatGPT: revoke and delete "
-                          "the stored tokens. The app registration is kept.", argv)
+    setup = _signin_setup(LOGOUT_COMMAND, "Sign out of ChatGPT: revoke the stored "
+                          "tokens and forget the account.", argv)
     if isinstance(setup, int):
         return setup
     config, store, record = setup
     if not signin.is_signed_in(record):
+        # Tokens cleared by a failed refresh leave the account behind.
+        if record and record != signin.signed_out(record):
+            try:
+                with store.lock():
+                    store.save(signin.signed_out(record))
+            except signin.SignInError as exc:
+                _error(str(exc))
+                return 1
         print("not signed in")
         return 0
     try:

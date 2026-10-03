@@ -153,8 +153,20 @@ def test_printed_url_never_carries_the_id_token():
     assert "id_token_hint" not in _query(auth.url)
 
 
-def test_sign_in_after_logout_keeps_the_registration_without_a_hint():
+def test_sign_in_after_logout_registers_again_on_the_same_host():
     auth = signin.begin(signin.signed_out(_record()))
+    query = _query(auth.url)
+
+    assert query["client_id"] == REGISTRATION_CLIENT_ID
+    assert query["agent_name_hint"] == "ankery"
+    assert query["ext_agent_host_id"] == "urn:uuid:host"
+    assert "id_token_hint" not in query
+    assert "login_hint" not in query
+    assert auth.subject is None
+
+
+def test_sign_in_after_cleared_tokens_keeps_the_registration_without_a_hint():
+    auth = signin.begin(signin.without_tokens(_record()))
     query = _query(auth.url)
 
     assert query["client_id"] == ISSUED
@@ -182,6 +194,13 @@ def test_redirect_without_client_id_keeps_the_issued_one():
     auth = signin.begin(_record())
 
     assert signin.parse_callback(auth, _redirect(auth, client_id=None)) == ("the-code", ISSUED)
+
+
+def test_repeat_sign_in_redirect_with_another_client_id_is_rejected():
+    auth = signin.begin(_record())
+
+    with pytest.raises(SignInError, match="another client ID"):
+        signin.parse_callback(auth, _redirect(auth, client_id="oaiapp_other"))
 
 
 def test_registration_redirect_without_client_id_raises():
@@ -301,12 +320,81 @@ def test_exchange_rejects_a_bad_id_token(httpx_mock, claims, message):
         signin.complete(auth, _redirect(auth), clock=lambda: NOW)
 
 
+@pytest.mark.parametrize(
+    "record", [_record(), signin.without_tokens(_record())], ids=["signed-in", "tokens-cleared"]
+)
+def test_repeat_sign_in_for_another_account_is_rejected(httpx_mock, record):
+    auth = signin.begin(record)
+    body = _token_response(auth, id_token=_jwt(_claims(auth, sub="user-2", email="b@example.com")))
+    httpx_mock.add_response(url=TOKEN_URL, json=body)
+
+    with pytest.raises(
+        SignInError,
+        match="another ChatGPT account than a@example.com; .*run `ankery logout` first",
+    ):
+        signin.complete(auth, _redirect(auth), clock=lambda: NOW)
+
+
+def test_repeat_sign_in_for_the_registered_account_is_accepted(httpx_mock):
+    auth = signin.begin(signin.without_tokens(_record()))
+    httpx_mock.add_response(url=TOKEN_URL, json=_token_response(auth))
+
+    record = signin.complete(auth, _redirect(auth), clock=lambda: NOW)
+
+    assert record["subject"] == "user-1"
+    assert record["client_id"] == ISSUED
+
+
+def test_sign_in_after_logout_accepts_another_account(httpx_mock):
+    auth = signin.begin(signin.signed_out(_record()))
+    body = _token_response(auth, id_token=_jwt(_claims(auth, sub="user-2", email="b@example.com")))
+    httpx_mock.add_response(url=TOKEN_URL, json=body)
+
+    record = signin.complete(auth, _redirect(auth), clock=lambda: NOW)
+
+    assert record["subject"] == "user-2"
+    assert record["email"] == "b@example.com"
+    assert record["ext_agent_host_id"] == "urn:uuid:host"
+
+
 def test_exchange_accepts_an_audience_list(httpx_mock):
     auth = signin.begin(None)
     body = _token_response(auth, id_token=_jwt(_claims(auth, aud=[ISSUED, "other"])))
     httpx_mock.add_response(url=TOKEN_URL, json=body)
 
     assert signin.complete(auth, _redirect(auth), clock=lambda: NOW)["subject"] == "user-1"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"scope": "openid email offline_access"}, {"scope": None}],
+    ids=["narrower", "absent"],
+)
+def test_exchange_rejects_a_grant_without_the_direct_scope(httpx_mock, overrides):
+    auth = signin.begin(None)
+    body = {k: v for k, v in _token_response(auth, **overrides).items() if v is not None}
+    httpx_mock.add_response(url=TOKEN_URL, json=body)
+
+    with pytest.raises(SignInError, match="did not grant the chatgpt.tokens.use.direct scope"):
+        signin.complete(auth, _redirect(auth), clock=lambda: NOW)
+
+
+@pytest.mark.parametrize("expires_in", ["3600", 0, -1, True, None], ids=repr)
+def test_exchange_rejects_an_invalid_expires_in(httpx_mock, expires_in):
+    auth = signin.begin(None)
+    httpx_mock.add_response(url=TOKEN_URL, json=_token_response(auth, expires_in=expires_in))
+
+    with pytest.raises(SignInError, match="invalid expires_in"):
+        signin.complete(auth, _redirect(auth), clock=lambda: NOW)
+
+
+def test_exchange_rejects_a_non_finite_expires_in(httpx_mock):
+    auth = signin.begin(None)
+    body = json.dumps(_token_response(auth)).replace("3600", "Infinity")
+    httpx_mock.add_response(url=TOKEN_URL, content=body.encode())
+
+    with pytest.raises(SignInError, match="invalid expires_in"):
+        signin.complete(auth, _redirect(auth), clock=lambda: NOW)
 
 
 def test_exchange_error_carries_the_oauth_error(httpx_mock):
@@ -507,15 +595,19 @@ def test_store_rejects_invalid_json(tmp_path):
         TokenStore(path).load()
 
 
-def test_signed_out_keeps_only_the_registration():
-    assert signin.signed_out(_record()) == {
+def test_without_tokens_keeps_only_the_registration():
+    assert signin.without_tokens(_record()) == {
         "email": "a@example.com",
         "issuer": "https://auth.openai.com",
         "subject": "user-1",
         "client_id": ISSUED,
         "ext_agent_host_id": "urn:uuid:host",
     }
-    assert not signin.is_signed_in(signin.signed_out(_record()))
+    assert not signin.is_signed_in(signin.without_tokens(_record()))
+
+
+def test_signed_out_keeps_only_the_host_id():
+    assert signin.signed_out(_record()) == {"ext_agent_host_id": "urn:uuid:host"}
 
 
 # ---------------------------------------------------------------------------
@@ -585,6 +677,15 @@ def test_refresh_without_a_new_refresh_token_keeps_the_current_one(tmp_path, htt
     assert store.load()["refresh_token"] == "refresh-1"
 
 
+def test_refresh_with_an_invalid_expires_in_keeps_the_tokens(tmp_path, httpx_mock):
+    store, tokens = _tokens(tmp_path, _record(), now=NOW + 3600)
+    httpx_mock.add_response(url=TOKEN_URL, json=_token_response(expires_in="3600"))
+
+    with pytest.raises(ProviderError, match="could not refresh.*invalid expires_in"):
+        tokens.access_token()
+    assert store.load() == _record()
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -600,7 +701,7 @@ def test_unusable_refresh_token_is_cleared_and_asks_for_a_new_sign_in(tmp_path, 
 
     with pytest.raises(ProviderError, match="expired or was revoked.*run `ankery login`"):
         tokens.access_token()
-    assert store.load() == signin.signed_out(_record())
+    assert store.load() == signin.without_tokens(_record())
 
 
 @pytest.mark.parametrize(
